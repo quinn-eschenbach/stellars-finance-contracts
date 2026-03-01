@@ -1,10 +1,16 @@
 CONTRACTS = vault position-manager config-manager oracle-router
-WASM_DIR  = target/wasm32-unknown-unknown/release
+WASM_DIR  = target/wasm32v1-none/release
 
 .PHONY: build optimize test bind clean
 
 build:
-	cargo build --target wasm32-unknown-unknown --release
+	cargo build --target wasm32v1-none --release \
+		-p vault \
+		-p position-manager \
+		-p config-manager \
+		-p oracle-router \
+		-p mock-token \
+		-p mock-oracle
 
 optimize: build
 	@for contract in $(CONTRACTS); do \
