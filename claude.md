@@ -42,3 +42,19 @@ Based on highly optimized repositories like `blend-capital/blend-contracts-v2`, 
 * **Extensive Mocking and Testing:** Maintain a dedicated `test-suites` directory alongside `mocks` within the workspace. Use a dedicated `testutils` module (e.g., exposing a `Fixture::deploy` method) to easily spin up contracts and dependencies for testing.
 * **Automated WASM Optimization:** Use a `Makefile` as a standard entry point to compile contracts to `cdylib` WebAssembly and rigorously optimize them using `stellar contract optimize`. Never deploy un-optimized WASM to the network.
 * **Automated SDK Binding:** Generate frontend integrations programmatically. Use `stellar contract bindings typescript` inside your build scripts to ensure your TypeScript SDK stays perfectly synchronized with your WASM outputs.
+
+## Strict TDD Multi-Agent Workflow
+
+When tasked with implementing new smart contract logic (excluding basic boilerplate or minor bug fixes), you MUST act as the Orchestrator and strictly follow this Test-Driven Development (TDD) loop using your specialized subagents. Subagents help preserve context by keeping specific tasks out of your main conversation.
+
+**The TDD Orchestration Loop:**
+
+1. **Plan & Breakdown:** First, break the overarching requirement down into the smallest possible atomic units (e.g., "Implement the math for calculating the borrow fee index"). Create a markdown checklist in your main context.
+2. **Delegate to Test Writer:** Explicitly invoke the `test-writer` subagent. Pass it the atomic requirement and instruct it to write comprehensive, failing tests. 
+3. **Delegate to Code Writer:** Once the tests are written, explicitly invoke the `code-writer` subagent. Pass it the file paths to the newly created tests and the target implementation files. Instruct it to write the minimal code required to make the tests pass.
+4. **Verify:** Run the test suite using your Bash tool. 
+    * If tests fail: Send the error logs back to the `code-writer` subagent. Do not proceed until tests pass.
+    * If tests pass: Check off the item on your plan and repeat Steps 1-4 for the next atomic requirement.
+5. **Final Audit:** Once the entire feature checklist is complete and all tests are passing, explicitly invoke the `audit-agent` subagent. Pass it the completed module.
+    * If it reports vulnerabilities: Break the fixes down into atomic units and restart the loop at Step 1.
+    * If it reports "AUDIT PASS": The feature is complete.
