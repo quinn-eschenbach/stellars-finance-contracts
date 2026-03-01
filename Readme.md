@@ -1,3 +1,5 @@
+# Stellars Finance Contracts
+
 ## 1. Abstract
 
 This protocol is a decentralized, non-custodial perpetual exchange built on the Soroban smart contract platform. It utilizes a unified liquidity pool model (GLP-style) where Liquidity Providers (LPs) act as the counterparty to all traders. The protocol supports leveraged trading of assets with zero price impact, relying on oracle feeds for pricing.
@@ -12,181 +14,272 @@ The protocol consists of four interacting smart contracts. State is managed to e
 
 ### 2.1 `Vault` (Liquidity & Token)
 
-**Role:** The central treasury. It holds all USDC liquidity and implements the **SEP-41** token standard for the LP share token (`STELLARS_LP`). It acts as the "Bank" that settles PnL and calculates the exchange rate for LPs.
+**Role:** The central treasury. It utilizes OpenZeppelin's Soroban Token Standard to implement the SEP-41 LP share token (`STELLARS_LP`). To ensure robust security and upgrade paths, it integrates OpenZeppelin's `Initializable` (for setup) and `Pausable` (for emergency stops) modules. It strictly manages "Free Liquidity" to prevent insolvency and bank runs.
 
 **State Variables (`Persistent` Storage):**
-- **Token Ledger (SEP-41 Standard):**
-    - `TotalSupply`: Total amount of `GMXLP` tokens in existence.
-    - `Balances`: Map of `Address -> Amount` (User LP balances).
-    - `Allowances`: Map of `(Owner, Spender) -> Amount`.
-- **Asset Tracking:**
-    - `TotalUSDC`: The actual `contract.balance` of USDC held in the vault.
-    - `ReservedUSDC`: The total amount of USDC currently "locked" as collateral for open positions. This prevents LPs from withdrawing funds that are backing active trades.
-    
-- **Financials:**
-    - `CumulativeRealizedPnL`: Net profit/loss from all closed trades (for analytics/APR tracking).
+
+* **Token Ledger (SEP-41 Standard):**
+* `TotalSupply`: Total amount of `STELLARS_LP` tokens in existence.
+* `Balances`: Map of `Address -> Amount` (User LP balances).
+* `Allowances`: Map of `(Owner, Spender) -> Amount`.
+
+
+* **Asset Tracking:**
+* `TotalUSDC`: The actual `contract.balance` of USDC held in the vault.
+* `ReservedUSDC`: The total amount of USDC currently "locked" as collateral for open positions.
+* `UnclaimedFees`: Protocol revenue (the Keeper/Dev spread) that has not yet been withdrawn.
+
+
+* **System State:**
+* `IsPaused`: Boolean flag controlled by the `PAUSER_ROLE`.
+
+
 
 **Key Functions:**
 
-- `deposit(amount)`: Transfers USDC in, calculates current share price (including unrealized PnL from `PositionManager`), and mints `STELLARS_LP`.
-- `withdraw(amount)`: Burns `STELLARS_LP`, calculates share price, and transfers USDC out.
-- `settle_pnl(amount, is_profit)`: Callable only by `PositionManager`. Sends profit to traders or absorbs losses into the pool.
+* `initialize(admin, config_manager)`: OpenZeppelin standard to set initial parameters. Can only be called once.
+* `deposit(amount)`: Reverts if `IsPaused == true`. Transfers USDC in, calculates current share price, and mints `STELLARS_LP`.
+* `withdraw(amount)`: Reverts if `IsPaused == true`. Calculates **Free Liquidity** (`TotalUSDC - ReservedUSDC - UnclaimedFees`). If the requested withdrawal amount exceeds Free Liquidity, the transaction **reverts** to protect active traders. Otherwise, burns `STELLARS_LP` and transfers USDC out.
+* `settle_pnl(amount, is_profit)`: Callable only by the `PositionManager`. Adjusts `TotalUSDC` and `ReservedUSDC` balances.
+* `pause()` / `unpause()`: Callable strictly by the `PAUSER_ROLE` defined in the `ConfigManager`.
+* **TTL Management:**
+* `bump_vault_state()`: Extends the Time-To-Live (TTL) of the Vault's instance storage to prevent the contract from being archived by the Soroban network.
+* `bump_user_balance(user_address)`: Extends the TTL for a specific user's LP token balance in persistent storage.
 
 ---
 
 ### 2.2 `PositionManager` (Trading Engine)
 
-**Role:** The core logic contract. It merges "Market" and "Position" state to reduce cross-contract calls. It manages trading logic, calculates fees via Lazy Evaluation, and tracks global average prices for real-time PnL estimation.
+**Role:** The core logic contract. It merges "Market" and "Position" state to reduce cross-contract calls. It utilizes OpenZeppelin's `Initializable` and `Pausable` modules, alongside Math/SafeCast libraries to prevent overflow panics during complex PnL and index calculations. It enforces rigorous utilization caps and time-locks to prevent oracle front-running.
 
 **State Variables (`Persistent` Storage):**
-#### A. Market Configuration & Indices (Key: `Symbol`)
+*(Note: Uses `MarketInfo` and `Position` structs as defined previously. Below are the specific additions for security.)*
 
-Stored as a `MarketInfo` struct. **Every market (BTC, ETH, XLM) has its own independent entry.**
-- **Open Interest (OI):**
-    - `LongOI`: Total size of active Longs (USD value).
-    - `ShortOI`: Total size of active Shorts (USD value).
+* **Risk & Security Parameters:**
+* `MaxUtilizationRatio`: The hard cap for new trades (e.g., 85%). If `ReservedUSDC / TotalUSDC` exceeds this, no new positions can be opened, ensuring a buffer always exists for LP withdrawals.
+* `MinPositionLifetime`: A required time-lock (e.g., 5 minutes) to neutralize high-frequency oracle front-running and toxic wash trading.
+* `IsPaused`: Boolean flag for emergency trading halts.
 
-- **Fee Accumulators ("Lazy Evaluation"):**
-    - `AccBorrowIndex`: The cumulative borrow fee per share since market inception.
-    - `AccFundingIndex`: The cumulative funding rate per share (tracks Long vs Short imbalance).
-
-- **Global Average Pricing (For Unrealized PnL):**    
-    - `GlobalLongAvgPrice`: The volume-weighted average entry price of _all_ active Longs.
-    - `GlobalShortAvgPrice`: The volume-weighted average entry price of _all_ active Shorts.
-
-- **Risk Parameters:**
-    - `MaxLeverage`: e.g., 50x (500,000 basis points).
-    - `MaxGlobalOI`: Cap on total exposure relative to Vault liquidity.
-    - `BaseBorrowRate`: The minimum interest rate for this specific asset.
-#### B. User Positions (Key: `Address, Symbol`)
-
-Stored as a `Position` struct. A user has only **one** netted position per market.
-- **Increasing:** Executing a trade in the **same** direction averages the entry price.
-- **Decreasing:** Executing a trade in the **opposite** direction closes/reduces the existing position and realizes PnL.
-- **Benefits:** This design prevents "wash trading" (farming volume against oneself) and simplifies the User Interface and Health Factor calculations.
-
-- **Core Data:**
-    - `Size`: Position size in USD.
-    - `Collateral`: Margin in USDC.
-    - `AveragePrice`: The user's specific weighted entry price.
-    - `IsLong`: Direction boolean.
-
-- **Entry Snapshots (For Fee Calculation):**
-    - `EntryBorrowIndex`: Value of `Market.AccBorrowIndex` when position was last modified.
-    - `EntryFundingIndex`: Value of `Market.AccFundingIndex` when position was last modified.
-
-- **Metadata:**
-    - `LastIncreasedTime`: Timestamp for calculating minimum holding duration.        
 
 **Key Functions:**
-- `increase_position(...)`: Opens/Adds to a position. Updates `GlobalAvgPrice` and Fee Indices.
-- `decrease_position(...)`: Closes/Reduces a position. Settles PnL via `Vault`.
-- `liquidate_position(...)`: Callable by Keepers. Checks if `Collateral < Fees + Loss`.
-- `get_total_unrealized_pnl()`: Helper called by `Vault` to price LP tokens.
+
+* `initialize(vault_address, config_manager)`: OpenZeppelin setup function.
+* `increase_position(...)`: Opens or adds to a position.
+* **Checks:** Reverts if `IsPaused == true`. Reverts if the new trade pushes the Vault's utilization past the `MaxUtilizationRatio` (85%).
+* **Action:** Updates Global Average Prices, Fee Indices, and reserves USDC in the Vault.
+* **Security:** Records the current block timestamp into the user's `LastIncreasedTime` state variable.
+
+
+* `decrease_position(...)`: Closes or reduces a position and realizes PnL.
+* **Checks:** Reverts if `current_time < LastIncreasedTime + MinPositionLifetime` (e.g., trade has been open for less than 5 minutes).
+* **Emergency Access:** This function purposefully **bypasses the `Pausable` lock**. Even if the protocol is paused, users can always close positions to reduce their risk exposure.
+
+
+* `liquidate_position(...)`: Callable by `KEEPER_ROLE`. Checks if `Collateral < Fees + Loss`.
+* `update_indices()`: Callable by `KEEPER_ROLE`. Forces a sync of global borrow and funding accumulators.
+* `execute_order(...)`: Callable by `KEEPER_ROLE`. Triggers limit/stop orders.
+* `deverage_position(...)`: Callable by `KEEPER_ROLE`. Identifies the highest RoE positions and force-closes them if utilization hits critical emergency thresholds (e.g., > 95%).
+* **TTL Management:**
+* `bump_position(user_address, symbol)`: Extends the Soroban TTL for a specific active user position. Keepers can be incentivized to call this periodically for all open positions to ensure no active trade data is archived.
 
 ---
 
-### 2.3 `ConfigManager` (Governance)
+### 2.3 `ConfigManager` (Governance & Parameters)
 
-**Role:** Stores global protocol variables and access controls.
+**Role:** The central brain for protocol parameters and permissions. It acts as the definitive source of truth for the `Vault`, `PositionManager`, and `OracleRouter`. It extensively utilizes OpenZeppelin's `AccessControl` for strict permissioning and `Initializable` for secure deployment.
 
-**State Variables (`Instance` Storage):**
+**State Variables (`Persistent` & `Instance` Storage):**
 
-- **Access Control:**
-    - `Admin`: Address capable of upgrading contracts.
-    - `Keepers`: List of whitelisted bot addresses authorized to execute liquidations and updates.
+* **Access Control Registry (OpenZeppelin Standard):**
+* `DEFAULT_ADMIN_ROLE`: The ultimate authority (usually a multi-sig or DAO). Can grant or revoke all other roles.
+* `UPGRADER_ROLE`: Authorized to call the Soroban `upgrade` function to push new WASM code for any of the protocol's upgradeable contracts.
+* `PAUSER_ROLE`: Authorized to pause/unpause the `Vault` and `PositionManager` during market emergencies or bug discoveries.
+* `KEEPER_ROLE`: The whitelisted bot network authorized to execute liquidations, trigger ADL, execute limit orders, and update global indices.
 
-- **Fee Configuration:**    
-    - `DepositFee`: Fee charged on LP minting (prevents arbitrage).     
-    - `FeeSplits`: Struct defining distribution (e.g., 5% to Keepers, 5% to Dev, 90% to Vault, x% for token holders if we launch a token). Needs to support multiple splits + receiver addresses, so we could support token launch and/or buybacks, extra rewards...
-    - used for borrow rates, PnL settlement, 
 
-- **Global Limits:**
-    - `MinCollateral`: Minimum USDC required to open a position (prevents dust attacks).
-    - `CooldownDuration`: Time required between `Vault.deposit` and `Vault.withdraw`.
+* **Fee Configuration:** * `DepositFee`: A small fee charged on LP minting to prevent short-term arbitrage against the Vault.
+* `FeeSplits`: A struct defining the distribution of protocol revenue (e.g., 5% to Keepers, 5% to Dev Wallet, 90% retained in Vault for LPs). Designed to be extensible to support future token launches, buybacks, or staking rewards.
+
+
+* **Global Protocol Limits:**
+* `MinCollateral`: Minimum USDC required to open a position (prevents dust/spam attacks).
+* `CooldownDuration`: The time required between `Vault.deposit` and `Vault.withdraw` to prevent sandwich attacks.
+* `MinPositionLifetime`: Global configuration for the anti-front-running lock (default: 5 minutes) enforced by the `PositionManager`.
+* `MaxUtilizationRatio`: The global ceiling (e.g., 85%) for Vault utilization to protect "Free Liquidity" for LPs.
+
+
+
+**Key Functions:**
+
+* `initialize(admin_address)`: OpenZeppelin setup function. Grants the `DEFAULT_ADMIN_ROLE` to the deploying multi-sig.
+* `grant_role(role, account)` / `revoke_role(role, account)`: Standard OpenZeppelin functions strictly callable by the `DEFAULT_ADMIN_ROLE`.
+* `update_fee_splits(...)`: Modifies the protocol revenue routing.
+* `update_protocol_limits(...)`: Adjusts collateral requirements, cooldowns, and utilization ratios based on market conditions.
+* **TTL Management:**
+* `bump_config_state()`: Extends the Soroban Time-To-Live (TTL) of the global configuration variables to ensure these critical parameters are never archived by the network.
 
 ---
 
-### 2.4 `OracleRouter` (Pricing)
+### 2.4 `OracleRouter` (Pricing & Caching)
 
-**Role:** Aggregates price data from multiple providers to return a median price, preventing manipulation. Sources must implement SEP-40 Oracle Standard (https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0040.md)
-TODO: we should cache price for some time, only afterwards refetch.
+**Role:** The protocol's pricing engine. It aggregates price data from multiple providers to return a secure median price, preventing flash-loan manipulation and single-point-of-failure risks. Sources must strictly implement the SEP-40 Oracle Standard. It utilizes OpenZeppelin's `Initializable` for deployment and relies on the `ConfigManager` for access control. To optimize gas costs on Soroban and reduce cross-contract call overhead, it implements a strict time-based caching mechanism.
 
 **State Variables (`Instance` Storage):**
 
-- **Feed Configuration:**
-    - `PrimarySources`: Map of `Symbol -> Address` (e.g., Band Protocol, Diode).
-    - `SecondarySources`: Backup oracles if primary fails.
+* **Feed Configuration:**
+* `PrimarySources`: Map of `Symbol -> List[Address]` (e.g., Band Protocol, Pyth).
+* `SecondarySources`: Backup oracles if primary feeds fail or return stale data.
 
-- **Safety Thresholds:**    
-    - `MaxDeviation`: Maximum allowed price difference between Oracle A and Oracle B.
-    - `StalenessThreshold`: Max time (e.g., 60 seconds) before a price feed is rejected as outdated.
+
+* **Cache State (Gas Optimization):**
+* `CachedPrices`: Map of `Symbol -> Price`.
+* `LastUpdateTime`: Map of `Symbol -> Timestamp`.
+
+
+* **Safety Thresholds:** * `MaxDeviation`: Maximum allowed price difference between primary oracle sources (e.g., 1%). If the spread is larger, the protocol pauses trading for that asset to prevent toxic arbitrage.
+* `StalenessThreshold`: Max time before an external SEP-40 price feed is rejected as outdated.
+* `CacheDuration`: How long the internal cache remains valid (e.g., 10 seconds) before a fresh cross-contract call to the external oracles is required.
+
+
+
+**Key Functions:**
+
+* `initialize(config_manager_address)`: OpenZeppelin setup function to link the router to the central governance contract.
+* `get_price(symbol)`: The core pricing function called by the `PositionManager`.
+* **Caching Logic:** Checks if `current_time <= LastUpdateTime + CacheDuration`. If true, it returns the value from `CachedPrices` to save compute fees.
+* **Fetch Logic:** If the cache is expired, it queries the `PrimarySources` via SEP-40, enforces the `MaxDeviation` and `StalenessThreshold` checks, updates the `CachedPrices` and `LastUpdateTime`, and returns the validated price.
+
+
+* `set_oracle_sources(...)`: Allows the `DEFAULT_ADMIN_ROLE` (via `ConfigManager`) to add or remove SEP-40 compliant oracle addresses.
+* **TTL Management:**
+* `bump_oracle_state()`: Extends the Soroban Time-To-Live (TTL) of the OracleRouter's instance storage, ensuring the configuration and thresholds are not archived by the network.
 
 ---
 
 ## 3. Economic Mechanisms & Fee Logic
 
-The protocol utilizes **Lazy Evaluation** (Cumulative Indices) to calculate fees accurately without iterating through positions.
+The protocol utilizes **Lazy Evaluation** (Cumulative Indices) to calculate fees accurately without iterating through individual positions.
 
-### 3.1 Liquidity Provider (LP) Economics
+### 3.1 The "Lazy Evaluation" Model (Cumulative Indices)
+
+In traditional finance, interest is calculated continuously. In a blockchain environment, we cannot update every user's balance every second due to computational constraints. Instead, we use a **Global Cumulative Index**.
+
+Think of this as an **Odometer** in a car:
+
+* When a user opens a position, we record the "Odometer Reading" ($I_{entry}$).
+* When they close, we check the "Current Odometer" ($I_{current}$).
+* The distance traveled (Fee accrued) is simply $I_{current} - I_{entry}$.
+
+**Mathematical Formulation**
+Let $R(t)$ be the instantaneous fee rate (Borrowing or Funding) at time $t$. The Global Index $I(t)$ is the integral of the rate over time:
+
+$$I(t)=\int_{0}^{t}R(\tau)d\tau$$
+
+For a specific user position of size $S$ opened at time $t_1$ and closed at time $t_2$, the total fee $F$ is:
+
+$$F=S \times (I(t_2)-I(t_1))$$
+
+**In Smart Contract Code (Discrete Time):** Every time an interaction occurs at timestamp $t_n$, we update the index:
+
+$$I_{new}=I_{old}+(\text{Rate} \times \Delta t)$$
+
+---
+
+### 3.2 Liquidity Provider (LP) Economics
 
 The `Vault` issues `STELLARS_LP` tokens representing a share of the total pool.
 
-- **Minting**: `STELLARS_LP` is minted when USDC is deposited.
-- **Burning**: `STELLARS_LP` is burned when USDC is withdrawn.
-- **Exchange Rate**: The price of `STELLARS_LP` auto-compounds based on the pool's performance (Trading Fees + Trader Losses - Trader Profits).
- $$\text{Price} = \frac{\text{Total USDC Balance} + \text{Unrealized PnL}}{\text{Total GMXLP Supply}}$$
-#### 3.1.1 Calculating the Unrealized PnL
+* **Minting**: `STELLARS_LP` is minted when USDC is deposited.
+* **Burning**: `STELLARS_LP` is burned when USDC is withdrawn.
+* **Exchange Rate**: The price of `STELLARS_LP` auto-compounds based on the pool's performance (Trading Fees + Trader Losses - Trader Profits).
+
+$$\text{Price} = \frac{\text{Total USDC Balance} + \text{Unrealized PnL}}{\text{Total STELLARSLP Supply}}$$
+
+#### 3.2.1 Calculating the Unrealized PnL
 
 Instead of tracking 10,000 individual entry prices, the `PositionManager` maintains two global variables per market:
 
-1. `Global Long Average Price`: The volume-weighted average entry price of _all_ active longs.
-2. `Global Short Average Price`: The volume-weighted average entry price of _all_ active shorts.
+1. `Global Long Average Price`: The volume-weighted average entry price of *all* active longs.
+2. `Global Short Average Price`: The volume-weighted average entry price of *all* active shorts.
 
 **The Formula for LP Price:** Since LPs are the counterparty (the "House"), the Traders' Profit is the LPs' Loss.
 
-LP Net Value=USDC Balance−(Net Global Trader PnL)
+$$\text{LP Net Value} = \text{USDC Balance} - (\text{Net Global Trader PnL})$$
 
-- If Traders are **Winning** ($1M), we subtract $1M from the Vault's value.
-- If Traders are **Losing** ($1M), we add $1M to the Vault's value (technically we subtract -$1M).
+* If Traders are **Winning** ($1M), we subtract $1M from the Vault's value.
+* If Traders are **Losing** ($1M), we add $1M to the Vault's value (technically we subtract -$1M).
 
-### 3.2 Borrowing Fee (Utilization-Based)
+---
 
-Traders pay a borrowing fee for the duration their position is open, compensating LPs for the opportunity cost of reserved liquidity.
+### 3.3 Borrowing Fee (Utilization-Based)
 
-- **Mechanism**: Dynamic Kink Curve.
-	- **Low Utilization (< 80%)**: Low, linear rate increase.
-    - **High Utilization (> 80%)**: Exponential rate increase to discourage depletion.
-    - (exact number a variable to be defined in the config manager)
-- **Calculation**:
+Traders pay a borrowing fee for the duration their position is open, compensating LPs for the opportunity cost of reserved liquidity. This fee represents the **cost of capital**. LPs are "renting out" their liquidity to traders, and the "rent" price increases as liquidity becomes scarce.
 
-$$\text{Utilization} = \frac{\text{Total Open Interest}}{\text{Total USDC Pool}}$$
+**The Variables**
 
-$$\text{Fee} = (\text{Current Borrow Index} - \text{Entry Borrow Index}) \times \text{Position Size}$$
+* $U$: **Utilization Ratio**. The percentage of the pool currently reserved by traders.
 
-- **Distribution**:
-    - **95%**: Retained in Pool (Increases `GMXLP` value).
-    - **5%**: Sent to Developer Wallet.
-    - (exact number a variable to be defined in the config manager)
-### 3.3 Funding Rate (Peer-to-Peer Balance)
+$$U = \frac{\text{Total Open Interest (OI)}}{\text{Total Pool Liquidity}}$$
 
-The funding rate incentivizes balance between Long and Short Open Interest (OI).
 
-- **Mechanism**: Velocity-based funding. The rate scales based on the imbalance between Long and Short OI.
-- **Calculation**:
+* $R_{borrow}$: The Borrow Rate per second.
 
-$$\text{Imbalance} = \text{Long OI} - \text{Short OI}$$
-$$\text{Rate} = \text{Clamp}(\text{Factor} \times \text{Imbalance})$$
+**The Formula (Dynamic Kink Curve)**
+We use a piecewise linear function (a "Kink") to incentivize solvency.
 
-- **Settlement**:
-    - If **Longs > Shorts**: Longs pay Shorts.
-    - If **Shorts > Longs**: Shorts pay Longs.
+* **Target Utilization ($U_{optimal}$):** Typically 80% (0.8).
+* **Slope 1 ($S_1$):** Low interest rate slope (Normal usage).
+* **Slope 2 ($S_2$):** High interest rate slope (Emergency usage).
 
-- **Keeper Spread (Revenue)**: The protocol takes a spread from the transfer.
-    - _Payer Side_: Pays 100% of the rate.
-    - _Receiver Side_: Receives 95% of the rate.
-    - _Keeper/Dev_: Receives the remaining 5% immediately from the Vault.
-    - to be configured in the config manager
+$$R_{borrow} = \begin{cases} \text{Base} + (U \times S_1) & \text{if } U \le U_{optimal} \\ \text{Base} + (U_{optimal} \times S_1) + ((U - U_{optimal}) \times S_2) & \text{if } U > U_{optimal} \end{cases}$$
+
+> **Economic Implication:** If usage jumps from 80% to 90%, the fee might jump exponentially (e.g., from 5% APR to 50% APR). This forces traders to close positions, naturally freeing up liquidity for the pool.
+
+**Fee Calculation & Distribution**
+
+
+$$\text{Fee} = (I_{current\_borrow} - I_{entry\_borrow}) \times \text{Position Size}$$
+
+* **95%**: Retained in Pool (Increases `STELLARS_LP` value).
+* **5%**: Sent to Developer Wallet.
+*(Note: Exact curve slopes, optimal utilization points, and distribution percentages are variables defined in the `ConfigManager`).*
+
+---
+
+### 3.4 Funding Rate (Peer-to-Peer Balance)
+
+This fee mechanism forces the price of the Perpetual Contract to converge with the Spot Price and incentivizes balance between Long and Short Open Interest. It is a **Peer-to-Peer** transfer between Longs and Shorts.
+
+**The Imbalance**
+Let $O_L$ be Long Open Interest and $O_S$ be Short Open Interest. The **Imbalance ($P$)** is:
+
+$$P=O_L-O_S$$
+
+**The Velocity Formula**
+Unlike standard interest, Funding Rates in modern perpetual DEXs often use **Velocity**. The rate accelerates if the imbalance persists.
+
+$$\text{Rate}_{funding} = \text{Previous Rate} + (\text{Velocity Constant} \times P)$$
+
+*However, for a V1 implementation, a simpler **Proportional Model** is often safer and easier to maintain:*
+
+$$\text{Rate}_{funding} = \text{Base} \times \left(\frac{O_L - O_S}{O_L + O_S}\right)$$
+
+**Settlement Logic (The "Spread")**
+
+* If $\text{Rate}_{funding} > 0$: Longs pay Shorts.
+* If $\text{Rate}_{funding} < 0$: Shorts pay Longs.
+
+The protocol takes a cut ($C_{keeper} \approx 5\%$) from the transfer to incentivize Keepers and generate revenue.
+
+$$F_{payer} = S \times \text{Rate}_{funding}$$
+
+$$F_{receiver} = S \times \text{Rate}_{funding} \times (1 - C_{keeper})$$
+
+$$F_{protocol} = S \times \text{Rate}_{funding} \times C_{keeper}$$
+
+* *Payer Side*: Pays 100% of the calculated rate.
+* *Receiver Side*: Receives the rate minus the spread.
+* *Keeper/Dev*: Receives the $F_{protocol}$ portion immediately from the Vault (configurable via `ConfigManager`).
 
 ---
 
@@ -220,7 +313,7 @@ $$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fee
 
 ### 4.4 Auto-Deleveraging (ADL)
 
-- **Trigger**: `Total Reserved Liquidity > 90%` of Vault Balance (Insolvency Risk).
+- **Trigger**: Keepers actively monitor Vault health. If Total Reserved PnL > 90% of Vault Balance, Keepers are authorized to call deverage_position(), targeting accounts sorted by highest Return on Equity (RoE).
 - **Action**: Calls `deverage(position_id)`.
 - **Logic**: Identifies the most profitable, highly leveraged positions and force-closes them at the current oracle price. This reduces the pool's liability and frees up liquidity.
 
@@ -233,7 +326,7 @@ $$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fee
 1. **User** calls `Vault.deposit(1000 USDC)`.
 2. **Vault** calculates current `PricePerShare`.
 3. **Vault** transfers 1000 USDC from User to Vault.
-4. **Vault** mints equivalent `GMXLP` tokens to User.
+4. **Vault** mints equivalent `STELLARS_LP` tokens to User.
 5. _Result_: User holds a liquid SEP-41 token representing their share.
 
 ### 5.2 Opening a Position (Long)
@@ -271,99 +364,7 @@ $$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fee
 - **Cooldown Period**: A 15-minute delay after depositing into the Vault before a withdrawal is permitted, preventing front-running of oracle updates or liquidation events.
 
 
----
-
-# Appendix A: Fee Mechanics & Mathematical Models
-
-## 1. The "Lazy Evaluation" Model (Cumulative Indices)
-
-In traditional finance, interest is calculated continuously. In a blockchain environment, we cannot update every user's balance every second due to computational constraints. Instead, we use a **Global Cumulative Index**.
-
-Think of this as an **Odometer** in a car.
-
-- When a user opens a position, we record the "Odometer Reading" (Ientry​).
-- When they close, we check the "Current Odometer" (Icurrent​).
-- The distance traveled (Fee accrued) is simply Icurrent​−Ientry​.
-
-### Mathematical Formulation
-
-Let R(t) be the instantaneous fee rate (Borrowing or Funding) at time t. The Global Index I(t) is the integral of the rate over time:
-
-I(t)=∫0t​R(τ)dτ
-
-For a specific user position of size S opened at time t1​ and closed at time t2​, the total fee F is:
-
-F=S×(I(t2​)−I(t1​))
-
-**In Smart Contract Code (Discrete Time):** Every time an interaction occurs at timestamp tn​, we update the index:
-
-Inew​=Iold​+(Rate×Δt)
-
----
-
-## 2. Borrowing Fee Calculation (Utilization Curve)
-
-This fee represents the **cost of capital**. LPs are "renting out" their liquidity to traders. The "rent" price increases as liquidity becomes scarce (Supply & Demand).
-
-### The Variables
-
-- U: **Utilization Ratio**. The percentage of the pool currently reserved by traders.
-    U=Total Pool LiquidityTotal Open Interest (OI)​
-    
-- Rborrow​: The Borrow Rate per second.
-
-### The Formula (Kinked Model)
-
-We use a piecewise linear function (a "Kink") to incentivize solvency.
-
-- **Target Utilization (Uoptimal​):** Typically 80% (0.8).
-- **Slope 1 (S1​):** Low interest rate slope (Normal usage).
-- **Slope 2 (S2​):** High interest rate slope (Emergency usage).
-
-Rborrow​={Base+(U×S1​)Base+(Uoptimal​×S1​)+((U−Uoptimal​)×S2​)​if U≤Uoptimal​if U>Uoptimal​​
-
-**Economic Implication:** If usage jumps from 80% to 90%, the fee might jump from 5% APR to 50% APR. This forces traders to close positions, naturally freeing up liquidity for the pool.
-
----
-
-## 3. Funding Rate Calculation (Velocity Model)
-
-This fee mechanism forces the price of the Perpetual Contract to converge with the Spot Price. It is a **Peer-to-Peer** transfer between Longs and Shorts.
-
-### The Imbalance
-
-Let OL​ be Long Open Interest and OS​ be Short Open Interest. The **Imbalance (P)** is:
-
-P=OL​−OS​
-
-### The Velocity Formula
-
-Unlike standard interest, Funding Rates in GMX-style perps often use **Velocity**. The rate accelerates if the imbalance persists.
-
-Ratefunding​=Previous Rate+(Velocity Constant×P)
-
-_However, for a V1 implementation, a simpler **Proportional Model** is often safer:_
-
-Ratefunding​=Base×(OL​+OS​OL​−OS​​)
-
-### Settlement Logic (The "Spread")
-
-- If Rate>0: Longs pay Shorts.
-- If Rate<0: Shorts pay Longs.
-
-**The "Spread" (Protocol Revenue):** The protocol takes a cut (Ckeeper​≈5%) from the transfer.
-
-Fpayer​=S×Rate
-
-Freceiver​=S×Rate×(1−Ckeeper​)
-
-Fprotocol​=S×Rate×Ckeeper​
-
----
-
-# Appendix B: Risk Analysis & Mitigation
-
-## 1. The "Infinite Upside" Risk (Long Squeeze)
+### 6.1 The "Infinite Upside" Risk (Long Squeeze)
 
 **The Risk:** In a Single-Asset Vault (USDC only), Long positions are mathematically dangerous.
 
@@ -378,7 +379,7 @@ Max Long OI≤Vault Balance×Risk Factor (e.g. 0.5)
 
 _This ensures that even if price doubles, the Vault can pay out._
 
-## 2. Auto-Deleveraging (ADL)
+### 6.2 Auto-Deleveraging (ADL)
 
 **The Risk:** Even with caps, extreme volatility can threaten solvency. If the Vault's "Buffer" (Liquidity not reserved for profits) drops near zero, new traders cannot withdraw, and LPs cannot exit.
 
@@ -389,7 +390,7 @@ _This ensures that even if price doubles, the Vault can pay out._
 3. **Action:** The smart contract forcibly closes their position at the current market price.
 4. **Outcome:** The trader keeps all their profits (they are happy/rich), but their position is gone. The Vault lowers its liability (it is safe).
 
-## 3. Oracle Front-Running
+### 6.3 Oracle Front-Running
 
 **The Risk:** A trader sees the price of BTC update on Binance _before_ it updates on the Stellar blockchain.
 
@@ -401,18 +402,5 @@ _This ensures that even if price doubles, the Vault can pay out._
 **Mitigation:**
 
 1. **Keeper Delay:** Users submit a "Request" to trade. A Keeper executes it 30 seconds later using the price _at that future moment_. (Standard GMX V2 model).
-2. **High-Frequency Oracles:** Use a "Pull Oracle" (like Pyth or Switchboard) where the price is updated in the _same transaction_ as the trade.
 
-
-## TODOs:
-- Use: https://docs.openzeppelin.com/stellar-contracts
-	- Access control
-	- Token
-	- Upgradeability
-	- Smart Contracts
-		- Telegram Bots?
-		- Multiple postions per real user?
-	- ...
-- Expose Keeper functions
-- Expose TTL functions
-- Wait period in the position to stop oracle front running (positions must live for min 5 min)
+---
