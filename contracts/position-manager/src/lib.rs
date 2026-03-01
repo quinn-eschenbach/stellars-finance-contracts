@@ -4,11 +4,19 @@ mod errors;
 mod storage;
 mod types;
 
-use soroban_sdk::{contract, contractclient, contractimpl, Address, Env, Symbol};
+use soroban_sdk::{contract, contractclient, contractimpl, contracttype, Address, Env, Symbol};
+use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
+use stellar_macros::UpgradeableMigratable;
 
 pub use errors::PositionManagerError;
 pub use types::{MarketInfo, Position};
 
+#[contracttype]
+pub struct UpgradeData {
+    pub version: u32,
+}
+
+#[derive(UpgradeableMigratable)]
 #[contract]
 pub struct PositionManagerContract;
 
@@ -129,6 +137,18 @@ impl PositionManager for PositionManagerContract {
     }
 
     fn get_market(env: Env, symbol: Symbol) -> MarketInfo {
+        todo!()
+    }
+}
+
+impl UpgradeableMigratableInternal for PositionManagerContract {
+    type MigrationData = UpgradeData;
+
+    fn _require_auth(e: &Env, operator: &Address) {
+        todo!()
+    }
+
+    fn _migrate(e: &Env, data: &Self::MigrationData) {
         todo!()
     }
 }

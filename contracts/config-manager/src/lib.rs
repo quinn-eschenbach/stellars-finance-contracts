@@ -4,11 +4,19 @@ mod errors;
 mod storage;
 mod types;
 
-use soroban_sdk::{contract, contractclient, contractimpl, Address, Env, Symbol};
+use soroban_sdk::{contract, contractclient, contractimpl, contracttype, Address, Env, Symbol};
+use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
+use stellar_macros::UpgradeableMigratable;
 
 pub use errors::ConfigManagerError;
 pub use types::{FeeSplits, ProtocolLimits};
 
+#[contracttype]
+pub struct UpgradeData {
+    pub version: u32,
+}
+
+#[derive(UpgradeableMigratable)]
 #[contract]
 pub struct ConfigManagerContract;
 
@@ -87,6 +95,18 @@ impl ConfigManager for ConfigManagerContract {
     }
 
     fn bump_config_state(env: Env) {
+        todo!()
+    }
+}
+
+impl UpgradeableMigratableInternal for ConfigManagerContract {
+    type MigrationData = UpgradeData;
+
+    fn _require_auth(e: &Env, operator: &Address) {
+        todo!()
+    }
+
+    fn _migrate(e: &Env, data: &Self::MigrationData) {
         todo!()
     }
 }

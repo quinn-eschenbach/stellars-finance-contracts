@@ -3,10 +3,18 @@
 mod errors;
 mod storage;
 
-use soroban_sdk::{contract, contractclient, contractimpl, Address, Env, String};
+use soroban_sdk::{contract, contractclient, contractimpl, contracttype, Address, Env, String};
+use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
+use stellar_macros::UpgradeableMigratable;
 
 pub use errors::VaultError;
 
+#[contracttype]
+pub struct UpgradeData {
+    pub version: u32,
+}
+
+#[derive(UpgradeableMigratable)]
 #[contract]
 pub struct VaultContract;
 
@@ -136,6 +144,18 @@ impl Vault for VaultContract {
     }
 
     fn symbol(env: Env) -> String {
+        todo!()
+    }
+}
+
+impl UpgradeableMigratableInternal for VaultContract {
+    type MigrationData = UpgradeData;
+
+    fn _require_auth(e: &Env, operator: &Address) {
+        todo!()
+    }
+
+    fn _migrate(e: &Env, data: &Self::MigrationData) {
         todo!()
     }
 }

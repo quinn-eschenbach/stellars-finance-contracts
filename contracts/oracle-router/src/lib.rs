@@ -4,11 +4,19 @@ mod errors;
 mod storage;
 mod types;
 
-use soroban_sdk::{contract, contractclient, contractimpl, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractclient, contractimpl, contracttype, Address, Env, Symbol, Vec};
+use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
+use stellar_macros::UpgradeableMigratable;
 
 pub use errors::OracleRouterError;
 pub use types::{CachedPrice, OracleConfig};
 
+#[contracttype]
+pub struct UpgradeData {
+    pub version: u32,
+}
+
+#[derive(UpgradeableMigratable)]
 #[contract]
 pub struct OracleRouterContract;
 
@@ -82,6 +90,18 @@ impl OracleRouter for OracleRouterContract {
     }
 
     fn bump_oracle_state(env: Env) {
+        todo!()
+    }
+}
+
+impl UpgradeableMigratableInternal for OracleRouterContract {
+    type MigrationData = UpgradeData;
+
+    fn _require_auth(e: &Env, operator: &Address) {
+        todo!()
+    }
+
+    fn _migrate(e: &Env, data: &Self::MigrationData) {
         todo!()
     }
 }
