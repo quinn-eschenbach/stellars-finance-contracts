@@ -39,7 +39,13 @@ The protocol consists of four interacting smart contracts. State is managed to e
 
 * `initialize(admin, config_manager)`: OpenZeppelin standard to set initial parameters. Can only be called once.
 * `deposit(amount)`: Reverts if `IsPaused == true`. Transfers USDC in, calculates current share price, and mints `STELLARS_LP`.
-* `withdraw(amount)`: Reverts if `IsPaused == true`. Calculates **Free Liquidity** (`TotalUSDC - ReservedUSDC - UnclaimedFees`). If the requested withdrawal amount exceeds Free Liquidity, the transaction **reverts** to protect active traders. Otherwise, burns `STELLARS_LP` and transfers USDC out.
+* `withdraw(amount)`: Reverts if `IsPaused == true`. Calculates **Free Liquidity** to ensure the protocol remains solvent against active winning trades:
+
+$$\text{Free Liquidity} = \text{TotalUSDC} - \text{ReservedUSDC} - \text{UnclaimedFees} - \max(0, \text{NetGlobalTraderPnL})$$
+
+
+
+If the requested withdrawal amount exceeds Free Liquidity, the transaction **reverts** to protect active traders. Otherwise, it burns `STELLARS_LP` and transfers USDC out.
 * `settle_pnl(amount, is_profit)`: Callable only by the `PositionManager`. Adjusts `TotalUSDC` and `ReservedUSDC` balances.
 * `pause()` / `unpause()`: Callable strictly by the `PAUSER_ROLE` defined in the `ConfigManager`.
 * **TTL Management:**
@@ -375,32 +381,74 @@ $$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fee
 
 **Mitigation (Max Global OI):** The protocol **MUST** enforce a hard cap on Long Open Interest relative to the Vault Balance.
 
-Max Long OI≤Vault Balance×Risk Factor (e.g. 0.5)
+$$\text{Max Long OI} \le \text{Vault Balance} \times \text{Risk Factor}$$
 
 _This ensures that even if price doubles, the Vault can pay out._
 
 ### 6.2 Auto-Deleveraging (ADL)
 
-**The Risk:** Even with caps, extreme volatility can threaten solvency. If the Vault's "Buffer" (Liquidity not reserved for profits) drops near zero, new traders cannot withdraw, and LPs cannot exit.
+**The Risk:** Even with global open interest caps, extreme market volatility or sudden, massive LP withdrawals can threaten the protocol's solvency. If the Vault's "Free Liquidity" drops to zero, LPs cannot exit, and the protocol effectively freezes.
 
-**The Solution (ADL):** This is a "forced profit taking" mechanism.
+**The Solution (ADL):** This is a "forced profit-taking" mechanism designed as the protocol's nuclear defense against insolvency and bank runs. Keepers actively monitor the Vault's health and are authorized to intervene if critical thresholds are breached.
 
-1. **Trigger:** If `Total Reserved PnL` > `90% of Vault Balance`.
-2. **Selection:** Identify traders with the highest **PnL Percentage** (RoE).
-3. **Action:** The smart contract forcibly closes their position at the current market price.
-4. **Outcome:** The trader keeps all their profits (they are happy/rich), but their position is gone. The Vault lowers its liability (it is safe).
+1. **The Triggers (Dual-Condition):** Keepers can initiate ADL if *either* of the following conditions is met:
+* **Insolvency Risk (PnL-Based):** `Total Reserved PnL > 90% of Vault Balance`. (Traders are winning too much, and the Vault is running out of funds to pay them).
+* **Liquidity Crisis Risk (Utilization-Based):** `ReservedUSDC / TotalUSDC > 95%`. (Too much of the Vault's collateral is locked up backing trades, meaning LPs have no exit liquidity).
+
+
+2. **Selection:** The `PositionManager` identifies the most profitable traders by sorting for the highest **Return on Equity (RoE) / PnL Percentage**.
+3. **Action:** A Keeper calls `deverage_position()`, and the smart contract forcibly closes the targeted trader's position at the current oracle price.
+4. **Outcome:** The trader keeps all of their accrued profits (they are fully paid out), but their position is closed. This instantly reduces the Vault's liability and frees up USDC back into the `Free Liquidity` pool, re-securing the protocol.
 
 ### 6.3 Oracle Front-Running
 
-**The Risk:** A trader sees the price of BTC update on Binance _before_ it updates on the Stellar blockchain.
+**The Risk:** Blockchain oracles inherently suffer from slight latency. A malicious trader could monitor centralized exchanges (like Binance) and execute trades on the DEX *before* the on-chain oracle updates its price.
 
 1. See BTC pump on Binance.
-2. Open Long on your DEX (at old, lower price).
+2. Open Long on the DEX (at the old, lower oracle price).
 3. Oracle updates 5 seconds later.
-4. Close Long for instant risk-free profit.
+4. Close Long for instant, risk-free profit.
 
-**Mitigation:**
+**Mitigation (Minimum Position Lifetime):**
+To neutralize high-frequency oracle front-running and toxic wash trading without building a complex execution-delay queue, the protocol enforces a strict time-lock on all trades.
 
-1. **Keeper Delay:** Users submit a "Request" to trade. A Keeper executes it 30 seconds later using the price _at that future moment_. (Standard GMX V2 model).
+1. **The Lock:** When a user opens or adds to a position, the `PositionManager` records the current block timestamp as `LastIncreasedTime`.
+2. **The Enforcement:** The `MinPositionLifetime` parameter (configurable in the `ConfigManager`, default: 5 minutes) dictates how long the position must remain open. If a user attempts to call `decrease_position` before `LastIncreasedTime + MinPositionLifetime` has passed, the transaction will revert.
+3. **The Result:** The trader is forced to hold the position and take on real market risk for at least 5 minutes. This entirely destroys the viability of risk-free, instant arbitrage against oracle latency.
+Here is the draft for your V2 Roadmap. It outlines these advanced features perfectly, framing them as deliberate, complex innovations for the protocol's next phase. You can drop this directly at the bottom of your Readme!
 
 ---
+
+## 7. V2 Roadmap: Capital Efficiency & Advanced Margin
+
+While Version 1 of the protocol prioritizes strict $O(1)$ scalability, isolated risk, and absolute mathematical solvency, Version 2 is designed to introduce industry-leading capital efficiency. The V2 upgrade will focus on advanced portfolio management and composable liquidity.
+
+### 7.1 Split-Yield LP Staking (Sticky Liquidity)
+
+**The Concept:** Separating the underlying directional risk of the Vault from the protocol's fee generation.
+
+**The Mechanism:**
+
+* In V1, the `STELLARS_LP` token auto-compounds both trader PnL (the Vault's wins/losses) and trader fees (Borrowing/Funding rates).
+* In V2, the protocol will introduce a native `StakingContract`. The base `STELLARS_LP` token will only reflect the net PnL of traders. To earn the lucrative protocol fees (the 95% revenue split), users must **stake** their LP tokens.
+* **Economic Impact:** This allows the protocol to introduce time-locks or boosted emissions for long-term stakers, creating highly "sticky liquidity" that defends against sudden capital flight while rewarding committed LPs.
+
+### 7.2 Cross-Margin Account Health
+
+**The Concept:** Transitioning from Isolated Margin (where each position is siloed) to a unified Cross-Margin architecture.
+
+**The Mechanism:**
+
+* Instead of evaluating liquidations based on a single `Position Health`, Keepers will evaluate `User Global Health`.
+* A trader's unrealized profit from a winning Long (e.g., BTC) can be dynamically used to offset the margin requirements of a losing Short (e.g., ETH) in the same account.
+* **Technical Challenge:** This requires upgrading the smart contract state to safely aggregate multi-asset PnL and total fees on the fly. It shifts the protocol away from strictly $O(1)$ updates and requires sophisticated partial-liquidation logic to determine which asset Keepers should close first during a margin call.
+
+### 7.3 Yield-Bearing Collateral (LP as Margin)
+
+**The Concept:** The ultimate expression of DeFi composability. Traders will be able to use their deposited liquidity as the active collateral for their leveraged trades.
+
+**The Mechanism:**
+
+* A user deposits USDC, receives `STELLARS_LP`, stakes it to earn protocol fees, and then uses the value of that staked LP position as collateral to open a 10x Long.
+* **Economic Impact:** The user is effectively acting as the "House" (earning yield) while simultaneously trading, maximizing their capital efficiency.
+* **Risk Mitigation:** Because the value of the `STELLARS_LP` token fluctuates based on global trader performance, using it as collateral introduces the risk of a "death spiral" (where a drop in LP value triggers cascading trader liquidations). V2 will introduce strict Collateral Haircuts (e.g., LP tokens are only valued at 80% of their face value for margin purposes) to safely isolate the volatility of yield-bearing collateral.
