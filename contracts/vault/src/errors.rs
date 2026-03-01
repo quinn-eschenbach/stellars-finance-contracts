@@ -1,0 +1,13 @@
+use soroban_sdk::contracterror;
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum VaultError {
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    Paused = 3,
+    InsufficientFreeLiquidity = 4,
+    Unauthorized = 5,
+    ZeroAmount = 6,
+}

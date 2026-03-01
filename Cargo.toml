@@ -1,6 +1,27 @@
-[package]
-name = "stellars-finance-contracts"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
+members = [
+    "contracts/vault",
+    "contracts/position-manager",
+    "contracts/config-manager",
+    "contracts/oracle-router",
+    "test-suites",
+    "mocks/mock-token",
+    "mocks/mock-oracle",
+]
 
-[dependencies]
+[workspace.dependencies]
+soroban-sdk = { version = "=23.5.2" }
+stellar-tokens = { version = "=0.6.0" }
+stellar-access = { version = "=0.6.0" }
+stellar-contract-utils = { version = "=0.6.0" }
+stellar-macros = { version = "=0.6.0" }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = false
+strip = "symbols"
+lto = true
+codegen-units = 1
+panic = "abort"

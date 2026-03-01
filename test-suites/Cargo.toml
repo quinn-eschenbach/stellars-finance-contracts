@@ -1,0 +1,16 @@
+[package]
+name = "test-suites"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+vault = { path = "../contracts/vault", features = ["testutils"] }
+position-manager = { path = "../contracts/position-manager", features = ["testutils"] }
+config-manager = { path = "../contracts/config-manager", features = ["testutils"] }
+oracle-router = { path = "../contracts/oracle-router", features = ["testutils"] }
+mock-token = { path = "../mocks/mock-token", features = ["testutils"] }
+mock-oracle = { path = "../mocks/mock-oracle", features = ["testutils"] }
