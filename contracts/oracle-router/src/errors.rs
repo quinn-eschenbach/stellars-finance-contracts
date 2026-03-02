@@ -7,7 +7,8 @@ pub enum OracleRouterError {
     AlreadyInitialized = 1,
     NotInitialized = 2,
     Unauthorized = 3,
-    /// All price sources returned data older than StalenessThreshold.
+    /// All price sources returned data older than StalenessThreshold,
+    /// or returned invalid (zero/negative) prices.
     StalePrice = 4,
     /// Spread between primary oracle sources exceeds MaxDeviation.
     PriceDeviationTooHigh = 5,
@@ -15,4 +16,6 @@ pub enum OracleRouterError {
     NoPriceSources = 6,
     /// Cross-contract call to an oracle source failed.
     PriceFetchFailed = 7,
+    /// Oracle configuration field is invalid (e.g., zero cache_duration).
+    InvalidConfig = 8,
 }

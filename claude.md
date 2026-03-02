@@ -23,7 +23,7 @@
 * **Access Control:** Utilize OZ's `AccessControl` and `Ownable` modules for defining admin, keeper, and pauser roles instead of custom authentication routing.
 * **Upgradeability & Initialization:** Always use OZ's `Initializable` pattern for setting up upgradeable contracts securely, and the `Upgradeable` module for WASM code replacements.
 * **Security Features:** Rely on OZ's `Pausable` for emergency stops and emergency state management.
-
+* **Vault** Rely on the Vault contract to use the ERC-4626 tokenized vault standard, enabling fungible tokens to represent shares in an underlying asset pool
 
 * **Why:** OpenZeppelin's code is audited, battle-tested, and represents the ecosystem standard. Minimizing custom code for standard behaviors drastically reduces the security surface area of the protocol.
 

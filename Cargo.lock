@@ -250,6 +250,7 @@ dependencies = [
 name = "config-manager"
 version = "0.1.0"
 dependencies = [
+ "shared",
  "soroban-sdk",
  "stellar-access",
  "stellar-contract-utils",
@@ -933,6 +934,9 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 name = "oracle-router"
 version = "0.1.0"
 dependencies = [
+ "config-manager",
+ "mock-oracle",
+ "shared",
  "soroban-sdk",
  "stellar-access",
  "stellar-contract-utils",
@@ -1252,6 +1256,13 @@ checksum = "75872d278a8f37ef87fa0ddbda7802605cb18344497949862c0d4dcb291eba60"
 dependencies = [
  "digest",
  "keccak",
+]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
 ]
 
 [[package]]

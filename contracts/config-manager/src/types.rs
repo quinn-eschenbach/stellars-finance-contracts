@@ -36,17 +36,13 @@ pub struct ProtocolLimits {
     pub max_utilization_ratio: i128,
 }
 
-/// Role identifiers used with OpenZeppelin AccessControl.
-/// Each is a short Symbol passed to grant_role / revoke_role.
+/// Role identifiers — canonical strings are defined in the `shared` crate.
+/// Re-exported here so existing code referencing `roles::DEFAULT_ADMIN` etc. compiles unchanged.
 pub mod roles {
-
-    /// Ultimate authority — typically a multi-sig or DAO. Can manage all roles.
-    pub const DEFAULT_ADMIN: &str = "ADMIN";
-    /// Authorized to push WASM upgrades to protocol contracts.
-    pub const UPGRADER: &str = "UPGRADER";
-    /// Authorized to pause/unpause Vault and PositionManager.
-    pub const PAUSER: &str = "PAUSER";
-    /// Whitelisted keeper bot network for liquidations, ADL, index updates.
-    pub const KEEPER: &str = "KEEPER";
-
+    pub use shared::{
+        ROLE_ADMIN as DEFAULT_ADMIN,
+        ROLE_UPGRADER as UPGRADER,
+        ROLE_PAUSER as PAUSER,
+        ROLE_KEEPER as KEEPER,
+    };
 }

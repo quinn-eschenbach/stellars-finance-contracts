@@ -18,6 +18,8 @@ pub struct UpgradeData {
 #[contract]
 pub struct VaultContract;
 
+// TODO: SHOULD USE: https://docs.openzeppelin.com/stellar-contracts/tokens/vault/vault
+
 #[contractclient(name = "VaultClient")]
 pub trait Vault {
     /// Initialize the vault. Can only be called once.

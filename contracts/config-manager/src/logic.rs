@@ -2,11 +2,11 @@ use soroban_sdk::{panic_with_error, Address, Env, Symbol};
 
 use crate::{
     errors::ConfigManagerError,
-    storage::{
-        RoleMemberKey, StorageKey, INSTANCE_BUMP, INSTANCE_THRESHOLD, SHARED_BUMP, SHARED_THRESHOLD,
-    },
+    storage::{RoleMemberKey, StorageKey, SHARED_BUMP, SHARED_THRESHOLD},
     types::roles,
 };
+
+pub use shared::bump_instance_ttl;
 
 /// Read the stored admin address from instance storage.
 /// Returns `None` if the contract is not yet initialized.
@@ -36,14 +36,6 @@ pub fn require_admin_with_auth(env: &Env, caller: &Address) {
 /// Centralises the repeated `Symbol::new(env, roles::DEFAULT_ADMIN)` call.
 pub fn admin_role_symbol(env: &Env) -> Symbol {
     Symbol::new(env, roles::DEFAULT_ADMIN)
-}
-
-/// Extend instance storage TTL to prevent archival.
-/// Centralises the repeated `env.storage().instance().extend_ttl(...)` pattern.
-pub fn bump_instance_ttl(env: &Env) {
-    env.storage()
-        .instance()
-        .extend_ttl(INSTANCE_THRESHOLD, INSTANCE_BUMP);
 }
 
 fn bump_role_member_ttl(env: &Env, key: &StorageKey) {
