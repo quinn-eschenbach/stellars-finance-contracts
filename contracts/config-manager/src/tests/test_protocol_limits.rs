@@ -1,0 +1,211 @@
+//! Tests for F-3: ProtocolLimits boundary validation.
+//!
+//! `update_protocol_limits` must reject:
+//!   - min_collateral <= 0  (must be >= 1)
+//!   - max_utilization_ratio <= 0 or > 10_000
+//!
+//! Invalid-input tests FAIL against the current implementation (no validation).
+//! Valid-input tests PASS (regression anchors).
+
+use soroban_sdk::Env;
+
+use crate::{ConfigManagerError, ProtocolLimits};
+
+use super::helpers::{deploy_initialized, valid_limits};
+
+/// F-3-a: min_collateral = 0 must be rejected with InvalidLimits (5).
+#[test]
+fn test_update_protocol_limits_zero_min_collateral_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: 0,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: 8_500,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(result.is_err(), "F-3-a: min_collateral = 0 must return an error");
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
+        "F-3-a: error code must be InvalidLimits (5)"
+    );
+}
+
+/// F-3-b: min_collateral = -1 must be rejected with InvalidLimits (5).
+#[test]
+fn test_update_protocol_limits_negative_min_collateral_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: -1,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: 8_500,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(result.is_err(), "F-3-b: min_collateral = -1 must return an error");
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
+        "F-3-b: error code must be InvalidLimits (5)"
+    );
+}
+
+/// F-3-c: max_utilization_ratio = 0 must be rejected with InvalidLimits (5).
+#[test]
+fn test_update_protocol_limits_zero_max_utilization_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: 100,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: 0,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(result.is_err(), "F-3-c: max_utilization_ratio = 0 must return an error");
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
+        "F-3-c: error code must be InvalidLimits (5)"
+    );
+}
+
+/// F-3-d: max_utilization_ratio = 10_001 (above 100%) must be rejected.
+#[test]
+fn test_update_protocol_limits_max_utilization_above_10000_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: 100,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: 10_001,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(result.is_err(), "F-3-d: max_utilization_ratio = 10_001 must return an error");
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
+        "F-3-d: error code must be InvalidLimits (5)"
+    );
+}
+
+/// F-3-e: Valid limits must succeed and be persisted (regression anchor).
+#[test]
+fn test_update_protocol_limits_valid_values_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = valid_limits();
+    client.update_protocol_limits(&admin, &limits);
+
+    let stored = client.get_protocol_limits();
+    assert_eq!(stored.min_collateral, 100, "stored min_collateral must match input");
+    assert_eq!(stored.max_utilization_ratio, 8_500, "stored max_utilization_ratio must match input");
+    assert_eq!(stored.cooldown_duration, 60, "stored cooldown_duration must match input");
+    assert_eq!(stored.min_position_lifetime, 60, "stored min_position_lifetime must match input");
+}
+
+/// F-3 boundary: max_utilization_ratio = 10_000 (exactly 100%) must succeed.
+#[test]
+fn test_update_protocol_limits_max_utilization_exactly_10000_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: 1,
+        cooldown_duration: 0,
+        min_position_lifetime: 0,
+        max_utilization_ratio: 10_000,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(
+        result.is_ok(),
+        "F-3 boundary: max_utilization_ratio = 10_000 must succeed (boundary is inclusive)"
+    );
+}
+
+/// F-3 boundary: min_collateral = 1 is the minimum legal positive value.
+#[test]
+fn test_update_protocol_limits_min_collateral_of_one_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: 1,
+        cooldown_duration: 0,
+        min_position_lifetime: 0,
+        max_utilization_ratio: 8_500,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(
+        result.is_ok(),
+        "F-3 boundary: min_collateral = 1 must succeed (minimum positive value)"
+    );
+}
+
+/// F-3 adversarial: i128::MIN min_collateral must be rejected — no implicit wrap-around.
+#[test]
+fn test_update_protocol_limits_i128_min_collateral_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: i128::MIN,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: 8_500,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(result.is_err(), "F-3 adversarial: i128::MIN min_collateral must return an error");
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
+        "F-3 adversarial: error code must be InvalidLimits (5)"
+    );
+}
+
+/// F-3 adversarial: negative max_utilization_ratio must be rejected.
+#[test]
+fn test_update_protocol_limits_negative_max_utilization_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let limits = ProtocolLimits {
+        min_collateral: 100,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: -1,
+    };
+
+    let result = client.try_update_protocol_limits(&admin, &limits);
+    assert!(result.is_err(), "F-3 adversarial: max_utilization_ratio = -1 must return an error");
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
+        "F-3 adversarial: error code must be InvalidLimits (5)"
+    );
+}

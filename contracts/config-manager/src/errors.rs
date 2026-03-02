@@ -11,4 +11,6 @@ pub enum ConfigManagerError {
     InvalidFeeSplits = 4,
     /// One or more ProtocolLimits values are out of acceptable range.
     InvalidLimits = 5,
+    /// Deposit fee is outside the valid range [0, 10_000] bps.
+    InvalidDepositFee = 6,
 }

@@ -32,6 +32,57 @@
 * **Organize with Modules and Crates:** Use Rust's module system (`mod`, `pub mod`) for namespacing, scoping, and organizing code into logical units.
 * **Separate Concerns:** Keep the primary contract file (`lib.rs`) focused on high-level routing and macro definitions, and delegate core functionality to dedicated sub-modules.
 
+
+CRITICAL DIRECTIVE: Do NOT dump all code into a single lib.rs file. You must structure the contract logically using standard Rust module (mod) separation and isolate tests in their own directory. Emulate the architectural standards of enterprise-grade DeFi protocols.
+
+Required Project Structure:
+Break your output down into the following distinct files and directories. When generating code, specify which file you are writing.
+
+1. src/lib.rs (The Entry Root)
+
+    Must contain #![no_std].
+
+    Only use it to declare modules (e.g., pub mod contract;, pub mod storage;, pub mod errors;).
+
+    Zero implementation logic should be in this file.
+
+2. src/errors.rs (Error Handling)
+
+    Define all contract-specific errors using #[contracterror].
+
+    Keep error variants descriptive and grouped logically.
+
+3. src/types.rs & src/storage.rs (Data & State Management)
+
+    Define all custom data types (Structs and Enums) using #[contracttype].
+
+    Define the DataKey enum for storage keys.
+
+    Implement helper functions for reading from and writing to env.storage().persistent(), .instance(), and .temporary(). Isolate all raw Soroban storage access in this file.
+
+4. src/math.rs (If applicable)
+
+    If the contract involves financial calculations, token emission logic, or fixed-point arithmetic, place pure functions here.
+
+    Do not include the Soroban Env context unless absolutely necessary (e.g., for logging). Keep these as easily testable Rust unit functions.
+
+5. src/logic.rs or Feature-Specific Modules (e.g., src/liquidation.rs)
+
+    Put the heavy, complex business logic in separate files.
+
+    Functions here should take &Env and the necessary data parameters, perform validation, execute state changes via storage.rs, and return results to the main contract interface.
+
+6. src/contract.rs (The Public Interface)
+
+    Define the main pub struct MyContract;
+
+    Write the #[contractimpl] block here.
+
+    These functions should act strictly as routers. They should parse inputs, immediately delegate to functions in storage.rs or your feature modules, and return the result. Keep these functions concise (ideally under 20 lines each).
+
+7. tests/ Directory (TDD Architecture)
+Assume this project uses strictly Test-Driven Development (TDD). Do NOT generate inline #[cfg(test)] modules inside the src/ files. Instead, structure tests in a dedicated tests/ directory at the root of the workspace. Group tests strictly by the function or feature they are validating.
+
 ## Soroban & Blend-Specific Best Practices
 
 Based on highly optimized repositories like `blend-capital/blend-contracts-v2`, follow these architectural patterns when building on Soroban:
@@ -50,7 +101,7 @@ When tasked with implementing new smart contract logic (excluding basic boilerpl
 **The TDD Orchestration Loop:**
 
 1. **Plan & Breakdown:** First, break the overarching requirement down into the smallest possible atomic units (e.g., "Implement the math for calculating the borrow fee index"). Create a markdown checklist in your main context.
-2. **Delegate to Test Writer:** Explicitly invoke the `test-writer` subagent. Pass it the atomic requirement and instruct it to write comprehensive, failing tests. 
+2. **Delegate to Test Writer:** Explicitly invoke the `test-writer` subagent. Pass it the atomic requirement and instruct it to write comprehensive, failing tests. Only have it work on one function implementation at a time.
 3. **Delegate to Code Writer:** Once the tests are written, explicitly invoke the `code-writer` subagent. Pass it the file paths to the newly created tests and the target implementation files. Instruct it to write the minimal code required to make the tests pass.
 4. **Verify:** Run the test suite using your Bash tool. 
     * If tests fail: Send the error logs back to the `code-writer` subagent. Do not proceed until tests pass.
