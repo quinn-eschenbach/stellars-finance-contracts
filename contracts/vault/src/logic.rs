@@ -1,19 +1,9 @@
-use soroban_sdk::{contractclient, panic_with_error, Address, Env};
+use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
 use stellar_tokens::vault::Vault;
 
 use crate::errors::VaultError;
 use crate::storage;
-
-// ---------------------------------------------------------------------------
-// SEP-41 token client for type-safe transfers
-// ---------------------------------------------------------------------------
-
-#[contractclient(name = "TokenClient")]
-#[allow(dead_code)]
-pub trait TokenInterface {
-    fn transfer(env: Env, from: Address, to: Address, amount: i128);
-}
 
 // ---------------------------------------------------------------------------
 // Initialization guards

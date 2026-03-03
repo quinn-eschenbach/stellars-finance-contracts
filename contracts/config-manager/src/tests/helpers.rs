@@ -21,6 +21,7 @@ pub fn valid_limits() -> ProtocolLimits {
         cooldown_duration: 60,
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
+        funding_cut_bps: 500,
     }
 }
 

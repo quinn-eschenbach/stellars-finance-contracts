@@ -18,4 +18,8 @@ pub enum PositionManagerError {
     HealthFactorOk = 9,
     /// deverage_position called but ADL trigger conditions are not met.
     AdlNotTriggered = 10,
+    /// Position leverage exceeds the per-market max leverage.
+    ExcessiveLeverage = 11,
+    /// No max leverage configured for this market symbol.
+    MarketNotConfigured = 12,
 }

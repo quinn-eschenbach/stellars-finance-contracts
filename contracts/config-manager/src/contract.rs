@@ -114,6 +114,9 @@ impl ConfigManager for ConfigManagerContract {
         if limits.max_utilization_ratio < 1 || limits.max_utilization_ratio > 10_000 {
             panic_with_error!(&env, ConfigManagerError::InvalidLimits);
         }
+        if limits.funding_cut_bps >= 10_000 {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
         storage::save_protocol_limits(&env, &limits);
         bump_instance_ttl(&env);
     }

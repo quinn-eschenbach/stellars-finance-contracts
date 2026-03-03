@@ -975,10 +975,16 @@ dependencies = [
 name = "position-manager"
 version = "0.1.0"
 dependencies = [
+ "config-manager",
+ "mock-oracle",
+ "mock-token",
+ "oracle-router",
+ "shared",
  "soroban-sdk",
  "stellar-access",
  "stellar-contract-utils",
  "stellar-macros",
+ "vault",
 ]
 
 [[package]]

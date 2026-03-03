@@ -34,6 +34,9 @@ pub struct ProtocolLimits {
     /// Hard cap on vault utilization in basis points (e.g., 8500 = 85%).
     /// No new positions can be opened once this ceiling is reached.
     pub max_utilization_ratio: i128,
+    /// Protocol's cut of positive funding fees in basis points (e.g., 500 = 5%).
+    /// Applied when a trader receives funding; the protocol retains this fraction.
+    pub funding_cut_bps: u32,
 }
 
 /// Role identifiers — canonical strings are defined in the `shared` crate.

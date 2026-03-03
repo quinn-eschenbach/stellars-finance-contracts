@@ -1,0 +1,711 @@
+// ---------------------------------------------------------------------------
+// Tests for: deverage_position (Auto-Deleveraging / ADL)
+//
+// These tests are written BEFORE the implementation (TDD). They MUST compile
+// but are expected to FAIL until deverage_position is fully implemented.
+//
+// The function under test:
+//   fn deverage_position(env, caller, trader, symbol)
+//
+// Behavior:
+//   - KEEPER-only (caller.require_auth + require_keeper)
+//   - Requires initialized + NOT paused
+//   - ADL triggers when EITHER:
+//       1. pnl_ratio > 9500 bps (net trader PnL > 95% of total_assets)
+//       2. utilization > 9500 bps (reserved > 95% of total_assets)
+//   - If neither condition met => revert AdlNotTriggered (error 10)
+//   - Force-close the position:
+//       Trader keeps accrued profits, same settlement as full close,
+//       delete position, update OI, update total_reserved, release liquidity.
+// ---------------------------------------------------------------------------
+
+use soroban_sdk::{
+    symbol_short,
+    testutils::{Address as _, Ledger, LedgerInfo},
+    vec, Address, Env, Symbol,
+};
+
+use crate::contract::PositionManagerContract;
+use crate::math::{self, PRECISION};
+use crate::storage;
+use crate::PositionManagerClient;
+
+use config_manager::{ConfigManagerClient, ConfigManagerContract};
+use mock_oracle::{MockOracle, MockOracleClient};
+use mock_token::{MockToken, MockTokenClient};
+use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
+use vault::{VaultContract, VaultContractClient};
+
+// ===========================================================================
+// Constants
+// ===========================================================================
+
+/// BTC price: $50,000 scaled by 1e7
+const BTC_PRICE: i128 = 50_000 * PRECISION;
+
+/// 1 USDC = 1_000_000 (6 decimals)
+const USDC_UNIT: i128 = 1_000_000;
+
+/// Trader starts with 100,000 USDC
+const TRADER_BALANCE: i128 = 100_000 * USDC_UNIT;
+
+/// Ledger timestamp used in tests
+const TEST_TIMESTAMP: u64 = 1_700_000_000;
+
+/// Min position lifetime (60s) + oracle cache (10s) + buffer
+const TIME_ADVANCE: u64 = 75;
+
+// ===========================================================================
+// Test fixture
+// ===========================================================================
+
+struct TestFixture<'a> {
+    env: Env,
+    pm_client: PositionManagerClient<'a>,
+    vault_client: VaultContractClient<'a>,
+    oracle_client: MockOracleClient<'a>,
+    oracle_router_client: OracleRouterClient<'a>,
+    config_client: ConfigManagerClient<'a>,
+    usdc_client: MockTokenClient<'a>,
+    usdc_addr: Address,
+    admin: Address,
+    keeper: Address,
+    trader: Address,
+    pm_addr: Address,
+    vault_addr: Address,
+}
+
+/// Deploy all protocol contracts. The vault receives a SMALL deposit so that
+/// positions can easily push utilization above the ADL thresholds.
+///
+/// Vault deposit: 100,000 USDC (small, so 96k reserved = 96% utilization)
+fn setup_adl<'a>() -> TestFixture<'a> {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    env.ledger().set(LedgerInfo {
+        timestamp: TEST_TIMESTAMP,
+        protocol_version: 23,
+        sequence_number: 100,
+        network_id: [0u8; 32],
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    let admin = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    let trader = Address::generate(&env);
+    let lp = Address::generate(&env);
+
+    // --- 1. ConfigManager ---
+    let config_id = env.register(ConfigManagerContract, ());
+    let config_client = ConfigManagerClient::new(&env, &config_id);
+    config_client.initialize(&admin);
+
+    let pauser_role = Symbol::new(&env, "PAUSER");
+    let keeper_role = Symbol::new(&env, "KEEPER");
+    let admin_role = Symbol::new(&env, "ADMIN");
+    config_client.grant_role(&admin, &pauser_role, &admin);
+    config_client.grant_role(&admin, &keeper_role, &admin);
+    config_client.grant_role(&admin, &admin_role, &admin);
+    config_client.grant_role(&admin, &keeper_role, &keeper);
+
+    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
+        min_collateral: 1_000_000,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: 8_500,
+        funding_cut_bps: 500,
+    });
+
+    // --- 2. MockToken (USDC) ---
+    let usdc_id = env.register(MockToken, ());
+    let usdc_client = MockTokenClient::new(&env, &usdc_id);
+    usdc_client.initialize(
+        &admin,
+        &6u32,
+        &soroban_sdk::String::from_str(&env, "USD Coin"),
+        &soroban_sdk::String::from_str(&env, "USDC"),
+    );
+
+    // --- 3. MockOracle ---
+    let oracle_id = env.register(MockOracle, ());
+    let oracle_client = MockOracleClient::new(&env, &oracle_id);
+    oracle_client.initialize();
+    oracle_client.set_price(&symbol_short!("BTC"), &BTC_PRICE);
+
+    // --- 4. OracleRouter ---
+    let oracle_router_id = env.register(OracleRouterContract, ());
+    let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
+    oracle_router_client.initialize(&config_id);
+    oracle_router_client.set_oracle_config(
+        &admin,
+        &OracleConfig {
+            max_deviation_bps: 500,
+            staleness_threshold: 3600,
+            cache_duration: 10,
+        },
+    );
+    oracle_router_client.set_oracle_sources(
+        &admin,
+        &symbol_short!("BTC"),
+        &vec![&env, oracle_id.clone()],
+        &vec![&env],
+    );
+
+    // --- 5. PositionManager ---
+    let pm_id = env.register(PositionManagerContract, ());
+    let pm_client = PositionManagerClient::new(&env, &pm_id);
+
+    // --- 6. Vault with SMALL deposit ---
+    let vault_id = env.register(VaultContract, ());
+    let vault_client = VaultContractClient::new(&env, &vault_id);
+    vault_client.initialize(&admin, &usdc_id, &config_id, &pm_id);
+
+    // Only 100,000 USDC in vault -- makes it easy to breach 95% utilization
+    let vault_deposit: i128 = 100_000 * USDC_UNIT;
+    usdc_client.mint(&lp, &vault_deposit);
+    vault_client.deposit(&vault_deposit, &lp, &lp, &lp);
+
+    // --- 7. Initialize PositionManager ---
+    pm_client.initialize(&vault_id, &config_id, &oracle_router_id);
+    pm_client.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);
+
+    // --- Fund trader ---
+    usdc_client.mint(&trader, &TRADER_BALANCE);
+
+    // SAFETY: env lives in the fixture; clients borrow from it.
+    let pm_client = unsafe { core::mem::transmute(pm_client) };
+    let vault_client = unsafe { core::mem::transmute(vault_client) };
+    let oracle_client = unsafe { core::mem::transmute(oracle_client) };
+    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let config_client = unsafe { core::mem::transmute(config_client) };
+    let usdc_client = unsafe { core::mem::transmute(usdc_client) };
+
+    TestFixture {
+        env,
+        pm_client,
+        vault_client,
+        oracle_client,
+        oracle_router_client,
+        config_client,
+        usdc_client,
+        usdc_addr: usdc_id,
+        admin,
+        keeper,
+        trader,
+        pm_addr: pm_id,
+        vault_addr: vault_id,
+    }
+}
+
+/// Deploy with a large vault (1M USDC) so utilization stays low.
+/// Used for tests that should NOT trigger ADL.
+fn setup_no_adl<'a>() -> TestFixture<'a> {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    env.ledger().set(LedgerInfo {
+        timestamp: TEST_TIMESTAMP,
+        protocol_version: 23,
+        sequence_number: 100,
+        network_id: [0u8; 32],
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    let admin = Address::generate(&env);
+    let keeper = Address::generate(&env);
+    let trader = Address::generate(&env);
+    let lp = Address::generate(&env);
+
+    let config_id = env.register(ConfigManagerContract, ());
+    let config_client = ConfigManagerClient::new(&env, &config_id);
+    config_client.initialize(&admin);
+
+    let pauser_role = Symbol::new(&env, "PAUSER");
+    let keeper_role = Symbol::new(&env, "KEEPER");
+    let admin_role = Symbol::new(&env, "ADMIN");
+    config_client.grant_role(&admin, &pauser_role, &admin);
+    config_client.grant_role(&admin, &keeper_role, &admin);
+    config_client.grant_role(&admin, &admin_role, &admin);
+    config_client.grant_role(&admin, &keeper_role, &keeper);
+
+    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
+        min_collateral: 1_000_000,
+        cooldown_duration: 60,
+        min_position_lifetime: 60,
+        max_utilization_ratio: 8_500,
+        funding_cut_bps: 500,
+    });
+
+    let usdc_id = env.register(MockToken, ());
+    let usdc_client = MockTokenClient::new(&env, &usdc_id);
+    usdc_client.initialize(
+        &admin,
+        &6u32,
+        &soroban_sdk::String::from_str(&env, "USD Coin"),
+        &soroban_sdk::String::from_str(&env, "USDC"),
+    );
+
+    let oracle_id = env.register(MockOracle, ());
+    let oracle_client = MockOracleClient::new(&env, &oracle_id);
+    oracle_client.initialize();
+    oracle_client.set_price(&symbol_short!("BTC"), &BTC_PRICE);
+
+    let oracle_router_id = env.register(OracleRouterContract, ());
+    let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
+    oracle_router_client.initialize(&config_id);
+    oracle_router_client.set_oracle_config(
+        &admin,
+        &OracleConfig {
+            max_deviation_bps: 500,
+            staleness_threshold: 3600,
+            cache_duration: 10,
+        },
+    );
+    oracle_router_client.set_oracle_sources(
+        &admin,
+        &symbol_short!("BTC"),
+        &vec![&env, oracle_id.clone()],
+        &vec![&env],
+    );
+
+    let pm_id = env.register(PositionManagerContract, ());
+    let pm_client = PositionManagerClient::new(&env, &pm_id);
+
+    let vault_id = env.register(VaultContract, ());
+    let vault_client = VaultContractClient::new(&env, &vault_id);
+    vault_client.initialize(&admin, &usdc_id, &config_id, &pm_id);
+
+    // Large vault: 1,000,000 USDC
+    let vault_deposit: i128 = 1_000_000 * USDC_UNIT;
+    usdc_client.mint(&lp, &vault_deposit);
+    vault_client.deposit(&vault_deposit, &lp, &lp, &lp);
+
+    pm_client.initialize(&vault_id, &config_id, &oracle_router_id);
+    pm_client.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);
+    usdc_client.mint(&trader, &TRADER_BALANCE);
+
+    let pm_client = unsafe { core::mem::transmute(pm_client) };
+    let vault_client = unsafe { core::mem::transmute(vault_client) };
+    let oracle_client = unsafe { core::mem::transmute(oracle_client) };
+    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let config_client = unsafe { core::mem::transmute(config_client) };
+    let usdc_client = unsafe { core::mem::transmute(usdc_client) };
+
+    TestFixture {
+        env,
+        pm_client,
+        vault_client,
+        oracle_client,
+        oracle_router_client,
+        config_client,
+        usdc_client,
+        usdc_addr: usdc_id,
+        admin,
+        keeper,
+        trader,
+        pm_addr: pm_id,
+        vault_addr: vault_id,
+    }
+}
+
+// ===========================================================================
+// Helpers
+// ===========================================================================
+
+fn advance_time_and_set_price(f: &TestFixture, new_ts: u64, new_price: i128) {
+    f.env.ledger().set(LedgerInfo {
+        timestamp: new_ts,
+        protocol_version: 23,
+        sequence_number: 100 + ((new_ts - TEST_TIMESTAMP) as u32),
+        network_id: [0u8; 32],
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+    f.oracle_client.set_price(&symbol_short!("BTC"), &new_price);
+}
+
+// ===========================================================================
+// 1. Guard tests
+// ===========================================================================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_adl_reverts_not_initialized() {
+    // Scenario: Call deverage_position on a contract that has NOT been initialized.
+    // Must revert with NotInitialized (error 2).
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let pm_id = env.register(PositionManagerContract, ());
+    let pm_client = PositionManagerClient::new(&env, &pm_id);
+
+    let caller = Address::generate(&env);
+    let trader = Address::generate(&env);
+
+    pm_client.deverage_position(&caller, &trader, &symbol_short!("BTC"));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_adl_reverts_unauthorized_caller() {
+    // Scenario: A non-KEEPER address attempts ADL. Must revert with
+    // the shared Unauthorized error (error 3).
+    let f = setup_no_adl();
+    let random_caller = Address::generate(&f.env);
+
+    f.pm_client.deverage_position(
+        &random_caller,
+        &f.trader,
+        &symbol_short!("BTC"),
+    );
+}
+
+// ===========================================================================
+// 2. ADL trigger check -- conditions not met (both pnl_ratio and utilization <= 9500 bps)
+// ===========================================================================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_adl_reverts_when_utilization_is_normal() {
+    // Scenario: Vault has 1M USDC, position uses 10k (1% utilization).
+    // Neither pnl_ratio > 9500 bps nor utilization > 9500 bps is met.
+    // Must revert with AdlNotTriggered (error 10).
+    let f = setup_no_adl();
+    let symbol = symbol_short!("BTC");
+
+    let size = 10_000 * USDC_UNIT;
+    let collateral = 1_000 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &collateral,
+        &true,
+    );
+
+    // Advance time past oracle cache
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+
+    // Utilization is ~1%, well below ADL thresholds
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_adl_reverts_at_50_percent_utilization() {
+    // Scenario: Vault has 1M USDC, position uses 500k (50% utilization).
+    // Still below both pnl_ratio and utilization 9500 bps thresholds.
+    let f = setup_no_adl();
+    let symbol = symbol_short!("BTC");
+
+    // Need large collateral for 500k position
+    let size = 500_000 * USDC_UNIT;
+    let collateral = 50_000 * USDC_UNIT;
+    f.usdc_client.mint(&f.trader, &(collateral * 2));
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &collateral,
+        &true,
+    );
+
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+}
+
+// ===========================================================================
+// 3. ADL trigger -- conditions met (utilization > 95% of total_assets)
+// ===========================================================================
+
+#[test]
+fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
+    // Scenario: Vault has 100,000 USDC. We open a position with 84,000 size
+    // (84% utilization, under the increase cap). Then we manually set
+    // total_reserved to 96,000 (simulating other positions) to breach the
+    // 95% utilization threshold (9500 bps).
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    // Open at just under 85% of 100k = 84k reserved
+    let size = 84_000 * USDC_UNIT;
+    let collateral = 8_400 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &collateral,
+        &true,
+    );
+
+    // Manually push total_reserved above 95% to simulate ADL condition.
+    // In production this could happen if the vault's total_assets decreases
+    // (e.g., due to trader profit payouts shrinking free liquidity).
+    f.env.as_contract(&f.pm_addr, || {
+        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
+    });
+
+    // Advance time past oracle cache
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+
+    // ADL should succeed because utilization (96k/100k = 9600 bps) > 9500 bps
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+
+    // Position must be deleted
+    f.env.as_contract(&f.pm_addr, || {
+        let pos = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(pos.is_none(), "Position must be deleted after ADL");
+    });
+}
+
+// ===========================================================================
+// 4. Successful ADL -- profitable position
+// ===========================================================================
+
+#[test]
+fn test_adl_profitable_long_trader_receives_profits() {
+    // Scenario: Trader has a profitable long position that gets ADL'd.
+    // The trader should receive their collateral + profits.
+    //
+    // Open long at $50,000, size=84,000, collateral=8,400.
+    // Push total_reserved above 95% (utilization > 9500 bps).
+    // Advance price to $55,000 (profitable).
+    //   pnl = 84,000 * (55,000 - 50,000) / 50,000 = 8,400 USDC profit
+    // Trader should get back collateral + profit = 8,400 + 8,400 = 16,800
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    let size = 84_000 * USDC_UNIT;
+    let collateral = 8_400 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &collateral,
+        &true,
+    );
+
+    // Push reserved above 95% threshold (utilization > 9500 bps)
+    f.env.as_contract(&f.pm_addr, || {
+        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
+    });
+
+    // Price increases (trader is profitable)
+    let higher_price: i128 = 55_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, higher_price);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+
+    // ADL the position
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+
+    // Trader should receive funds (collateral + profit)
+    assert!(
+        trader_balance_after > trader_balance_before,
+        "Trader must receive funds after profitable ADL. Before: {}, After: {}",
+        trader_balance_before,
+        trader_balance_after
+    );
+
+    // Position must be deleted
+    f.env.as_contract(&f.pm_addr, || {
+        let pos = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(pos.is_none(), "Position must be deleted after ADL");
+    });
+}
+
+#[test]
+fn test_adl_deletes_position_and_decreases_oi() {
+    // Scenario: After ADL, the position must be deleted and market OI must
+    // decrease by the position's size.
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    let size = 84_000 * USDC_UNIT;
+    let collateral = 8_400 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &collateral,
+        &true,
+    );
+
+    let market_before = f.pm_client.get_market(&symbol);
+
+    // Push reserved above 95% (utilization > 9500 bps)
+    f.env.as_contract(&f.pm_addr, || {
+        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
+    });
+
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+
+    // OI must decrease
+    let market_after = f.pm_client.get_market(&symbol);
+    assert_eq!(
+        market_after.long_open_interest,
+        market_before.long_open_interest - size,
+        "Long OI must decrease by position size after ADL"
+    );
+
+    // Total reserved must decrease
+    let total_reserved_after = f.env.as_contract(&f.pm_addr, || {
+        storage::get_total_reserved(&f.env)
+    });
+    // The new total_reserved should be 96,000 - 84,000 = 12,000 (or thereabouts,
+    // depending on exact settlement logic)
+    assert!(
+        total_reserved_after < 96_000 * USDC_UNIT,
+        "Total reserved must decrease after ADL. Got: {}",
+        total_reserved_after
+    );
+}
+
+#[test]
+fn test_adl_decreases_total_reserved() {
+    // Scenario: Verify total_reserved is properly decreased after ADL.
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    let size = 80_000 * USDC_UNIT;
+    let collateral = 8_000 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &collateral,
+        &true,
+    );
+
+    // Push reserved above 95% (utilization > 9500 bps)
+    f.env.as_contract(&f.pm_addr, || {
+        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
+    });
+
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+
+    let total_reserved_after = f.env.as_contract(&f.pm_addr, || {
+        storage::get_total_reserved(&f.env)
+    });
+
+    // After closing an 80k position from 96k reserved, should be ~16k
+    assert_eq!(
+        total_reserved_after,
+        96_000 * USDC_UNIT - size,
+        "Total reserved must decrease by exactly the position size"
+    );
+}
+
+// ===========================================================================
+// 5. Paused contract -- ADL requires NOT paused per contract.rs
+// ===========================================================================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_adl_reverts_when_paused() {
+    // Scenario: Contract is paused. deverage_position requires NOT paused
+    // (as seen in contract.rs: require_not_paused), so it must revert.
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    let size = 84_000 * USDC_UNIT;
+    let collateral = 8_400 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &collateral,
+        &true,
+    );
+
+    f.env.as_contract(&f.pm_addr, || {
+        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
+    });
+
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+
+    // Pause the contract
+    f.pm_client.pause(&f.admin);
+
+    // ADL should fail because contract is paused
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+}
+
+// ===========================================================================
+// 6. ADL does not affect other positions
+// ===========================================================================
+
+#[test]
+fn test_adl_does_not_affect_other_traders_positions() {
+    // Scenario: Two traders have positions, ADL is triggered on trader1.
+    // Trader2's position must remain intact.
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    let trader2 = Address::generate(&f.env);
+    f.usdc_client.mint(&trader2, &TRADER_BALANCE);
+
+    // Trader1: small position
+    let size1 = 40_000 * USDC_UNIT;
+    let collateral1 = 4_000 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size1,
+        &collateral1,
+        &true,
+    );
+
+    // Trader2: small position
+    let size2 = 40_000 * USDC_UNIT;
+    let collateral2 = 4_000 * USDC_UNIT;
+    f.pm_client.increase_position(
+        &trader2,
+        &symbol,
+        &size2,
+        &collateral2,
+        &true,
+    );
+
+    // Push reserved above 95% (utilization > 9500 bps)
+    f.env.as_contract(&f.pm_addr, || {
+        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
+    });
+
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+
+    // ADL trader1 only
+    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+
+    // Trader1 position must be gone
+    f.env.as_contract(&f.pm_addr, || {
+        assert!(
+            storage::get_position(&f.env, &f.trader, &symbol).is_none(),
+            "Trader1 position must be deleted after ADL"
+        );
+    });
+
+    // Trader2 position must still exist
+    let pos2 = f.pm_client.get_position(&trader2, &symbol);
+    assert_eq!(
+        pos2.size, size2,
+        "Trader2 position must be unaffected by trader1 ADL"
+    );
+}

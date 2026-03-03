@@ -49,6 +49,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "funding_cut_bps"
+                      },
+                      "val": {
+                        "u32": 500
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "max_utilization_ratio"
                       },
                       "val": {
@@ -233,6 +241,14 @@
                               },
                               "val": {
                                 "u64": "0"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "funding_cut_bps"
+                              },
+                              "val": {
+                                "u32": 500
                               }
                             },
                             {
