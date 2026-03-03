@@ -39,6 +39,8 @@ pub trait PositionManager {
         size: i128,
         collateral: i128,
         is_long: bool,
+        take_profit: i128,
+        stop_loss: i128,
     );
 
     /// Close or reduce a position and realize PnL.
@@ -51,11 +53,14 @@ pub trait PositionManager {
     /// Sync global borrow and funding accumulators. KEEPER only.
     fn update_indices(env: Env, caller: Address, symbol: Symbol);
 
-    /// Execute a limit/stop order. KEEPER only. (V2 stub)
-    fn execute_order(env: Env, caller: Address, order_id: u64);
+    /// Execute a TP/SL order. KEEPER only.
+    fn execute_order(env: Env, caller: Address, trader: Address, symbol: Symbol);
+
+    /// Set take-profit and stop-loss prices on an existing position.
+    fn set_tp_sl(env: Env, trader: Address, symbol: Symbol, take_profit: i128, stop_loss: i128);
 
     /// Auto-Deleveraging: force-close highest-RoE position. KEEPER only.
-    fn deverage_position(env: Env, caller: Address, trader: Address, symbol: Symbol);
+    fn deleverage_position(env: Env, caller: Address, trader: Address, symbol: Symbol);
 
     /// Extend Soroban TTL for an active position.
     fn bump_position(env: Env, user_address: Address, symbol: Symbol);
@@ -105,13 +110,15 @@ impl PositionManager for PositionManagerContract {
         size: i128,
         collateral: i128,
         is_long: bool,
+        take_profit: i128,
+        stop_loss: i128,
     ) {
         logic::require_initialized(&env);
         logic::require_not_paused(&env);
         trader.require_auth();
         logic::require_positive(&env, size);
         logic::require_positive(&env, collateral);
-        logic::do_increase_position(&env, &trader, &symbol, size, collateral, is_long);
+        logic::do_increase_position(&env, &trader, &symbol, size, collateral, is_long, take_profit, stop_loss);
         shared::bump_instance_ttl(&env);
     }
 
@@ -140,18 +147,26 @@ impl PositionManager for PositionManagerContract {
         shared::bump_instance_ttl(&env);
     }
 
-    fn execute_order(env: Env, caller: Address, _order_id: u64) {
+    fn execute_order(env: Env, caller: Address, trader: Address, symbol: Symbol) {
         logic::require_initialized(&env);
         logic::require_not_paused(&env);
         logic::require_keeper(&env, &caller);
-        panic_with_error!(&env, PositionManagerError::ZeroAmount); // V2 stub
+        logic::do_execute_order(&env, &trader, &symbol);
+        shared::bump_instance_ttl(&env);
     }
 
-    fn deverage_position(env: Env, caller: Address, trader: Address, symbol: Symbol) {
+    fn set_tp_sl(env: Env, trader: Address, symbol: Symbol, take_profit: i128, stop_loss: i128) {
+        logic::require_initialized(&env);
+        trader.require_auth();
+        logic::do_set_tp_sl(&env, &trader, &symbol, take_profit, stop_loss);
+        shared::bump_instance_ttl(&env);
+    }
+
+    fn deleverage_position(env: Env, caller: Address, trader: Address, symbol: Symbol) {
         logic::require_initialized(&env);
         logic::require_not_paused(&env);
         logic::require_keeper(&env, &caller);
-        logic::do_deverage_position(&env, &trader, &symbol);
+        logic::do_deleverage_position(&env, &trader, &symbol);
         shared::bump_instance_ttl(&env);
     }
 

@@ -77,6 +77,8 @@ fn setup_full<'a>() -> TestFixture<'a> {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     });
 
     let usdc_id = env.register(MockToken, ());
@@ -172,7 +174,7 @@ fn test_bump_position_succeeds_on_existing_position() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
     // Should not panic
     f.pm_client
@@ -189,7 +191,7 @@ fn test_bump_position_callable_by_anyone() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
     // Calling with the trader's address should work regardless of who submits the tx
     f.pm_client
@@ -197,7 +199,7 @@ fn test_bump_position_callable_by_anyone() {
 }
 
 // ===========================================================================
-// execute_order (V2 stub)
+// execute_order
 // ===========================================================================
 
 #[test]
@@ -205,7 +207,9 @@ fn test_bump_position_callable_by_anyone() {
 fn test_execute_order_reverts_when_paused() {
     let f = setup_full();
     f.pm_client.pause(&f.admin);
-    f.pm_client.execute_order(&f.keeper, &42_u64);
+    let trader = Address::generate(&f.env);
+    let symbol = soroban_sdk::symbol_short!("BTC");
+    f.pm_client.execute_order(&f.keeper, &trader, &symbol);
 }
 
 // ===========================================================================
@@ -220,7 +224,7 @@ fn test_get_position_returns_correct_data() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
     let pos = f
         .pm_client
@@ -261,7 +265,7 @@ fn test_get_market_returns_correct_oi_after_increase() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
     let market = f.pm_client.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, DEFAULT_SIZE);
@@ -282,7 +286,7 @@ fn test_increase_position_reverts_when_paused() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 }
 
@@ -297,7 +301,7 @@ fn test_unpause_allows_increase_position_again() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
     let pos = f
         .pm_client

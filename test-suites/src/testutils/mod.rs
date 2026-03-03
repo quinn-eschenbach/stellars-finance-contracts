@@ -86,6 +86,8 @@ impl<'a> Fixture<'a> {
             min_position_lifetime: 60,
             max_utilization_ratio: 8_500,
             funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
         });
 
         // 2. MockToken (USDC) + MockOracle

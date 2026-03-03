@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
-// Tests for: deverage_position (Auto-Deleveraging / ADL)
+// Tests for: deleverage_position (Auto-Deleveraging / ADL)
 //
 // These tests are written BEFORE the implementation (TDD). They MUST compile
-// but are expected to FAIL until deverage_position is fully implemented.
+// but are expected to FAIL until deleverage_position is fully implemented.
 //
 // The function under test:
-//   fn deverage_position(env, caller, trader, symbol)
+//   fn deleverage_position(env, caller, trader, symbol)
 //
 // Behavior:
 //   - KEEPER-only (caller.require_auth + require_keeper)
@@ -118,6 +118,8 @@ fn setup_adl<'a>() -> TestFixture<'a> {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     });
 
     // --- 2. MockToken (USDC) ---
@@ -241,6 +243,8 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     });
 
     let usdc_id = env.register(MockToken, ());
@@ -340,7 +344,7 @@ fn advance_time_and_set_price(f: &TestFixture, new_ts: u64, new_price: i128) {
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_adl_reverts_not_initialized() {
-    // Scenario: Call deverage_position on a contract that has NOT been initialized.
+    // Scenario: Call deleverage_position on a contract that has NOT been initialized.
     // Must revert with NotInitialized (error 2).
     let env = Env::default();
     env.mock_all_auths();
@@ -351,7 +355,7 @@ fn test_adl_reverts_not_initialized() {
     let caller = Address::generate(&env);
     let trader = Address::generate(&env);
 
-    pm_client.deverage_position(&caller, &trader, &symbol_short!("BTC"));
+    pm_client.deleverage_position(&caller, &trader, &symbol_short!("BTC"));
 }
 
 #[test]
@@ -362,7 +366,7 @@ fn test_adl_reverts_unauthorized_caller() {
     let f = setup_no_adl();
     let random_caller = Address::generate(&f.env);
 
-    f.pm_client.deverage_position(
+    f.pm_client.deleverage_position(
         &random_caller,
         &f.trader,
         &symbol_short!("BTC"),
@@ -389,14 +393,14 @@ fn test_adl_reverts_when_utilization_is_normal() {
         &symbol,
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     // Advance time past oracle cache
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
     // Utilization is ~1%, well below ADL thresholds
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 }
 
 #[test]
@@ -417,12 +421,12 @@ fn test_adl_reverts_at_50_percent_utilization() {
         &symbol,
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 }
 
 // ===========================================================================
@@ -446,7 +450,7 @@ fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
         &symbol,
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     // Manually push total_reserved above 95% to simulate ADL condition.
@@ -460,7 +464,7 @@ fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
     // ADL should succeed because utilization (96k/100k = 9600 bps) > 9500 bps
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
@@ -493,7 +497,7 @@ fn test_adl_profitable_long_trader_receives_profits() {
         &symbol,
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     // Push reserved above 95% threshold (utilization > 9500 bps)
@@ -508,7 +512,7 @@ fn test_adl_profitable_long_trader_receives_profits() {
     let trader_balance_before = f.usdc_client.balance(&f.trader);
 
     // ADL the position
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 
     let trader_balance_after = f.usdc_client.balance(&f.trader);
 
@@ -541,7 +545,7 @@ fn test_adl_deletes_position_and_decreases_oi() {
         &symbol,
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     let market_before = f.pm_client.get_market(&symbol);
@@ -553,7 +557,7 @@ fn test_adl_deletes_position_and_decreases_oi() {
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 
     // OI must decrease
     let market_after = f.pm_client.get_market(&symbol);
@@ -589,7 +593,7 @@ fn test_adl_decreases_total_reserved() {
         &symbol,
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     // Push reserved above 95% (utilization > 9500 bps)
@@ -599,7 +603,7 @@ fn test_adl_decreases_total_reserved() {
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 
     let total_reserved_after = f.env.as_contract(&f.pm_addr, || {
         storage::get_total_reserved(&f.env)
@@ -620,7 +624,7 @@ fn test_adl_decreases_total_reserved() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_adl_reverts_when_paused() {
-    // Scenario: Contract is paused. deverage_position requires NOT paused
+    // Scenario: Contract is paused. deleverage_position requires NOT paused
     // (as seen in contract.rs: require_not_paused), so it must revert.
     let f = setup_adl();
     let symbol = symbol_short!("BTC");
@@ -632,7 +636,7 @@ fn test_adl_reverts_when_paused() {
         &symbol,
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     f.env.as_contract(&f.pm_addr, || {
@@ -645,7 +649,7 @@ fn test_adl_reverts_when_paused() {
     f.pm_client.pause(&f.admin);
 
     // ADL should fail because contract is paused
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 }
 
 // ===========================================================================
@@ -670,7 +674,7 @@ fn test_adl_does_not_affect_other_traders_positions() {
         &symbol,
         &size1,
         &collateral1,
-        &true,
+        &true, &0, &0,
     );
 
     // Trader2: small position
@@ -681,7 +685,7 @@ fn test_adl_does_not_affect_other_traders_positions() {
         &symbol,
         &size2,
         &collateral2,
-        &true,
+        &true, &0, &0,
     );
 
     // Push reserved above 95% (utilization > 9500 bps)
@@ -692,7 +696,7 @@ fn test_adl_does_not_affect_other_traders_positions() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
     // ADL trader1 only
-    f.pm_client.deverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 
     // Trader1 position must be gone
     f.env.as_contract(&f.pm_addr, || {

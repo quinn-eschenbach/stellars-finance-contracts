@@ -26,6 +26,8 @@ fn test_update_protocol_limits_zero_min_collateral_errors() {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -50,6 +52,8 @@ fn test_update_protocol_limits_negative_min_collateral_errors() {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -74,6 +78,8 @@ fn test_update_protocol_limits_zero_max_utilization_errors() {
         min_position_lifetime: 60,
         max_utilization_ratio: 0,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -98,6 +104,8 @@ fn test_update_protocol_limits_max_utilization_above_10000_errors() {
         min_position_lifetime: 60,
         max_utilization_ratio: 10_001,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -139,6 +147,8 @@ fn test_update_protocol_limits_max_utilization_exactly_10000_succeeds() {
         min_position_lifetime: 0,
         max_utilization_ratio: 10_000,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -161,6 +171,8 @@ fn test_update_protocol_limits_min_collateral_of_one_succeeds() {
         min_position_lifetime: 0,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -183,6 +195,8 @@ fn test_update_protocol_limits_i128_min_collateral_errors() {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -207,6 +221,8 @@ fn test_update_protocol_limits_funding_cut_at_10000_errors() {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 10_000,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -231,6 +247,8 @@ fn test_update_protocol_limits_funding_cut_zero_succeeds() {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 0,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -264,6 +282,8 @@ fn test_update_protocol_limits_negative_max_utilization_errors() {
         min_position_lifetime: 60,
         max_utilization_ratio: -1,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);

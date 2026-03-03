@@ -112,6 +112,7 @@ impl FungibleVault for VaultContract {
     fn deposit(e: &Env, assets: i128, receiver: Address, from: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
+        vault_logic::record_deposit_time(e, &receiver);
         Vault::deposit(e, assets, receiver, from, operator)
     }
 
@@ -129,6 +130,7 @@ impl FungibleVault for VaultContract {
     fn mint(e: &Env, shares: i128, receiver: Address, from: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
+        vault_logic::record_deposit_time(e, &receiver);
         Vault::mint(e, shares, receiver, from, operator)
     }
 
@@ -154,6 +156,7 @@ impl FungibleVault for VaultContract {
     ) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
+        vault_logic::require_cooldown_elapsed(e, &owner);
         vault_logic::require_free_liquidity(e, assets);
         Vault::withdraw(e, assets, receiver, owner, operator)
     }
@@ -173,6 +176,7 @@ impl FungibleVault for VaultContract {
     fn redeem(e: &Env, shares: i128, receiver: Address, owner: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
+        vault_logic::require_cooldown_elapsed(e, &owner);
         let assets = Vault::preview_redeem(e, shares);
         vault_logic::require_free_liquidity(e, assets);
         Vault::redeem(e, shares, receiver, owner, operator)

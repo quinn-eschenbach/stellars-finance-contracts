@@ -18,6 +18,10 @@ pub struct Position {
     pub is_long: bool,
     /// Block timestamp when the position was last increased (anti-front-running lock).
     pub last_increased_time: u64,
+    /// Take-profit price (scaled by 1e7). 0 = not set.
+    pub take_profit: i128,
+    /// Stop-loss price (scaled by 1e7). 0 = not set.
+    pub stop_loss: i128,
 }
 
 /// Global market state for a single tradeable asset symbol.

@@ -16,10 +16,14 @@ pub enum PositionManagerError {
     ZeroAmount = 8,
     /// liquidate_position called but the position is still healthy.
     HealthFactorOk = 9,
-    /// deverage_position called but ADL trigger conditions are not met.
+    /// deleverage_position called but ADL trigger conditions are not met.
     AdlNotTriggered = 10,
     /// Position leverage exceeds the per-market max leverage.
     ExcessiveLeverage = 11,
     /// No max leverage configured for this market symbol.
     MarketNotConfigured = 12,
+    /// execute_order called but neither TP nor SL trigger condition is met.
+    OrderNotTriggered = 13,
+    /// Invalid take-profit or stop-loss price for the position direction.
+    InvalidTpSl = 14,
 }

@@ -219,7 +219,7 @@ fn test_increase_position_before_init_reverts() {
     let (env, client, _vault, _config_mgr, _oracle, _admin) = setup_test();
     let trader = Address::generate(&env);
     let symbol = symbol_short!("BTC");
-    client.increase_position(&trader, &symbol, &1000_i128, &100_i128, &true);
+    client.increase_position(&trader, &symbol, &1000_i128, &100_i128, &true, &0, &0);
 }
 
 #[test]
@@ -298,7 +298,7 @@ fn test_unpause_reverts_before_init() {
 }
 
 // ===========================================================================
-// Contract-level: execute_order / deverage_position before init
+// Contract-level: execute_order / deleverage_position before init
 // ===========================================================================
 
 #[test]
@@ -306,17 +306,19 @@ fn test_unpause_reverts_before_init() {
 fn test_execute_order_before_init_reverts() {
     let (env, client, _vault, _config_mgr, _oracle, _admin) = setup_test();
     let caller = Address::generate(&env);
-    client.execute_order(&caller, &42_u64);
+    let trader = Address::generate(&env);
+    let symbol = soroban_sdk::symbol_short!("BTC");
+    client.execute_order(&caller, &trader, &symbol);
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
-fn test_deverage_position_before_init_reverts() {
+fn test_deleverage_position_before_init_reverts() {
     let (env, client, _vault, _config_mgr, _oracle, _admin) = setup_test();
     let caller = Address::generate(&env);
     let trader = Address::generate(&env);
     let symbol = symbol_short!("BTC");
-    client.deverage_position(&caller, &trader, &symbol);
+    client.deleverage_position(&caller, &trader, &symbol);
 }
 
 // ===========================================================================

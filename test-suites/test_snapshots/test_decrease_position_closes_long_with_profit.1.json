@@ -141,6 +141,22 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "adl_pnl_bps"
+                      },
+                      "val": {
+                        "u32": 9000
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "adl_utilization_bps"
+                      },
+                      "val": {
+                        "u32": 9500
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "cooldown_duration"
                       },
                       "val": {
@@ -404,6 +420,12 @@
                 },
                 {
                   "bool": true
+                },
+                {
+                  "i128": "0"
+                },
+                {
+                  "i128": "0"
                 }
               ]
             }
@@ -1276,6 +1298,22 @@
                           "map": [
                             {
                               "key": {
+                                "symbol": "adl_pnl_bps"
+                              },
+                              "val": {
+                                "u32": 9000
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "adl_utilization_bps"
+                              },
+                              "val": {
+                                "u32": 9500
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "cooldown_duration"
                               },
                               "val": {
@@ -2145,6 +2183,51 @@
             "ext": "v0"
           },
           199
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "LastDepositTime"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "LastDepositTime"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u64": "1700000000"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          794980
         ]
       ],
       [

@@ -1,5 +1,6 @@
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
+use config_manager::ConfigManagerClient;
 use stellar_tokens::vault::Vault;
 
 use crate::errors::VaultError;
@@ -43,6 +44,29 @@ pub fn require_pauser(env: &Env, caller: &Address) {
 pub fn require_admin(env: &Env, caller: &Address) {
     let config_mgr = storage::get_config_manager(env);
     shared::require_role(env, caller, &config_mgr, shared::ROLE_ADMIN);
+}
+
+// ---------------------------------------------------------------------------
+// Cooldown guard
+// ---------------------------------------------------------------------------
+
+/// Records the current timestamp as the user's last deposit time.
+pub fn record_deposit_time(env: &Env, user: &Address) {
+    let now = env.ledger().timestamp();
+    storage::set_last_deposit_time(env, user, now);
+}
+
+/// Panics with `CooldownNotElapsed` if the user deposited within the cooldown window.
+/// Users who never deposited (no entry) bypass the cooldown.
+pub fn require_cooldown_elapsed(env: &Env, user: &Address) {
+    if let Some(last_deposit) = storage::get_last_deposit_time(env, user) {
+        let config_mgr = storage::get_config_manager(env);
+        let limits = ConfigManagerClient::new(env, &config_mgr).get_protocol_limits();
+        let now = env.ledger().timestamp();
+        if now < last_deposit + limits.cooldown_duration {
+            panic_with_error!(env, VaultError::CooldownNotElapsed);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

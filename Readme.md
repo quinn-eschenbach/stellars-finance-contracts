@@ -84,7 +84,7 @@ If the requested withdrawal amount exceeds Free Liquidity, the transaction **rev
 * `liquidate_position(...)`: Callable by `KEEPER_ROLE`. Checks if `Collateral < Fees + Loss`.
 * `update_indices()`: Callable by `KEEPER_ROLE`. Forces a sync of global borrow and funding accumulators.
 * `execute_order(...)`: Callable by `KEEPER_ROLE`. Triggers limit/stop orders.
-* `deverage_position(...)`: Callable by `KEEPER_ROLE`. Identifies the highest RoE positions and force-closes them if utilization hits critical emergency thresholds (e.g., > 95%).
+* `deleverage_position(...)`: Callable by `KEEPER_ROLE`. Identifies the highest RoE positions and force-closes them if utilization hits critical emergency thresholds (e.g., > 95%).
 * **TTL Management:**
 * `bump_position(user_address, symbol)`: Extends the Soroban TTL for a specific active user position. Keepers can be incentivized to call this periodically for all open positions to ensure no active trade data is archived.
 
@@ -319,8 +319,8 @@ $$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fee
 
 ### 4.4 Auto-Deleveraging (ADL)
 
-- **Trigger**: Keepers actively monitor Vault health. If Total Reserved PnL > 90% of Vault Balance, Keepers are authorized to call deverage_position(), targeting accounts sorted by highest Return on Equity (RoE).
-- **Action**: Calls `deverage(position_id)`.
+- **Trigger**: Keepers actively monitor Vault health. If Total Reserved PnL > 90% of Vault Balance, Keepers are authorized to call deleverage_position(), targeting accounts sorted by highest Return on Equity (RoE).
+- **Action**: Calls `deleverage(position_id)`.
 - **Logic**: Identifies the most profitable, highly leveraged positions and force-closes them at the current oracle price. This reduces the pool's liability and frees up liquidity.
 
 ---
@@ -397,7 +397,7 @@ _This ensures that even if price doubles, the Vault can pay out._
 
 
 2. **Selection:** The `PositionManager` identifies the most profitable traders by sorting for the highest **Return on Equity (RoE) / PnL Percentage**.
-3. **Action:** A Keeper calls `deverage_position()`, and the smart contract forcibly closes the targeted trader's position at the current oracle price.
+3. **Action:** A Keeper calls `deleverage_position()`, and the smart contract forcibly closes the targeted trader's position at the current oracle price.
 4. **Outcome:** The trader keeps all of their accrued profits (they are fully paid out), but their position is closed. This instantly reduces the Vault's liability and frees up USDC back into the `Free Liquidity` pool, re-securing the protocol.
 
 ### 6.3 Oracle Front-Running

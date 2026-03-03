@@ -129,6 +129,8 @@ fn setup_full<'a>() -> TestFixture<'a> {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     });
 
     // --- 2. MockToken (USDC) ---
@@ -220,7 +222,7 @@ fn open_long_position(f: &TestFixture, size: i128, collateral: i128) {
         &symbol_short!("BTC"),
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 }
 
@@ -231,7 +233,7 @@ fn open_short_position(f: &TestFixture, size: i128, collateral: i128) {
         &symbol_short!("BTC"),
         &size,
         &collateral,
-        &false,
+        &false, &0, &0,
     );
 }
 
@@ -628,7 +630,7 @@ fn test_liquidate_one_position_does_not_affect_other_traders() {
         &symbol,
         &safe_size,
         &safe_collateral,
-        &true,
+        &true, &0, &0,
     );
 
     // Crash price enough to liquidate trader1 but not trader2

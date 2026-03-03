@@ -11,4 +11,5 @@ pub enum VaultError {
     Unauthorized = 5,
     ZeroAmount = 6,
     NotPositionManager = 7,
+    CooldownNotElapsed = 8,
 }

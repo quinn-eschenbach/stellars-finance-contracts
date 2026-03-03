@@ -16,6 +16,7 @@ shared = { workspace = true }
 stellar-tokens = { workspace = true }
 stellar-contract-utils = { workspace = true }
 stellar-macros = { workspace = true }
+config-manager = { path = "../config-manager" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

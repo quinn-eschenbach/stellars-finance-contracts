@@ -135,6 +135,8 @@ fn setup_full<'a>() -> TestFixture<'a> {
         min_position_lifetime: 60,
         max_utilization_ratio: 8_500,
         funding_cut_bps: 500,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
     });
 
     // --- 2. MockToken (USDC) ---
@@ -241,7 +243,7 @@ fn open_position_and_advance(f: &TestFixture, is_long: bool) {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &is_long,
+        &is_long, &0, &0,
     );
 
     // Advance time past MinPositionLifetime (60s) + oracle cache (10s)
@@ -379,7 +381,7 @@ fn test_decrease_position_reverts_position_not_old_enough() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     // Try to decrease immediately (same timestamp) -- should fail
@@ -402,7 +404,7 @@ fn test_decrease_position_reverts_one_second_before_min_lifetime() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     // Advance to 59 seconds (one second short of 60s minimum)
@@ -428,7 +430,7 @@ fn test_decrease_position_succeeds_at_exact_min_lifetime() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     // Advance to exactly 60 seconds + enough for oracle cache (11s extra)
@@ -466,7 +468,7 @@ fn test_full_close_long_profit_trader_receives_funds() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let trader_balance_after_open = f.usdc_client.balance(&f.trader);
@@ -514,7 +516,7 @@ fn test_full_close_long_profit_position_deleted() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -538,7 +540,7 @@ fn test_full_close_long_profit_market_oi_decreased() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     let market_before = f.pm_client.get_market(&symbol);
@@ -563,7 +565,7 @@ fn test_full_close_long_profit_total_reserved_decreased() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     f.env.as_contract(&f.pm_addr, || {
@@ -601,7 +603,7 @@ fn test_full_close_long_loss_trader_receives_reduced_collateral() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     let trader_balance_after_open = f.usdc_client.balance(&f.trader);
@@ -635,7 +637,7 @@ fn test_full_close_long_loss_position_deleted() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -657,7 +659,7 @@ fn test_full_close_long_loss_market_updated() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -688,7 +690,7 @@ fn test_partial_close_reduces_size_by_delta() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -713,7 +715,7 @@ fn test_partial_close_reduces_collateral_proportionally() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -739,7 +741,7 @@ fn test_partial_close_reduces_market_oi_by_size_delta_not_full_size() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -763,7 +765,7 @@ fn test_partial_close_reduces_total_reserved_by_size_delta() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -789,7 +791,7 @@ fn test_partial_close_position_still_exists() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -817,7 +819,7 @@ fn test_close_with_size_delta_exceeding_position_size_acts_as_full_close() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -855,7 +857,7 @@ fn test_short_position_profit_on_price_decrease() {
     let symbol = symbol_short!("ETH");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false, // short
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false, &0, &0, // short
     );
 
     let balance_after_open = f.usdc_client.balance(&f.trader);
@@ -894,7 +896,7 @@ fn test_short_position_loss_on_price_increase() {
     let symbol = symbol_short!("ETH");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false, &0, &0,
     );
 
     let balance_after_open = f.usdc_client.balance(&f.trader);
@@ -927,7 +929,7 @@ fn test_full_close_releases_vault_liquidity() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     let free_liq_before_close = f.vault_client.free_liquidity();
@@ -955,7 +957,7 @@ fn test_partial_close_releases_proportional_vault_liquidity() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
 
     let free_liq_before = f.vault_client.free_liquidity();
@@ -988,10 +990,10 @@ fn test_decrease_position_with_multiple_traders_independent() {
 
     // Both open positions
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
     );
     f.pm_client.increase_position(
-        &trader2, &symbol, &(20_000 * USDC_UNIT), &(2_000 * USDC_UNIT), &true,
+        &trader2, &symbol, &(20_000 * USDC_UNIT), &(2_000 * USDC_UNIT), &true, &0, &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -1031,7 +1033,7 @@ fn test_decrease_short_updates_short_oi_not_long() {
     let symbol = symbol_short!("ETH");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false,
+        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false, &0, &0,
     );
 
     let market_before = f.pm_client.get_market(&symbol);

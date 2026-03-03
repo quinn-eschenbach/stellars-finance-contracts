@@ -132,6 +132,32 @@ pub fn update_global_avg_price(
     (current_avg * current_size + new_price * new_size) / total_size
 }
 
+/// Returns true if the take-profit price is triggered.
+/// For longs: mark_price >= take_profit. For shorts: mark_price <= take_profit.
+pub fn is_tp_triggered(take_profit: i128, mark_price: i128, is_long: bool) -> bool {
+    if take_profit <= 0 {
+        return false;
+    }
+    if is_long {
+        mark_price >= take_profit
+    } else {
+        mark_price <= take_profit
+    }
+}
+
+/// Returns true if the stop-loss price is triggered.
+/// For longs: mark_price <= stop_loss. For shorts: mark_price >= stop_loss.
+pub fn is_sl_triggered(stop_loss: i128, mark_price: i128, is_long: bool) -> bool {
+    if stop_loss <= 0 {
+        return false;
+    }
+    if is_long {
+        mark_price <= stop_loss
+    } else {
+        mark_price >= stop_loss
+    }
+}
+
 pub fn calc_utilization_bps(reserved: i128, total_assets: i128) -> i128 {
     if total_assets <= 0 {
         return 0;

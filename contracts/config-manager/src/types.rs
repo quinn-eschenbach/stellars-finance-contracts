@@ -37,6 +37,12 @@ pub struct ProtocolLimits {
     /// Protocol's cut of positive funding fees in basis points (e.g., 500 = 5%).
     /// Applied when a trader receives funding; the protocol retains this fraction.
     pub funding_cut_bps: u32,
+    /// ADL trigger: net trader PnL as a percentage of total vault assets (bps).
+    /// When net_pnl / total_assets exceeds this, ADL is triggered. Default: 9000 = 90%.
+    pub adl_pnl_bps: u32,
+    /// ADL trigger: vault utilization threshold (bps).
+    /// When reserved / total_assets exceeds this, ADL is triggered. Default: 9500 = 95%.
+    pub adl_utilization_bps: u32,
 }
 
 /// Role identifiers — canonical strings are defined in the `shared` crate.

@@ -3,6 +3,7 @@
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env, Symbol};
 
 use config_manager::ConfigManagerClient;
+use oracle_router::OracleRouterClient;
 use vault::VaultContractClient;
 
 use crate::errors::PositionManagerError;
@@ -131,6 +132,8 @@ pub fn do_increase_position(
     size: i128,
     collateral: i128,
     is_long: bool,
+    take_profit: i128,
+    stop_loss: i128,
 ) {
     // Refresh indices so fees are current before any position logic
     do_update_indices(env, symbol);
@@ -141,7 +144,7 @@ pub fn do_increase_position(
 
     // Get the vault's underlying asset for token transfers
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = shared::Sep40OracleClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Transfer collateral from trader to this contract
@@ -174,6 +177,13 @@ pub fn do_increase_position(
             pos.size += size;
             pos.collateral += collateral;
             pos.last_increased_time = env.ledger().timestamp();
+            // Update TP/SL if non-zero values provided
+            if take_profit > 0 {
+                pos.take_profit = take_profit;
+            }
+            if stop_loss > 0 {
+                pos.stop_loss = stop_loss;
+            }
             pos
         }
         None => Position {
@@ -184,6 +194,8 @@ pub fn do_increase_position(
             entry_funding_index: market.acc_funding_index,
             is_long,
             last_increased_time: env.ledger().timestamp(),
+            take_profit,
+            stop_loss,
         },
     };
 
@@ -193,6 +205,9 @@ pub fn do_increase_position(
     if position.size > position.collateral * max_leverage {
         panic_with_error!(env, PositionManagerError::ExcessiveLeverage);
     }
+
+    // Validate TP/SL against position direction
+    validate_tp_sl(env, &position, position.take_profit, position.stop_loss);
 
     // Update market OI and global avg price
     if is_long {
@@ -258,8 +273,6 @@ fn get_vault_asset(env: &Env, vault_addr: &Address) -> Address {
 // decrease_position logic
 // ---------------------------------------------------------------------------
 
-/// ADL utilization threshold: 95% = 9_500 bps
-const ADL_UTILIZATION_BPS: i128 = 9_500;
 
 pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_delta: i128) {
     // Refresh indices so fees are current
@@ -285,7 +298,7 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
 
     // Get mark price from oracle
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = shared::Sep40OracleClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Load market
@@ -337,6 +350,8 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
             entry_funding_index: pos.entry_funding_index,
             is_long: pos.is_long,
             last_increased_time: pos.last_increased_time,
+            take_profit: pos.take_profit,
+            stop_loss: pos.stop_loss,
         };
         storage::set_position(env, trader, symbol, &updated);
     }
@@ -362,7 +377,7 @@ pub fn do_liquidate_position(
 
     // Get mark price
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = shared::Sep40OracleClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Load market
@@ -428,10 +443,10 @@ pub fn do_liquidate_position(
 }
 
 // ---------------------------------------------------------------------------
-// deverage_position (ADL) logic
+// deleverage_position (ADL) logic
 // ---------------------------------------------------------------------------
 
-pub fn do_deverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
+pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     // Refresh indices so fees are current
     do_update_indices(env, symbol);
 
@@ -441,6 +456,10 @@ pub fn do_deverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     let vault = VaultContractClient::new(env, &vault_addr);
     let total_assets = vault.total_assets();
 
+    let limits = load_limits(env);
+    let adl_pnl_bps = limits.adl_pnl_bps as i128;
+    let adl_util_bps = limits.adl_utilization_bps as i128;
+
     let net_pnl = storage::get_net_global_trader_pnl(env);
     let pnl_ratio = if total_assets > 0 && net_pnl > 0 {
         net_pnl * math::BPS / total_assets
@@ -449,7 +468,7 @@ pub fn do_deverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     };
     let utilization = math::calc_utilization_bps(total_reserved, total_assets);
 
-    if pnl_ratio <= ADL_UTILIZATION_BPS && utilization <= ADL_UTILIZATION_BPS {
+    if pnl_ratio <= adl_pnl_bps && utilization <= adl_util_bps {
         panic_with_error!(env, PositionManagerError::AdlNotTriggered);
     }
 
@@ -459,7 +478,7 @@ pub fn do_deverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
 
     // Get mark price
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = shared::Sep40OracleClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Load market
@@ -480,6 +499,114 @@ pub fn do_deverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     let trader_payout = if health > 0 { health } else { 0 };
 
     // Settlement (same as full close, includes PnL tracking + fee accrual + funding cut)
+    settle_close(env, trader, pos.size, pos.collateral, pnl, trader_payout, borrow_fee, funding_fee);
+
+    // Update market OI
+    if pos.is_long {
+        market.long_open_interest -= pos.size;
+    } else {
+        market.short_open_interest -= pos.size;
+    }
+
+    // Update total_reserved
+    let old_reserved = storage::get_total_reserved(env);
+    storage::set_total_reserved(env, old_reserved - pos.size);
+
+    // Delete position
+    storage::delete_position(env, trader, symbol);
+    storage::set_market(env, symbol, &market);
+}
+
+// ---------------------------------------------------------------------------
+// set_tp_sl logic
+// ---------------------------------------------------------------------------
+
+pub fn do_set_tp_sl(
+    env: &Env,
+    trader: &Address,
+    symbol: &Symbol,
+    take_profit: i128,
+    stop_loss: i128,
+) {
+    let mut pos = storage::get_position(env, trader, symbol)
+        .unwrap_or_else(|| panic_with_error!(env, PositionManagerError::PositionNotFound));
+
+    validate_tp_sl(env, &pos, take_profit, stop_loss);
+
+    pos.take_profit = take_profit;
+    pos.stop_loss = stop_loss;
+    storage::set_position(env, trader, symbol, &pos);
+}
+
+/// Validate TP/SL prices against position direction and entry price.
+/// - TP for longs must be above entry; TP for shorts must be below entry.
+/// - SL for longs must be below entry; SL for shorts must be above entry.
+/// - 0 means "not set" and is always valid.
+fn validate_tp_sl(env: &Env, pos: &Position, take_profit: i128, stop_loss: i128) {
+    // Reject negative prices
+    if take_profit < 0 {
+        panic_with_error!(env, PositionManagerError::InvalidTpSl);
+    }
+    if stop_loss < 0 {
+        panic_with_error!(env, PositionManagerError::InvalidTpSl);
+    }
+    if take_profit > 0 {
+        if pos.is_long && take_profit <= pos.entry_price {
+            panic_with_error!(env, PositionManagerError::InvalidTpSl);
+        }
+        if !pos.is_long && take_profit >= pos.entry_price {
+            panic_with_error!(env, PositionManagerError::InvalidTpSl);
+        }
+    }
+    if stop_loss > 0 {
+        if pos.is_long && stop_loss >= pos.entry_price {
+            panic_with_error!(env, PositionManagerError::InvalidTpSl);
+        }
+        if !pos.is_long && stop_loss <= pos.entry_price {
+            panic_with_error!(env, PositionManagerError::InvalidTpSl);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// execute_order logic
+// ---------------------------------------------------------------------------
+
+pub fn do_execute_order(env: &Env, trader: &Address, symbol: &Symbol) {
+    // Refresh indices so fees are current
+    do_update_indices(env, symbol);
+
+    let pos = storage::get_position(env, trader, symbol)
+        .unwrap_or_else(|| panic_with_error!(env, PositionManagerError::PositionNotFound));
+
+    // Get mark price
+    let oracle_addr = storage::get_oracle_router(env);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
+    let mark_price = oracle.get_price(symbol);
+
+    // Check if TP or SL is triggered
+    let tp_hit = math::is_tp_triggered(pos.take_profit, mark_price, pos.is_long);
+    let sl_hit = math::is_sl_triggered(pos.stop_loss, mark_price, pos.is_long);
+
+    if !tp_hit && !sl_hit {
+        panic_with_error!(env, PositionManagerError::OrderNotTriggered);
+    }
+
+    // Full close — reuse the same logic as do_decrease_position with full size
+    let mut market = storage::get_market(env, symbol);
+
+    let pnl = math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
+    let borrow_fee =
+        math::calc_borrow_fee(pos.size, pos.entry_borrow_index, market.acc_borrow_index);
+    let funding_fee = math::calc_funding_fee(
+        pos.size,
+        pos.entry_funding_index,
+        market.acc_funding_index,
+        pos.is_long,
+    );
+    let health = math::calc_health(pos.collateral, pnl, borrow_fee, funding_fee);
+    let trader_payout = if health > 0 { health } else { 0 };
+
     settle_close(env, trader, pos.size, pos.collateral, pnl, trader_payout, borrow_fee, funding_fee);
 
     // Update market OI

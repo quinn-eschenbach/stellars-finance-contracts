@@ -1,4 +1,5 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env};
+use shared::{SHARED_THRESHOLD, SHARED_BUMP};
 
 use crate::errors::VaultError;
 
@@ -12,6 +13,8 @@ pub enum StorageKey {
     NetGlobalTraderPnl,
     IsPaused,
     Version,
+    /// Per-user last deposit timestamp (persistent storage)
+    LastDepositTime(Address),
 }
 
 // ---------------------------------------------------------------------------
@@ -136,4 +139,21 @@ pub fn save_version(env: &Env, version: u32) {
     env.storage()
         .instance()
         .set(&StorageKey::Version, &version);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage: LastDepositTime (per-user)
+// ---------------------------------------------------------------------------
+
+pub fn get_last_deposit_time(env: &Env, user: &Address) -> Option<u64> {
+    let key = StorageKey::LastDepositTime(user.clone());
+    env.storage().persistent().get(&key)
+}
+
+pub fn set_last_deposit_time(env: &Env, user: &Address, timestamp: u64) {
+    let key = StorageKey::LastDepositTime(user.clone());
+    env.storage().persistent().set(&key, &timestamp);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, SHARED_THRESHOLD, SHARED_BUMP);
 }

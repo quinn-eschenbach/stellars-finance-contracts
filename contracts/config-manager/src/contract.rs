@@ -117,6 +117,12 @@ impl ConfigManager for ConfigManagerContract {
         if limits.funding_cut_bps >= 10_000 {
             panic_with_error!(&env, ConfigManagerError::InvalidLimits);
         }
+        if limits.adl_pnl_bps < 1 || limits.adl_pnl_bps > 10_000 {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
+        if limits.adl_utilization_bps < 1 || limits.adl_utilization_bps > 10_000 {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
         storage::save_protocol_limits(&env, &limits);
         bump_instance_ttl(&env);
     }

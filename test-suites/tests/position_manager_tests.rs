@@ -33,7 +33,7 @@ fn test_increase_position_opens_long_and_reserves_usdc() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let pos = f
@@ -57,7 +57,7 @@ fn test_increase_position_opens_short_and_reserves_usdc() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &false,
+        &false, &0, &0,
     );
 
     let pos = f
@@ -81,7 +81,7 @@ fn test_increase_position_reverts_when_paused() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 }
 
@@ -101,7 +101,7 @@ fn test_increase_position_reverts_when_utilization_cap_breached() {
         &symbol_short!("BTC"),
         &large_size,
         &large_collateral,
-        &true,
+        &true, &0, &0,
     );
 }
 
@@ -115,7 +115,7 @@ fn test_increase_position_records_last_increased_time() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let pos = f
@@ -134,7 +134,7 @@ fn test_increase_position_updates_global_long_avg_price() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -155,7 +155,7 @@ fn test_decrease_position_closes_long_with_profit() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let balance_after_open = f.usdc.balance(&f.trader);
@@ -183,7 +183,7 @@ fn test_decrease_position_closes_long_with_loss() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let balance_after_open = f.usdc.balance(&f.trader);
@@ -211,7 +211,7 @@ fn test_decrease_position_reverts_before_min_lifetime() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     // Try to close immediately
@@ -229,7 +229,7 @@ fn test_decrease_position_succeeds_even_when_paused() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -256,7 +256,7 @@ fn test_liquidate_position_succeeds_when_health_below_zero() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     // Crash price: pnl = 10k * (44k-50k)/50k = -1200, health = 1000 - 1200 = -200
@@ -282,7 +282,7 @@ fn test_liquidate_position_reverts_if_position_still_healthy() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     f.advance_time(TEST_TIMESTAMP + 75);
@@ -303,7 +303,7 @@ fn test_liquidate_position_reverts_if_not_keeper() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let crash_price: i128 = 44_000 * PRECISION;
@@ -330,7 +330,7 @@ fn test_update_indices_increments_borrow_accumulator() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let market_before = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -359,7 +359,7 @@ fn test_update_indices_increments_funding_accumulator() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     let market_before = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -389,11 +389,11 @@ fn test_update_indices_reverts_if_not_keeper() {
 }
 
 // ---------------------------------------------------------------------------
-// PositionManager: deverage_position (ADL)
+// PositionManager: deleverage_position (ADL)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_deverage_position_succeeds_when_reserved_ratio_high() {
+fn test_deleverage_position_succeeds_when_reserved_ratio_high() {
     // Use a small vault so we can breach 95% utilization.
     // Vault total_assets = vault USDC balance. We need reserved > 95% of that.
     // Strategy: deploy with standard 1M vault, open 84k position (84k reserved),
@@ -409,7 +409,7 @@ fn test_deverage_position_succeeds_when_reserved_ratio_high() {
         &symbol_short!("BTC"),
         &size,
         &collateral,
-        &true,
+        &true, &0, &0,
     );
 
     // Vault total_assets is ~1M USDC. Push total_reserved to 960k (96%).
@@ -425,7 +425,7 @@ fn test_deverage_position_succeeds_when_reserved_ratio_high() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
     f.position_manager
-        .deverage_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
+        .deleverage_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0);
@@ -433,7 +433,7 @@ fn test_deverage_position_succeeds_when_reserved_ratio_high() {
 
 #[test]
 #[should_panic(expected = "Error(Contract, #10)")]
-fn test_deverage_position_reverts_when_adl_not_triggered() {
+fn test_deleverage_position_reverts_when_adl_not_triggered() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
@@ -442,7 +442,7 @@ fn test_deverage_position_reverts_when_adl_not_triggered() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true,
+        &true, &0, &0,
     );
 
     f.advance_time(TEST_TIMESTAMP + 75);
@@ -450,16 +450,16 @@ fn test_deverage_position_reverts_when_adl_not_triggered() {
 
     // 10k / 1M = 1% utilization — way below ADL thresholds
     f.position_manager
-        .deverage_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
+        .deleverage_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")]
-fn test_deverage_position_reverts_if_not_keeper() {
+fn test_deleverage_position_reverts_if_not_keeper() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
     let random = Address::generate(&env);
     f.position_manager
-        .deverage_position(&random, &f.trader, &symbol_short!("BTC"));
+        .deleverage_position(&random, &f.trader, &symbol_short!("BTC"));
 }

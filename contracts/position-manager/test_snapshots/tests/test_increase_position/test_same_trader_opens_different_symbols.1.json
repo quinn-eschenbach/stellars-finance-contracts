@@ -116,6 +116,22 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "adl_pnl_bps"
+                      },
+                      "val": {
+                        "u32": 9000
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "adl_utilization_bps"
+                      },
+                      "val": {
+                        "u32": 9500
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "cooldown_duration"
                       },
                       "val": {
@@ -437,6 +453,12 @@
                 },
                 {
                   "bool": true
+                },
+                {
+                  "i128": "0"
+                },
+                {
+                  "i128": "0"
                 }
               ]
             }
@@ -489,6 +511,12 @@
                 },
                 {
                   "bool": false
+                },
+                {
+                  "i128": "0"
+                },
+                {
+                  "i128": "0"
                 }
               ]
             }
@@ -1289,6 +1317,22 @@
                         },
                         "val": {
                           "map": [
+                            {
+                              "key": {
+                                "symbol": "adl_pnl_bps"
+                              },
+                              "val": {
+                                "u32": 9000
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "adl_utilization_bps"
+                              },
+                              "val": {
+                                "u32": 9500
+                              }
+                            },
                             {
                               "key": {
                                 "symbol": "cooldown_duration"
@@ -2369,6 +2413,22 @@
                       "val": {
                         "i128": "10000000000"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "stop_loss"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "take_profit"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
                     }
                   ]
                 }
@@ -2504,6 +2564,22 @@
                       },
                       "val": {
                         "i128": "5000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "stop_loss"
+                      },
+                      "val": {
+                        "i128": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "take_profit"
+                      },
+                      "val": {
+                        "i128": "0"
                       }
                     }
                   ]
@@ -2693,6 +2769,51 @@
             "ext": "v0"
           },
           199
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "LastDepositTime"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "LastDepositTime"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "u64": "1700000000"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          794980
         ]
       ],
       [

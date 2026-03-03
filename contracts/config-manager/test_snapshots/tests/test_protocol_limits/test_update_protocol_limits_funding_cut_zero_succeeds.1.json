@@ -41,6 +41,22 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "adl_pnl_bps"
+                      },
+                      "val": {
+                        "u32": 9000
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "adl_utilization_bps"
+                      },
+                      "val": {
+                        "u32": 9500
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "cooldown_duration"
                       },
                       "val": {
@@ -235,6 +251,22 @@
                         },
                         "val": {
                           "map": [
+                            {
+                              "key": {
+                                "symbol": "adl_pnl_bps"
+                              },
+                              "val": {
+                                "u32": 9000
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "adl_utilization_bps"
+                              },
+                              "val": {
+                                "u32": 9500
+                              }
+                            },
                             {
                               "key": {
                                 "symbol": "cooldown_duration"

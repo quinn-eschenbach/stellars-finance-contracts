@@ -170,6 +170,8 @@ fn sample_position() -> Position {
         entry_funding_index: 0,
         is_long: true,
         last_increased_time: 1_700_000_000,
+        take_profit: 0,
+        stop_loss: 0,
     }
 }
 
@@ -386,6 +388,7 @@ fn test_position_with_extreme_values() {
             collateral: i128::MAX, size: i128::MIN, entry_price: 0,
             entry_borrow_index: i128::MAX, entry_funding_index: i128::MIN,
             is_long: false, last_increased_time: u64::MAX,
+            take_profit: 0, stop_loss: 0,
         };
 
         storage::set_position(env, &trader, &symbol, &extreme);

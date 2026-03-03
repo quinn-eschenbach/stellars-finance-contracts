@@ -55,6 +55,17 @@ fn setup() -> TestFixture {
     let config_client = config_manager::ConfigManagerClient::new(&env, &config_id);
     config_client.initialize(&admin);
 
+    // Set protocol limits with zero cooldown so existing tests pass
+    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
+        min_collateral: 1,
+        cooldown_duration: 0,
+        min_position_lifetime: 0,
+        max_utilization_ratio: 10_000,
+        funding_cut_bps: 0,
+        adl_pnl_bps: 9_000,
+        adl_utilization_bps: 9_500,
+    });
+
     // --- vault ---
     let vault_id = env.register(crate::VaultContract, ());
     let vault_client = crate::VaultContractClient::new(&env, &vault_id);
