@@ -10,4 +10,5 @@ pub enum VaultError {
     InsufficientFreeLiquidity = 4,
     Unauthorized = 5,
     ZeroAmount = 6,
+    NotPositionManager = 7,
 }

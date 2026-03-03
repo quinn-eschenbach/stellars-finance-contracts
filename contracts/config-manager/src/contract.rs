@@ -45,9 +45,6 @@ pub trait ConfigManager {
     /// Returns the current fee split configuration.
     fn get_fee_splits(env: Env) -> FeeSplits;
 
-    /// Returns the deposit fee in basis points.
-    fn get_deposit_fee(env: Env) -> i128;
-
     /// Extends the Soroban TTL of critical config variables to prevent archival.
     fn bump_config_state(env: Env);
 
@@ -57,9 +54,6 @@ pub trait ConfigManager {
     /// consistent. Only the current admin can call this.
     fn transfer_admin(env: Env, caller: Address, new_admin: Address);
 
-    /// Set the deposit fee in basis points. Callable only by DEFAULT_ADMIN_ROLE.
-    /// Valid range: 0 <= fee_bps <= 10_000.
-    fn set_deposit_fee(env: Env, caller: Address, fee_bps: i128);
 }
 
 // ---------------------------------------------------------------------------
@@ -132,10 +126,6 @@ impl ConfigManager for ConfigManagerContract {
         storage::load_fee_splits(&env)
     }
 
-    fn get_deposit_fee(env: Env) -> i128 {
-        storage::load_deposit_fee(&env)
-    }
-
     fn bump_config_state(env: Env) {
         bump_instance_ttl(&env);
     }
@@ -152,14 +142,6 @@ impl ConfigManager for ConfigManagerContract {
         bump_instance_ttl(&env);
     }
 
-    fn set_deposit_fee(env: Env, caller: Address, fee_bps: i128) {
-        require_admin_with_auth(&env, &caller);
-        if !(0..=10_000).contains(&fee_bps) {
-            panic_with_error!(&env, ConfigManagerError::InvalidDepositFee);
-        }
-        storage::save_deposit_fee(&env, fee_bps);
-        bump_instance_ttl(&env);
-    }
 }
 
 impl UpgradeableMigratableInternal for ConfigManagerContract {

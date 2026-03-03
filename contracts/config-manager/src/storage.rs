@@ -21,8 +21,6 @@ pub enum StorageKey {
     RoleMember(RoleMemberKey),
     /// Fee split configuration.
     FeeSplits,
-    /// Deposit fee in basis points.
-    DepositFee,
     /// Protocol risk and timing limits (single struct replaces four separate keys).
     ProtocolLimits,
     /// Current contract version (written by migration).
@@ -95,23 +93,6 @@ pub fn save_protocol_limits(env: &Env, limits: &ProtocolLimits) {
     env.storage()
         .instance()
         .set(&StorageKey::ProtocolLimits, limits);
-}
-
-// ---------------------------------------------------------------------------
-// DepositFee helpers
-// ---------------------------------------------------------------------------
-
-pub fn load_deposit_fee(env: &Env) -> i128 {
-    env.storage()
-        .instance()
-        .get(&StorageKey::DepositFee)
-        .unwrap_or(0)
-}
-
-pub fn save_deposit_fee(env: &Env, fee_bps: i128) {
-    env.storage()
-        .instance()
-        .set(&StorageKey::DepositFee, &fee_bps);
 }
 
 // ---------------------------------------------------------------------------
