@@ -59,6 +59,18 @@ path = "integration/edge_cases.rs"
 name = "funding_and_fees"
 path = "integration/funding_and_fees.rs"
 
+[[test]]
+name = "tp_sl_lifecycle"
+path = "integration/tp_sl_lifecycle.rs"
+
+[[test]]
+name = "adl_scenarios"
+path = "integration/adl_scenarios.rs"
+
+[[test]]
+name = "settlement_and_boundaries"
+path = "integration/settlement_and_boundaries.rs"
+
 # ---------------------------------------------------------------------------
 # Fuzz / property-based tests
 # ---------------------------------------------------------------------------

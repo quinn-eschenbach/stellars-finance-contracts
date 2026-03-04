@@ -76,7 +76,6 @@ impl<'a> Fixture<'a> {
         let admin_role = Symbol::new(env, "ADMIN");
         config_manager.grant_role(&admin, &pauser_role, &admin);
         config_manager.grant_role(&admin, &keeper_role, &admin);
-        config_manager.grant_role(&admin, &admin_role, &admin);
         config_manager.grant_role(&admin, &keeper_role, &keeper);
 
         // Set protocol limits
@@ -134,7 +133,7 @@ impl<'a> Fixture<'a> {
         vault.initialize(&admin, &usdc_id, &config_id, &pm_id);
 
         // 6. Initialize PositionManager
-        position_manager.initialize(&vault_id, &config_id, &oracle_router_id);
+        position_manager.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
 
         // Set per-market max leverage
         position_manager.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);

@@ -447,7 +447,8 @@ mod settle_pnl {
     // 14. settle_pnl reserved_delta exceeding reserved clamps to 0
     // -----------------------------------------------------------------------
     #[test]
-    fn test_settle_pnl_reserved_delta_exceeds_reserved_clamps() {
+    #[should_panic(expected = "Error(Contract, #4)")]
+    fn test_settle_pnl_reserved_delta_exceeds_reserved_panics() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
@@ -456,17 +457,10 @@ mod settle_pnl {
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(10 * ONE_USDC));
 
-        // Settle with reserved_delta = 50 (more than 10 reserved) -- should clamp to 0
+        // Settle with reserved_delta = 50 (more than 10 reserved) -- must panic
         fix.token_client.mint(&fix.position_manager, &(5 * ONE_USDC));
         fix.vault_client
             .settle_pnl(&fix.position_manager, &trader, &(5 * ONE_USDC), &(50 * ONE_USDC), &false);
-
-        // After: total_assets = 105, reserved = 0 (clamped), free = 105
-        assert_eq!(
-            fix.vault_client.free_liquidity(),
-            105 * ONE_USDC,
-            "reserved must be clamped to 0 when reserved_delta exceeds current reserved"
-        );
     }
 }
 
@@ -564,19 +558,14 @@ mod reserve_liquidity {
     // 6. Reserve more than total_assets -- free_liquidity should be 0 (floor)
     // -----------------------------------------------------------------------
     #[test]
-    fn test_reserve_more_than_total_assets_free_is_zero() {
+    #[should_panic(expected = "Error(Contract, #9)")]
+    fn test_reserve_more_than_total_assets_panics() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        // Reserve more than the vault holds
+        // Reserve more than the vault holds — must panic
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(200 * ONE_USDC));
-
-        let free = fix.vault_client.free_liquidity();
-        assert_eq!(
-            free, 0,
-            "Free liquidity must be floored at 0 when reserved exceeds total_assets"
-        );
     }
 
     // -----------------------------------------------------------------------
@@ -1194,7 +1183,7 @@ mod claim_fees {
         fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
         // Grant ADMIN role to admin
-        grant_admin_role(&fix, &fix.admin);
+
 
         let recipient = Address::generate(&fix.env);
         let recipient_before = fix.token_client.balance(&recipient);
@@ -1223,7 +1212,7 @@ mod claim_fees {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        grant_admin_role(&fix, &fix.admin);
+
 
         let recipient = Address::generate(&fix.env);
 
@@ -1253,7 +1242,7 @@ mod claim_fees {
 
         fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
-        grant_admin_role(&fix, &fix.admin);
+
         let recipient = Address::generate(&fix.env);
 
         fix.vault_client.claim_fees(&fix.admin, &recipient);

@@ -88,31 +88,6 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 },
                 {
-                  "symbol": "ADMIN"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
-              "function_name": "grant_role",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                },
-                {
                   "symbol": "KEEPER"
                 },
                 {
@@ -320,7 +295,34 @@
         }
       ]
     ],
-    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+              "function_name": "initialize",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
@@ -420,7 +422,7 @@
                   "i128": "1400000000"
                 },
                 {
-                  "bool": true
+                  "bool": false
                 },
                 {
                   "i128": "0"
@@ -1471,7 +1473,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1000210000315"
+                  "i128": "999790000315"
                 }
               }
             },
@@ -1516,7 +1518,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1190999685"
+                  "i128": "1610999685"
                 }
               }
             },
@@ -1936,7 +1938,7 @@
                         "symbol": "acc_funding_index"
                       },
                       "val": {
-                        "i128": "2219685"
+                        "i128": "-2219685"
                       }
                     },
                     {
@@ -1944,7 +1946,7 @@
                         "symbol": "global_long_avg_price"
                       },
                       "val": {
-                        "i128": "500000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -1952,7 +1954,7 @@
                         "symbol": "global_short_avg_price"
                       },
                       "val": {
-                        "i128": "0"
+                        "i128": "500000000000"
                       }
                     },
                     {
@@ -2071,7 +2073,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "-210000000"
+                          "i128": "209999685"
                         }
                       },
                       {
@@ -2323,7 +2325,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "-210000000"
+                          "i128": "209999685"
                         }
                       },
                       {

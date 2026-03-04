@@ -68,7 +68,6 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
-    config_client.grant_role(&admin, &admin_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
     config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
@@ -120,7 +119,7 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let vault_client = VaultContractClient::new(&env, &vault_id);
     vault_client.initialize(&admin, &usdc_id, &config_id, &pm_id);
 
-    pm_client.initialize(&vault_id, &config_id, &oracle_router_id);
+    pm_client.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
     pm_client.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);
 
     usdc_client.mint(&trader, &TRADER_BALANCE);

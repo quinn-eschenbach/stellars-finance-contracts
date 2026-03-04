@@ -88,31 +88,6 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 },
                 {
-                  "symbol": "ADMIN"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
-              "function_name": "grant_role",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                },
-                {
                   "symbol": "KEEPER"
                 },
                 {
@@ -320,7 +295,34 @@
         }
       ]
     ],
-    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+              "function_name": "initialize",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
@@ -414,13 +416,13 @@
                   "symbol": "BTC"
                 },
                 {
-                  "i128": "8000000000"
+                  "i128": "9000000000"
                 },
                 {
-                  "i128": "1600000000"
+                  "i128": "1800000000"
                 },
                 {
-                  "bool": false
+                  "bool": true
                 },
                 {
                   "i128": "0"
@@ -445,7 +447,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON"
                     },
                     {
-                      "i128": "1600000000"
+                      "i128": "1800000000"
                     }
                   ]
                 }
@@ -474,7 +476,7 @@
                   "symbol": "BTC"
                 },
                 {
-                  "i128": "8000000000"
+                  "i128": "9000000000"
                 }
               ]
             }
@@ -1471,7 +1473,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1000240000361"
+                  "i128": "999730000406"
                 }
               }
             },
@@ -1516,7 +1518,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1360999639"
+                  "i128": "2070999594"
                 }
               }
             },
@@ -1590,7 +1592,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1101601000000"
+                          "i128": "1101801000000"
                         }
                       }
                     ]
@@ -1936,7 +1938,7 @@
                         "symbol": "acc_funding_index"
                       },
                       "val": {
-                        "i128": "-2219685"
+                        "i128": "2219685"
                       }
                     },
                     {
@@ -1944,7 +1946,7 @@
                         "symbol": "global_long_avg_price"
                       },
                       "val": {
-                        "i128": "0"
+                        "i128": "500000000000"
                       }
                     },
                     {
@@ -1952,7 +1954,7 @@
                         "symbol": "global_short_avg_price"
                       },
                       "val": {
-                        "i128": "500000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -2071,7 +2073,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "-240000000"
+                          "i128": "269999594"
                         }
                       },
                       {
@@ -2323,7 +2325,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "-240000000"
+                          "i128": "269999594"
                         }
                       },
                       {
@@ -2371,7 +2373,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "184"
+                          "i128": "207"
                         }
                       },
                       {

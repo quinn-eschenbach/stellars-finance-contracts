@@ -120,7 +120,6 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
-    config_client.grant_role(&admin, &admin_role, &admin);
 
     config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
         min_collateral: 1_000_000,
@@ -186,7 +185,7 @@ fn setup_full<'a>() -> TestFixture<'a> {
     vault_client.initialize(&admin, &usdc_id, &config_id, &pm_id);
 
     // --- 7. Initialize PositionManager ---
-    pm_client.initialize(&vault_id, &config_id, &oracle_router_id);
+    pm_client.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
     pm_client.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);
     pm_client.set_max_leverage(&admin, &symbol_short!("ETH"), &100_i128);
 
@@ -907,9 +906,10 @@ fn test_same_trader_opens_different_symbols() {
 // ===========================================================================
 
 #[test]
+#[should_panic(expected = "Error(Contract, #16)")]
 fn test_minimum_position_size() {
-    // Scenario: Open a position with the smallest meaningful values (1 unit each).
-    // The contract must handle dust amounts without overflow or panic.
+    // Scenario: Dust positions (below min_collateral) must be rejected.
+    // min_collateral is set to 1_000_000 (1 USDC) in test setup.
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
@@ -917,13 +917,9 @@ fn test_minimum_position_size() {
         &f.trader,
         &symbol,
         &1_i128,       // 1 unit of size
-        &1_i128,       // 1 unit of collateral (0.000001 USDC)
+        &1_i128,       // 1 unit of collateral — below min_collateral
         &true, &0, &0,
     );
-
-    let pos = f.pm_client.get_position(&f.trader, &symbol);
-    assert_eq!(pos.size, 1, "Must handle minimum position size");
-    assert_eq!(pos.collateral, 1, "Must handle minimum collateral");
 }
 
 #[test]

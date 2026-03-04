@@ -24,8 +24,10 @@ pub struct PositionManagerContract;
 #[contractclient(name = "PositionManagerClient")]
 pub trait PositionManager {
     /// Initialize the position manager. Can only be called once.
+    /// `admin` must authorize the call to prevent front-running.
     fn initialize(
         env: Env,
+        admin: Address,
         vault_address: Address,
         config_manager: Address,
         oracle_router: Address,
@@ -90,11 +92,13 @@ pub trait PositionManager {
 impl PositionManager for PositionManagerContract {
     fn initialize(
         env: Env,
+        admin: Address,
         vault_address: Address,
         config_manager: Address,
         oracle_router: Address,
     ) {
         logic::require_not_initialized(&env);
+        admin.require_auth();
         storage::set_initialized(&env);
         storage::set_vault_address(&env, &vault_address);
         storage::set_config_manager(&env, &config_manager);
@@ -164,7 +168,7 @@ impl PositionManager for PositionManagerContract {
 
     fn deleverage_position(env: Env, caller: Address, trader: Address, symbol: Symbol) {
         logic::require_initialized(&env);
-        logic::require_not_paused(&env);
+        // No pause check — ADL must work during crises, like liquidations
         logic::require_keeper(&env, &caller);
         logic::do_deleverage_position(&env, &trader, &symbol);
         shared::bump_instance_ttl(&env);

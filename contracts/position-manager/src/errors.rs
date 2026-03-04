@@ -26,4 +26,8 @@ pub enum PositionManagerError {
     OrderNotTriggered = 13,
     /// Invalid take-profit or stop-loss price for the position direction.
     InvalidTpSl = 14,
+    /// increase_position called with `is_long` opposite to the existing position's direction.
+    DirectionMismatch = 15,
+    /// Collateral below the protocol's min_collateral limit.
+    BelowMinCollateral = 16,
 }

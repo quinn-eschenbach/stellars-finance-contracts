@@ -156,8 +156,18 @@ pub fn do_increase_position(
     let mut market = storage::get_market(env, symbol);
     let existing = storage::get_position(env, trader, symbol);
 
+    // Enforce minimum collateral from protocol limits
+    let limits = load_limits(env);
+    if collateral < limits.min_collateral {
+        panic_with_error!(env, PositionManagerError::BelowMinCollateral);
+    }
+
     let position = match existing {
         Some(mut pos) => {
+            // Reject direction flip — must close existing position first
+            if is_long != pos.is_long {
+                panic_with_error!(env, PositionManagerError::DirectionMismatch);
+            }
             // Weighted-average entry price
             pos.entry_price =
                 math::update_global_avg_price(pos.entry_price, pos.size, mark_price, size);
@@ -321,11 +331,8 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         market.acc_funding_index,
         pos.is_long,
     );
-    let health = math::calc_health(collateral_delta, pnl, borrow_fee, funding_fee);
-    let trader_payout = if health > 0 { health } else { 0 };
-
     // Settlement (includes PnL tracking + fee accrual + funding cut)
-    settle_close(env, trader, actual_delta, collateral_delta, pnl, trader_payout, borrow_fee, funding_fee);
+    settle_close(env, trader, actual_delta, collateral_delta, pnl, borrow_fee, funding_fee);
 
     // Update market OI
     if pos.is_long {
@@ -415,13 +422,14 @@ pub fn do_liquidate_position(
         token.transfer(&contract_addr, &vault_addr, &pos.collateral);
     }
 
-    // Update net global trader PnL (Fix C2) — pnl is the trader's loss
+    // Track the full economic outcome (price PnL minus fees plus funding)
+    let net_economic_pnl = pnl - borrow_fee + funding_fee;
     let old_net_pnl = storage::get_net_global_trader_pnl(env);
-    let new_net_pnl = old_net_pnl + pnl;
+    let new_net_pnl = old_net_pnl + net_economic_pnl;
     storage::set_net_global_trader_pnl(env, new_net_pnl);
     vault.update_net_pnl(&contract_addr, &new_net_pnl);
 
-    // Accrue borrow fees to vault (Fix C3)
+    // Accrue borrow fees to vault
     if borrow_fee > 0 {
         vault.accrue_fees(&contract_addr, &borrow_fee);
     }
@@ -495,11 +503,8 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
         market.acc_funding_index,
         pos.is_long,
     );
-    let health = math::calc_health(pos.collateral, pnl, borrow_fee, funding_fee);
-    let trader_payout = if health > 0 { health } else { 0 };
-
     // Settlement (same as full close, includes PnL tracking + fee accrual + funding cut)
-    settle_close(env, trader, pos.size, pos.collateral, pnl, trader_payout, borrow_fee, funding_fee);
+    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee);
 
     // Update market OI
     if pos.is_long {
@@ -579,6 +584,13 @@ pub fn do_execute_order(env: &Env, trader: &Address, symbol: &Symbol) {
     let pos = storage::get_position(env, trader, symbol)
         .unwrap_or_else(|| panic_with_error!(env, PositionManagerError::PositionNotFound));
 
+    // Anti-front-running: enforce same min_position_lifetime as decrease_position
+    let limits = load_limits(env);
+    let now = env.ledger().timestamp();
+    if now < pos.last_increased_time + limits.min_position_lifetime {
+        panic_with_error!(env, PositionManagerError::PositionNotOldEnough);
+    }
+
     // Get mark price
     let oracle_addr = storage::get_oracle_router(env);
     let oracle = OracleRouterClient::new(env, &oracle_addr);
@@ -604,10 +616,7 @@ pub fn do_execute_order(env: &Env, trader: &Address, symbol: &Symbol) {
         market.acc_funding_index,
         pos.is_long,
     );
-    let health = math::calc_health(pos.collateral, pnl, borrow_fee, funding_fee);
-    let trader_payout = if health > 0 { health } else { 0 };
-
-    settle_close(env, trader, pos.size, pos.collateral, pnl, trader_payout, borrow_fee, funding_fee);
+    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee);
 
     // Update market OI
     if pos.is_long {
@@ -632,10 +641,12 @@ pub fn do_execute_order(env: &Env, trader: &Address, symbol: &Symbol) {
 /// Settle a position close: release vault reservation, handle profit/loss transfers,
 /// update net global trader PnL, accrue borrow fees, and take funding fee protocol cut.
 ///
+/// Computes health and trader payout internally so that the funding protocol cut
+/// is deducted from the trader's share (not absorbed by LPs).
+///
 /// - `actual_delta`: size being closed (used for vault release_liquidity)
 /// - `collateral_delta`: proportional collateral for the closed portion
 /// - `pnl`: unrealized PnL for the closed portion
-/// - `trader_payout`: max(0, health) -- total amount trader should receive
 /// - `borrow_fee`: borrow fee for the closed portion (accrued to vault)
 /// - `funding_fee`: funding fee for the closed portion (protocol takes a cut when positive)
 #[allow(clippy::too_many_arguments)]
@@ -645,7 +656,6 @@ fn settle_close(
     actual_delta: i128,
     collateral_delta: i128,
     pnl: i128,
-    trader_payout: i128,
     borrow_fee: i128,
     funding_fee: i128,
 ) {
@@ -654,6 +664,19 @@ fn settle_close(
     let contract_addr = env.current_contract_address();
     let asset = get_vault_asset(env, &vault_addr);
     let token = TokenClient::new(env, &asset);
+
+    // Compute funding fee protocol cut BEFORE health so the trader bears the cost
+    let funding_protocol_cut = if funding_fee > 0 {
+        let limits = load_limits(env);
+        funding_fee * (limits.funding_cut_bps as i128) / math::BPS
+    } else {
+        0
+    };
+    let effective_funding = funding_fee - funding_protocol_cut;
+
+    // Health with protocol cut deducted from funding
+    let health = math::calc_health(collateral_delta, pnl, borrow_fee, effective_funding);
+    let trader_payout = if health > 0 { health } else { 0 };
 
     // Release vault reservation
     if actual_delta > 0 {
@@ -684,24 +707,15 @@ fn settle_close(
         token.transfer(&contract_addr, trader, &pm_to_trader);
     }
 
-    // Update net global trader PnL (Fix C2)
+    // Track the full economic outcome (price PnL minus fees plus funding)
+    let net_economic_pnl = pnl - borrow_fee + effective_funding;
     let old_net_pnl = storage::get_net_global_trader_pnl(env);
-    let new_net_pnl = old_net_pnl + pnl;
+    let new_net_pnl = old_net_pnl + net_economic_pnl;
     storage::set_net_global_trader_pnl(env, new_net_pnl);
     vault.update_net_pnl(&contract_addr, &new_net_pnl);
 
-    // Accrue borrow fees to vault (Fix C3)
-    let mut total_fees = borrow_fee;
-
-    // Funding fee protocol cut: when funding_fee > 0 the trader is receiving
-    // funding — take a protocol cut and accrue it alongside borrow fees.
-    if funding_fee > 0 {
-        let limits = load_limits(env);
-        let protocol_cut =
-            funding_fee * (limits.funding_cut_bps as i128) / (math::BPS);
-        total_fees += protocol_cut;
-    }
-
+    // Accrue borrow fees + funding protocol cut to vault
+    let total_fees = borrow_fee + funding_protocol_cut;
     if total_fees > 0 {
         vault.accrue_fees(&contract_addr, &total_fees);
     }

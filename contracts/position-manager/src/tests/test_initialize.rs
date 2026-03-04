@@ -138,8 +138,8 @@ fn test_initialize_stores_addresses() {
     // Scenario: Calling initialize once should succeed and store the vault,
     // config_manager, and oracle_router addresses. Subsequent reads of those
     // storage keys (via a view call) should not panic.
-    let (env, client, vault, config_mgr, oracle, _admin) = setup_test();
-    client.initialize(&vault, &config_mgr, &oracle);
+    let (env, client, vault, config_mgr, oracle, admin) = setup_test();
+    client.initialize(&admin, &vault, &config_mgr, &oracle);
 
     // Verify by reading storage directly inside the contract context.
     env.as_contract(&client.address, || {
@@ -165,8 +165,8 @@ fn test_initialize_stores_addresses() {
 #[test]
 fn test_initialize_sets_paused_to_false() {
     // Scenario: After initialization, the contract should not be paused.
-    let (env, client, vault, config_mgr, oracle, _admin) = setup_test();
-    client.initialize(&vault, &config_mgr, &oracle);
+    let (env, client, vault, config_mgr, oracle, admin) = setup_test();
+    client.initialize(&admin, &vault, &config_mgr, &oracle);
 
     env.as_contract(&client.address, || {
         assert_eq!(
@@ -187,10 +187,10 @@ fn test_initialize_double_call_reverts() {
     // Scenario: Calling initialize a second time must revert with
     // AlreadyInitialized (error code 1). This prevents an attacker from
     // re-initializing the contract with different addresses.
-    let (_env, client, vault, config_mgr, oracle, _admin) = setup_test();
-    client.initialize(&vault, &config_mgr, &oracle);
+    let (_env, client, vault, config_mgr, oracle, admin) = setup_test();
+    client.initialize(&admin, &vault, &config_mgr, &oracle);
     // Second call must panic.
-    client.initialize(&vault, &config_mgr, &oracle);
+    client.initialize(&admin, &vault, &config_mgr, &oracle);
 }
 
 #[test]
@@ -198,13 +198,13 @@ fn test_initialize_double_call_reverts() {
 fn test_initialize_double_call_different_addresses_reverts() {
     // Adversarial: An attacker tries to re-initialize with completely
     // different addresses to redirect the vault/oracle. Must still fail.
-    let (env, client, vault, config_mgr, oracle, _admin) = setup_test();
-    client.initialize(&vault, &config_mgr, &oracle);
+    let (env, client, vault, config_mgr, oracle, admin) = setup_test();
+    client.initialize(&admin, &vault, &config_mgr, &oracle);
 
     let evil_vault = Address::generate(&env);
     let evil_config = Address::generate(&env);
     let evil_oracle = Address::generate(&env);
-    client.initialize(&evil_vault, &evil_config, &evil_oracle);
+    client.initialize(&admin, &evil_vault, &evil_config, &evil_oracle);
 }
 
 // ===========================================================================
@@ -330,9 +330,9 @@ fn test_initialize_with_same_address_for_all() {
     // Adversarial: Passing the same address for vault, config_manager, and
     // oracle_router. The contract should either reject this or at minimum
     // store the addresses correctly without confusion.
-    let (env, client, _vault, _config_mgr, _oracle, _admin) = setup_test();
+    let (env, client, _vault, _config_mgr, _oracle, admin) = setup_test();
     let same_addr = Address::generate(&env);
-    client.initialize(&same_addr, &same_addr, &same_addr);
+    client.initialize(&admin, &same_addr, &same_addr, &same_addr);
 
     env.as_contract(&client.address, || {
         assert_eq!(storage::get_vault_address(&env), same_addr);
@@ -346,8 +346,8 @@ fn test_initialize_contract_address_as_vault() {
     // Adversarial: Pass the contract's own address as the vault address.
     // This is a self-referencing attack that should ideally be rejected,
     // but at minimum the contract should not break.
-    let (_env, client, _vault, config_mgr, oracle, _admin) = setup_test();
+    let (_env, client, _vault, config_mgr, oracle, admin) = setup_test();
     // Use the contract's own address as the vault.
     let self_addr = client.address.clone();
-    client.initialize(&self_addr, &config_mgr, &oracle);
+    client.initialize(&admin, &self_addr, &config_mgr, &oracle);
 }

@@ -319,6 +319,7 @@ fn test_double_initialize() {
 
     // PositionManager is already initialized by Fixture::deploy
     f.position_manager.initialize(
+        &f.admin,
         &f.vault_addr,
         &f.config_manager.address,
         &f.oracle_router.address,

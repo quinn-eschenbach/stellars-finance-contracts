@@ -88,31 +88,6 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 },
                 {
-                  "symbol": "ADMIN"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
-              "function_name": "grant_role",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                },
-                {
                   "symbol": "KEEPER"
                 },
                 {
@@ -320,7 +295,34 @@
         }
       ]
     ],
-    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+              "function_name": "initialize",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
@@ -409,7 +411,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "79000000000"
+                  "i128": "22000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N"
@@ -437,7 +439,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "79000000000"
+                      "i128": "22000000000"
                     }
                   ]
                 }
@@ -459,7 +461,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "79000000000"
+                  "i128": "22000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYRE5"
@@ -487,7 +489,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "79000000000"
+                      "i128": "22000000000"
                     }
                   ]
                 }
@@ -509,7 +511,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "79000000000"
+                  "i128": "22000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2ZMN"
@@ -537,7 +539,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "79000000000"
+                      "i128": "22000000000"
                     }
                   ]
                 }
@@ -559,7 +561,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "79000000000"
+                  "i128": "22000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4BV5"
@@ -587,7 +589,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "79000000000"
+                      "i128": "22000000000"
                     }
                   ]
                 }
@@ -1541,7 +1543,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1316000000000"
+                  "i128": "1088000000000"
                 }
               }
             },
@@ -1795,7 +1797,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1416000000000"
+                          "i128": "1188000000000"
                         }
                       }
                     ]
@@ -2248,7 +2250,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "79000000000000000"
+                  "i128": "22000000000000000"
                 }
               }
             },
@@ -2293,7 +2295,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "79000000000000000"
+                  "i128": "22000000000000000"
                 }
               }
             },
@@ -2338,7 +2340,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "79000000000000000"
+                  "i128": "22000000000000000"
                 }
               }
             },
@@ -2383,7 +2385,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "79000000000000000"
+                  "i128": "22000000000000000"
                 }
               }
             },
@@ -2766,7 +2768,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1316000000000000000"
+                          "i128": "1088000000000000000"
                         }
                       },
                       {

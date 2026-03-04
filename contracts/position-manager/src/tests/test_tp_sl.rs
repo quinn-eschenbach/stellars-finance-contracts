@@ -128,7 +128,6 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
-    config_client.grant_role(&admin, &admin_role, &admin);
 
     config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
         min_collateral: 1_000_000,
@@ -193,7 +192,7 @@ fn setup_full<'a>() -> TestFixture<'a> {
     vault_client.initialize(&admin, &usdc_id, &config_id, &pm_id);
 
     // --- 7. Initialize PositionManager ---
-    pm_client.initialize(&vault_id, &config_id, &oracle_router_id);
+    pm_client.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
     pm_client.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);
     pm_client.set_max_leverage(&admin, &symbol_short!("ETH"), &100_i128);
 

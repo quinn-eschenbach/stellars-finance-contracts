@@ -74,6 +74,11 @@ impl ConfigManager for ConfigManagerContract {
 
     fn grant_role(env: Env, caller: Address, role: Symbol, account: Address) {
         require_admin_with_auth(&env, &caller);
+        // ADMIN role is managed exclusively via transfer_admin
+        let admin_role = admin_role_symbol(&env);
+        if role == admin_role {
+            panic_with_error!(&env, ConfigManagerError::Unauthorized);
+        }
         set_role_member(&env, &role, &account, true);
     }
 
@@ -123,6 +128,14 @@ impl ConfigManager for ConfigManagerContract {
         if limits.adl_utilization_bps < 1 || limits.adl_utilization_bps > 10_000 {
             panic_with_error!(&env, ConfigManagerError::InvalidLimits);
         }
+        // Safety ceilings: prevent trapping funds via extreme time parameters
+        // 30 days max cooldown, 24 hours max position lifetime
+        if limits.cooldown_duration > 2_592_000 {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
+        if limits.min_position_lifetime > 86_400 {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
         storage::save_protocol_limits(&env, &limits);
         bump_instance_ttl(&env);
     }
@@ -141,6 +154,9 @@ impl ConfigManager for ConfigManagerContract {
 
     fn transfer_admin(env: Env, caller: Address, new_admin: Address) {
         require_admin_with_auth(&env, &caller);
+        // Require auth from the new admin to prove they control the address,
+        // preventing irrecoverable bricking from a typo or wrong address.
+        new_admin.require_auth();
         if caller == new_admin {
             return;
         }

@@ -77,7 +77,8 @@ impl OracleRouter for OracleRouterContract {
     ) {
         logic::require_oracle_admin(&env, &caller);
         let primary_deduped = logic::dedup_sources(&env, &primary);
-        storage::save_oracle_sources(&env, &symbol, &primary_deduped, &secondary);
+        let secondary_deduped = logic::dedup_sources(&env, &secondary);
+        storage::save_oracle_sources(&env, &symbol, &primary_deduped, &secondary_deduped);
         bump_instance_ttl(&env);
     }
 

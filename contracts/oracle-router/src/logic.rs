@@ -22,6 +22,10 @@ pub fn validate_oracle_config(env: &Env, config: &OracleConfig) {
     if config.max_deviation_bps <= 0 || config.staleness_threshold == 0 || config.cache_duration == 0 {
         panic_with_error!(env, OracleRouterError::InvalidConfig);
     }
+    // Cache must not outlive the staleness window, otherwise stale prices can be served from cache
+    if config.cache_duration > config.staleness_threshold {
+        panic_with_error!(env, OracleRouterError::InvalidConfig);
+    }
 }
 
 /// Query a list of oracle sources, filtering stale, broken, and invalid prices.

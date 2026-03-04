@@ -12,4 +12,6 @@ pub enum VaultError {
     ZeroAmount = 6,
     NotPositionManager = 7,
     CooldownNotElapsed = 8,
+    /// Reservation would exceed total vault assets.
+    ReservationExceedsTotalAssets = 9,
 }

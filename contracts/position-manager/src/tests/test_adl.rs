@@ -109,7 +109,6 @@ fn setup_adl<'a>() -> TestFixture<'a> {
     let admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
-    config_client.grant_role(&admin, &admin_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
     config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
@@ -172,7 +171,7 @@ fn setup_adl<'a>() -> TestFixture<'a> {
     vault_client.deposit(&vault_deposit, &lp, &lp, &lp);
 
     // --- 7. Initialize PositionManager ---
-    pm_client.initialize(&vault_id, &config_id, &oracle_router_id);
+    pm_client.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
     pm_client.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);
 
     // --- Fund trader ---
@@ -234,7 +233,6 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
     let admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
-    config_client.grant_role(&admin, &admin_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
     config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
@@ -291,7 +289,7 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
     usdc_client.mint(&lp, &vault_deposit);
     vault_client.deposit(&vault_deposit, &lp, &lp, &lp);
 
-    pm_client.initialize(&vault_id, &config_id, &oracle_router_id);
+    pm_client.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
     pm_client.set_max_leverage(&admin, &symbol_short!("BTC"), &100_i128);
     usdc_client.mint(&trader, &TRADER_BALANCE);
 
@@ -618,14 +616,13 @@ fn test_adl_decreases_total_reserved() {
 }
 
 // ===========================================================================
-// 5. Paused contract -- ADL requires NOT paused per contract.rs
+// 5. Paused contract -- ADL works even when paused (critical safety mechanism)
 // ===========================================================================
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
-fn test_adl_reverts_when_paused() {
-    // Scenario: Contract is paused. deleverage_position requires NOT paused
-    // (as seen in contract.rs: require_not_paused), so it must revert.
+fn test_adl_succeeds_when_paused() {
+    // Scenario: Contract is paused. ADL must still work during crises,
+    // just like liquidations, to prevent vault insolvency.
     let f = setup_adl();
     let symbol = symbol_short!("BTC");
 
@@ -648,8 +645,12 @@ fn test_adl_reverts_when_paused() {
     // Pause the contract
     f.pm_client.pause(&f.admin);
 
-    // ADL should fail because contract is paused
+    // ADL should succeed even though paused
     f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+
+    // Position should be deleted
+    let result = f.pm_client.try_get_position(&f.trader, &symbol);
+    assert!(result.is_err(), "Position must be deleted after ADL");
 }
 
 // ===========================================================================

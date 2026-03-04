@@ -112,7 +112,7 @@ fn setup() -> UpdateIndicesFixture {
     let oracle = Address::generate(&env);
 
     // -- Initialize PositionManager --
-    pm_client.initialize(&vault_id, &config_id, &oracle);
+    pm_client.initialize(&admin, &vault_id, &config_id, &oracle);
 
     // SAFETY: env lives in the fixture, clients borrow from it.
     let pm_client = unsafe { core::mem::transmute(pm_client) };

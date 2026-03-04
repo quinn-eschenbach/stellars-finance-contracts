@@ -235,12 +235,10 @@ impl VaultContract {
 
         if reserved_delta > 0 {
             let current_reserved = vault_storage::get_reserved_usdc(&env);
-            let new_reserved = if reserved_delta > current_reserved {
-                0
-            } else {
-                current_reserved - reserved_delta
-            };
-            vault_storage::set_reserved_usdc(&env, new_reserved);
+            if reserved_delta > current_reserved {
+                panic_with_error!(&env, VaultError::InsufficientFreeLiquidity);
+            }
+            vault_storage::set_reserved_usdc(&env, current_reserved - reserved_delta);
         }
 
         let asset = Vault::query_asset(&env);
@@ -265,7 +263,12 @@ impl VaultContract {
         }
 
         let current = vault_storage::get_reserved_usdc(&env);
-        vault_storage::set_reserved_usdc(&env, current + amount);
+        let new_reserved = current + amount;
+        let total = Vault::total_assets(&env);
+        if new_reserved > total {
+            panic_with_error!(&env, VaultError::ReservationExceedsTotalAssets);
+        }
+        vault_storage::set_reserved_usdc(&env, new_reserved);
         shared::bump_instance_ttl(&env);
     }
 
