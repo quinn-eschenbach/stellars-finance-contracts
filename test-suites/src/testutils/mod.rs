@@ -160,6 +160,45 @@ impl<'a> Fixture<'a> {
         }
     }
 
+    /// Create a funded trader address with the given USDC balance.
+    pub fn create_funded_trader(&self, amount: i128) -> Address {
+        let trader = Address::generate(self.env);
+        self.usdc.mint(&trader, &amount);
+        trader
+    }
+
+    /// Shorthand: open a long BTC position.
+    pub fn open_long(&self, trader: &Address, size: i128, collateral: i128) {
+        self.position_manager.increase_position(
+            trader,
+            &symbol_short!("BTC"),
+            &size,
+            &collateral,
+            &true,
+            &0,
+            &0,
+        );
+    }
+
+    /// Shorthand: open a short BTC position.
+    pub fn open_short(&self, trader: &Address, size: i128, collateral: i128) {
+        self.position_manager.increase_position(
+            trader,
+            &symbol_short!("BTC"),
+            &size,
+            &collateral,
+            &false,
+            &0,
+            &0,
+        );
+    }
+
+    /// Set the BTC oracle price. `price_usd` is in whole dollars (e.g. 50_000).
+    pub fn set_btc_price(&self, price_usd: i128) {
+        let scaled = price_usd * 10_000_000;
+        self.mock_oracle.set_price(&symbol_short!("BTC"), &scaled);
+    }
+
     /// Advance the ledger timestamp and refresh oracle price.
     pub fn advance_time(&self, new_ts: u64) {
         self.env.ledger().set(LedgerInfo {
