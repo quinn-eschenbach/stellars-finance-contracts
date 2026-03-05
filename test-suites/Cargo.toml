@@ -71,6 +71,10 @@ path = "integration/adl_scenarios.rs"
 name = "settlement_and_boundaries"
 path = "integration/settlement_and_boundaries.rs"
 
+[[test]]
+name = "test_fee_distribution"
+path = "integration/test_fee_distribution.rs"
+
 # ---------------------------------------------------------------------------
 # Fuzz / property-based tests
 # ---------------------------------------------------------------------------

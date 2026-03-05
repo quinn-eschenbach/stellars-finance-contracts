@@ -31,6 +31,13 @@ use crate::PositionManagerClient;
 
 const ONE_USDC: i128 = 10_000_000; // 1e7 (7 decimals)
 
+// Default borrow/funding rate constants (match ConfigManager defaults in setup).
+const BASE_BORROW_RATE: i128 = 100;
+const SLOPE1: i128 = 500;
+const SLOPE2: i128 = 5_000;
+const OPTIMAL_UTIL: i128 = 8_000;
+const BASE_FUNDING_RATE: i128 = 100;
+
 /// Initial ledger timestamp used across all tests.
 const T0: u64 = 1_000_000;
 
@@ -97,6 +104,14 @@ fn setup() -> UpdateIndicesFixture {
     let config_client = config_manager::ConfigManagerClient::new(&env, &config_id);
     config_client.initialize(&admin);
     config_client.grant_role(&admin, &Symbol::new(&env, "KEEPER"), &keeper);
+
+    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     // -- Deploy Vault --
     // We use the PM contract address as position_manager in vault init. We need
@@ -280,13 +295,14 @@ fn test_update_indices_advances_borrow_and_funding_indices() {
     let free_liq = f.vault_client.free_liquidity();
     let total_assets = free_liq + total_reserved;
     let util_bps = calc_utilization_bps(total_reserved, total_assets);
-    let borrow_rate = calc_borrow_rate(util_bps);
+    let borrow_rate = calc_borrow_rate(util_bps, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
     let expected_borrow_index =
         accumulate_borrow_index(INDEX_PRECISION, borrow_rate, ONE_HOUR);
 
     let funding_rate = calc_funding_rate(
         initial_market.long_open_interest,
         initial_market.short_open_interest,
+        BASE_FUNDING_RATE,
     );
     let expected_funding_index =
         accumulate_funding_index(INDEX_PRECISION, funding_rate, ONE_HOUR);
@@ -723,6 +739,7 @@ fn test_update_indices_short_heavier_oi_negative_funding() {
     let funding_rate = calc_funding_rate(
         initial_market.long_open_interest,
         initial_market.short_open_interest,
+        BASE_FUNDING_RATE,
     );
     assert!(
         funding_rate < 0,

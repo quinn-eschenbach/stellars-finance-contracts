@@ -4,8 +4,12 @@
 
 use crate::math;
 
-// Use the constants directly from the math module so there are no name collisions.
-// Reference: math::PRECISION, math::INDEX_PRECISION, math::BPS, etc.
+// Default borrow/funding rate constants used in tests (previously hardcoded in math.rs).
+const BASE_BORROW_RATE: i128 = 100;
+const SLOPE1: i128 = 500;
+const SLOPE2: i128 = 5_000;
+const OPTIMAL_UTIL: i128 = 8_000;
+const BASE_FUNDING_RATE: i128 = 100;
 
 // ========================================================================
 // 1. calc_unrealized_pnl
@@ -256,35 +260,35 @@ fn test_health_zero_collateral() {
 #[test]
 fn test_borrow_rate_zero_utilization() {
     // U=0: rate = BASE = 100 BPS = 1%
-    let rate = math::calc_borrow_rate(0);
-    assert_eq!(rate, math::BASE_BORROW_RATE);
+    let rate = math::calc_borrow_rate(0, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
+    assert_eq!(rate, BASE_BORROW_RATE);
 }
 
 #[test]
 fn test_borrow_rate_at_optimal() {
     // U=8000 (80%): rate = 100 + (8000 * 500 / 10000) = 100 + 400 = 500 BPS = 5%
-    let rate = math::calc_borrow_rate(math::OPTIMAL_UTIL);
+    let rate = math::calc_borrow_rate(OPTIMAL_UTIL, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
     assert_eq!(rate, 500);
 }
 
 #[test]
 fn test_borrow_rate_below_optimal() {
     // U=4000 (40%): rate = 100 + (4000 * 500 / 10000) = 100 + 200 = 300 BPS
-    let rate = math::calc_borrow_rate(4000);
+    let rate = math::calc_borrow_rate(4000, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
     assert_eq!(rate, 300);
 }
 
 #[test]
 fn test_borrow_rate_above_optimal() {
     // U=9000 (90%): rate = 100 + 400 + ((9000-8000)*5000/10000) = 500 + 500 = 1000 BPS = 10%
-    let rate = math::calc_borrow_rate(9000);
+    let rate = math::calc_borrow_rate(9000, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
     assert_eq!(rate, 1000);
 }
 
 #[test]
 fn test_borrow_rate_full_utilization() {
     // U=10000 (100%): rate = 100 + 400 + ((10000-8000)*5000/10000) = 500 + 1000 = 1500 BPS = 15%
-    let rate = math::calc_borrow_rate(math::BPS);
+    let rate = math::calc_borrow_rate(math::BPS, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
     assert_eq!(rate, 1500);
 }
 
@@ -298,6 +302,7 @@ fn test_funding_rate_balanced() {
     let rate = math::calc_funding_rate(
         1_000_000 * math::PRECISION,
         1_000_000 * math::PRECISION,
+        BASE_FUNDING_RATE,
     );
     assert_eq!(rate, 0);
 }
@@ -308,6 +313,7 @@ fn test_funding_rate_longs_dominant() {
     let rate = math::calc_funding_rate(
         150_000 * math::PRECISION,
         50_000 * math::PRECISION,
+        BASE_FUNDING_RATE,
     );
     assert_eq!(rate, 50); // 0.5% annualized, longs pay
 }
@@ -318,6 +324,7 @@ fn test_funding_rate_shorts_dominant() {
     let rate = math::calc_funding_rate(
         50_000 * math::PRECISION,
         150_000 * math::PRECISION,
+        BASE_FUNDING_RATE,
     );
     assert_eq!(rate, -50); // shorts pay
 }
@@ -325,22 +332,22 @@ fn test_funding_rate_shorts_dominant() {
 #[test]
 fn test_funding_rate_zero_oi() {
     // No open interest => rate = 0 (no division by zero)
-    let rate = math::calc_funding_rate(0, 0);
+    let rate = math::calc_funding_rate(0, 0, BASE_FUNDING_RATE);
     assert_eq!(rate, 0);
 }
 
 #[test]
 fn test_funding_rate_one_sided_all_longs() {
     // All longs, zero shorts => rate = 100 * long / long = 100
-    let rate = math::calc_funding_rate(100_000 * math::PRECISION, 0);
-    assert_eq!(rate, math::BASE_FUNDING_RATE);
+    let rate = math::calc_funding_rate(100_000 * math::PRECISION, 0, BASE_FUNDING_RATE);
+    assert_eq!(rate, BASE_FUNDING_RATE);
 }
 
 #[test]
 fn test_funding_rate_one_sided_all_shorts() {
     // All shorts, zero longs => rate = 100 * (-short) / short = -100
-    let rate = math::calc_funding_rate(0, 100_000 * math::PRECISION);
-    assert_eq!(rate, -(math::BASE_FUNDING_RATE));
+    let rate = math::calc_funding_rate(0, 100_000 * math::PRECISION, BASE_FUNDING_RATE);
+    assert_eq!(rate, -(BASE_FUNDING_RATE));
 }
 
 // ========================================================================
@@ -553,7 +560,7 @@ fn test_health_exactly_zero_liquidation_boundary() {
 fn test_borrow_rate_above_10000_bps() {
     // Adversarial: utilization beyond 100% (12000 BPS passed in)
     // rate = 100 + 400 + (12000-8000)*5000/10000 = 500 + 2000 = 2500
-    let rate = math::calc_borrow_rate(12_000);
+    let rate = math::calc_borrow_rate(12_000, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
     assert_eq!(rate, 2500);
 }
 
@@ -561,10 +568,10 @@ fn test_borrow_rate_above_10000_bps() {
 fn test_funding_rate_extreme_imbalance() {
     // Massive long imbalance — should not overflow
     let big = i128::MAX / (2 * math::PRECISION);
-    let rate = math::calc_funding_rate(big * math::PRECISION, 1 * math::PRECISION);
+    let rate = math::calc_funding_rate(big * math::PRECISION, 1 * math::PRECISION, BASE_FUNDING_RATE);
     // (big - 1) / (big + 1) ~ 1 for big >> 1, so rate ~ BASE_FUNDING_RATE
     assert!(
-        rate >= math::BASE_FUNDING_RATE - 1 && rate <= math::BASE_FUNDING_RATE,
+        rate >= BASE_FUNDING_RATE - 1 && rate <= BASE_FUNDING_RATE,
         "Extreme imbalance rate should be near BASE_FUNDING_RATE, got {}",
         rate
     );

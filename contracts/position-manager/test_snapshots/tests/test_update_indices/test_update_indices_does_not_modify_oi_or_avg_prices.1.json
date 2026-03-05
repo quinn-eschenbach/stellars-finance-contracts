@@ -52,6 +52,69 @@
         }
       ]
     ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+              "function_name": "update_borrow_rate_config",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "base_borrow_rate_bps"
+                      },
+                      "val": {
+                        "i128": "100"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "base_funding_rate_bps"
+                      },
+                      "val": {
+                        "i128": "100"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "optimal_utilization_bps"
+                      },
+                      "val": {
+                        "i128": "8000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "slope1_bps"
+                      },
+                      "val": {
+                        "i128": "500"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "slope2_bps"
+                      },
+                      "val": {
+                        "i128": "5000"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     [],
     [],
     [
@@ -267,6 +330,39 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
               "ledger_key_nonce": {
+                "nonce": "2032731177588607455"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "2032731177588607455"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          10000099
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "ledger_key_nonce": {
                 "nonce": "4837995959683129791"
               }
             },
@@ -333,7 +429,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
             "key": {
               "ledger_key_nonce": {
-                "nonce": "4270020994084947596"
+                "nonce": "8370022561469687789"
               }
             },
             "durability": "temporary"
@@ -348,7 +444,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": "4270020994084947596"
+                    "nonce": "8370022561469687789"
                   }
                 },
                 "durability": "temporary",
@@ -719,6 +815,59 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "BorrowRateConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "base_borrow_rate_bps"
+                              },
+                              "val": {
+                                "i128": "100"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "base_funding_rate_bps"
+                              },
+                              "val": {
+                                "i128": "100"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "optimal_utilization_bps"
+                              },
+                              "val": {
+                                "i128": "8000"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "slope1_bps"
+                              },
+                              "val": {
+                                "i128": "500"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "slope2_bps"
+                              },
+                              "val": {
+                                "i128": "5000"
+                              }
+                            }
+                          ]
                         }
                       },
                       {
@@ -1220,7 +1369,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
             "key": {
               "ledger_key_nonce": {
-                "nonce": "2032731177588607455"
+                "nonce": "4270020994084947596"
               }
             },
             "durability": "temporary"
@@ -1235,7 +1384,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": "2032731177588607455"
+                    "nonce": "4270020994084947596"
                   }
                 },
                 "durability": "temporary",

@@ -14,4 +14,6 @@ pub enum VaultError {
     CooldownNotElapsed = 8,
     /// Reservation would exceed total vault assets.
     ReservationExceedsTotalAssets = 9,
+    /// claim_fees_to amount exceeds available unclaimed fees.
+    InsufficientFees = 10,
 }

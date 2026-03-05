@@ -215,6 +215,13 @@ fn test_admin_transfer_and_new_admin_operates() {
             adl_utilization_bps: 9_500,
         },
     );
+    f.config_manager.update_borrow_rate_config(&new_admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     let limits = f.config_manager.get_protocol_limits();
     assert_eq!(limits.max_utilization_ratio, 9_000);
@@ -256,6 +263,13 @@ fn test_updated_utilization_cap_allows_larger_positions() {
             adl_utilization_bps: 9_500,
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     // Now a 90% utilization position should work (was blocked at 85%)
     let size = 900_000 * USDC_UNIT;

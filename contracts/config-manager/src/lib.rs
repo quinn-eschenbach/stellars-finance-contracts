@@ -11,4 +11,4 @@ mod tests;
 
 pub use contract::{ConfigManager, ConfigManagerClient, ConfigManagerContract};
 pub use errors::ConfigManagerError;
-pub use types::{FeeSplits, ProtocolLimits, UpgradeData};
+pub use types::{BorrowRateConfig, FeeSplits, ProtocolLimits, UpgradeData};

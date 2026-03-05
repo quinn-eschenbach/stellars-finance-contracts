@@ -107,6 +107,53 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+              "function_name": "update_fee_splits",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "dev_bps"
+                      },
+                      "val": {
+                        "u32": 500
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "keeper_bps"
+                      },
+                      "val": {
+                        "u32": 500
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "lp_bps"
+                      },
+                      "val": {
+                        "u32": 9000
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
               "function_name": "update_protocol_limits",
               "args": [
                 {
@@ -168,6 +215,69 @@
                       },
                       "val": {
                         "u64": "60"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
+              "function_name": "update_borrow_rate_config",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+                },
+                {
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "base_borrow_rate_bps"
+                      },
+                      "val": {
+                        "i128": "100"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "base_funding_rate_bps"
+                      },
+                      "val": {
+                        "i128": "100"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "optimal_utilization_bps"
+                      },
+                      "val": {
+                        "i128": "8000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "slope1_bps"
+                      },
+                      "val": {
+                        "i128": "500"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "slope2_bps"
+                      },
+                      "val": {
+                        "i128": "5000"
                       }
                     }
                   ]
@@ -416,13 +526,13 @@
                   "symbol": "BTC"
                 },
                 {
-                  "i128": "33000000000"
+                  "i128": "36000000000"
                 },
                 {
-                  "i128": "15242700000"
+                  "i128": "4654800000"
                 },
                 {
-                  "bool": true
+                  "bool": false
                 },
                 {
                   "i128": "0"
@@ -447,7 +557,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON"
                     },
                     {
-                      "i128": "15242700000"
+                      "i128": "4654800000"
                     }
                   ]
                 }
@@ -476,7 +586,7 @@
                   "symbol": "BTC"
                 },
                 {
-                  "i128": "33000000000"
+                  "i128": "36000000000"
                 }
               ]
             }
@@ -497,6 +607,39 @@
     "min_temp_entry_ttl": 100,
     "max_entry_ttl": 10000000,
     "ledger_entries": [
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "115220454072064130"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "115220454072064130"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          10000099
+        ]
+      ],
       [
         {
           "contract_data": {
@@ -618,6 +761,39 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "2032731177588607455"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          10000099
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "3126073502131104533"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "3126073502131104533"
                   }
                 },
                 "durability": "temporary",
@@ -833,7 +1009,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
             "key": {
               "ledger_key_nonce": {
-                "nonce": "115220454072064130"
+                "nonce": "1301173170172112462"
               }
             },
             "durability": "temporary"
@@ -848,7 +1024,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": "115220454072064130"
+                    "nonce": "1301173170172112462"
                   }
                 },
                 "durability": "temporary",
@@ -1215,6 +1391,96 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "BorrowRateConfig"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "base_borrow_rate_bps"
+                              },
+                              "val": {
+                                "i128": "100"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "base_funding_rate_bps"
+                              },
+                              "val": {
+                                "i128": "100"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "optimal_utilization_bps"
+                              },
+                              "val": {
+                                "i128": "8000"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "slope1_bps"
+                              },
+                              "val": {
+                                "i128": "500"
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "slope2_bps"
+                              },
+                              "val": {
+                                "i128": "5000"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "FeeSplits"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "symbol": "dev_bps"
+                              },
+                              "val": {
+                                "u32": 500
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "keeper_bps"
+                              },
+                              "val": {
+                                "u32": 500
+                              }
+                            },
+                            {
+                              "key": {
+                                "symbol": "lp_bps"
+                              },
+                              "val": {
+                                "u32": 9000
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Initialized"
                             }
                           ]
@@ -1473,7 +1739,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1000990001581"
+                  "i128": "1001080001741"
                 }
               }
             },
@@ -1518,7 +1784,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "14253698419"
+                  "i128": "3575798259"
                 }
               }
             },
@@ -1592,7 +1858,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1115243700000"
+                          "i128": "1104655800000"
                         }
                       }
                     ]
@@ -1655,7 +1921,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "485000000000"
+                          "i128": "515000000000"
                         }
                       }
                     ]
@@ -1811,7 +2077,7 @@
                                 "symbol": "price"
                               },
                               "val": {
-                                "i128": "485000000000"
+                                "i128": "515000000000"
                               }
                             }
                           ]
@@ -1930,7 +2196,7 @@
                         "symbol": "acc_borrow_index"
                       },
                       "val": {
-                        "i128": "53906648947234"
+                        "i128": "53906648991627"
                       }
                     },
                     {
@@ -1938,7 +2204,7 @@
                         "symbol": "acc_funding_index"
                       },
                       "val": {
-                        "i128": "2219685"
+                        "i128": "-2219685"
                       }
                     },
                     {
@@ -1946,7 +2212,7 @@
                         "symbol": "global_long_avg_price"
                       },
                       "val": {
-                        "i128": "500000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -1954,7 +2220,7 @@
                         "symbol": "global_short_avg_price"
                       },
                       "val": {
-                        "i128": "0"
+                        "i128": "500000000000"
                       }
                     },
                     {
@@ -2073,7 +2339,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "-990001581"
+                          "i128": "-1080001741"
                         }
                       },
                       {
@@ -2325,7 +2591,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "-990001581"
+                          "i128": "-1080001741"
                         }
                       },
                       {
@@ -2373,7 +2639,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "849"
+                          "i128": "47"
                         }
                       },
                       {
@@ -2404,7 +2670,7 @@
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N",
             "key": {
               "ledger_key_nonce": {
-                "nonce": "1301173170172112462"
+                "nonce": "6517132746326325848"
               }
             },
             "durability": "temporary"
@@ -2419,40 +2685,7 @@
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N",
                 "key": {
                   "ledger_key_nonce": {
-                    "nonce": "1301173170172112462"
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          10000169
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": "3126073502131104533"
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": "3126073502131104533"
+                    "nonce": "6517132746326325848"
                   }
                 },
                 "durability": "temporary",
@@ -2462,6 +2695,39 @@
             "ext": "v0"
           },
           10000099
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "7270604957039011794"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "7270604957039011794"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          10000169
         ]
       ],
       [

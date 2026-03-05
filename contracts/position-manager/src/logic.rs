@@ -12,6 +12,22 @@ use crate::storage;
 use crate::types::Position;
 
 // ---------------------------------------------------------------------------
+// Close type — determines fee distribution
+// ---------------------------------------------------------------------------
+
+/// Internal enum (not stored) to control fee distribution per close scenario.
+pub enum CloseType {
+    /// User-initiated close — no keeper reward.
+    UserClose,
+    /// TP/SL order executed by a keeper.
+    OrderExecution,
+    /// Force-liquidation by a keeper.
+    Liquidation,
+    /// Auto-deleveraging — no keeper reward.
+    Deleverage,
+}
+
+// ---------------------------------------------------------------------------
 // Initialization guards
 // ---------------------------------------------------------------------------
 
@@ -74,6 +90,62 @@ fn load_limits(env: &Env) -> config_manager::ProtocolLimits {
     ConfigManagerClient::new(env, &config_mgr).get_protocol_limits()
 }
 
+/// Load borrow rate config from ConfigManager via cross-contract call.
+fn load_borrow_rate_config(env: &Env) -> config_manager::BorrowRateConfig {
+    let config_mgr = storage::get_config_manager(env);
+    ConfigManagerClient::new(env, &config_mgr).get_borrow_rate_config()
+}
+
+/// Load fee splits from ConfigManager via cross-contract call.
+fn load_fee_splits(env: &Env) -> config_manager::FeeSplits {
+    let config_mgr = storage::get_config_manager(env);
+    ConfigManagerClient::new(env, &config_mgr).get_fee_splits()
+}
+
+/// Distribute fees according to close type and FeeSplits config.
+///
+/// - keeper_share: paid directly from vault to keeper (OrderExecution, Liquidation only)
+/// - dev_share: stays in unclaimed_fees for admin to claim later
+/// - lp_share: stays in vault pool (not accrued to unclaimed_fees)
+///
+/// Only `keeper_share + dev_share` is accrued to vault's unclaimed_fees.
+/// The keeper is then paid via `claim_fees_to`.
+fn distribute_fees(
+    env: &Env,
+    vault: &VaultContractClient,
+    total_fees: i128,
+    close_type: &CloseType,
+    keeper: Option<&Address>,
+) {
+    if total_fees <= 0 {
+        return;
+    }
+
+    let fee_splits = load_fee_splits(env);
+    let contract_addr = env.current_contract_address();
+
+    let keeper_share = match close_type {
+        CloseType::OrderExecution | CloseType::Liquidation => {
+            total_fees * (fee_splits.keeper_bps as i128) / math::BPS
+        }
+        _ => 0,
+    };
+    let dev_share = total_fees * (fee_splits.dev_bps as i128) / math::BPS;
+
+    // Only accrue non-LP portion to unclaimed_fees
+    let non_lp_fees = keeper_share + dev_share;
+    if non_lp_fees > 0 {
+        vault.accrue_fees(&contract_addr, &non_lp_fees);
+    }
+
+    // Pay keeper directly from accrued fees
+    if keeper_share > 0 {
+        if let Some(keeper_addr) = keeper {
+            vault.claim_fees_to(&contract_addr, keeper_addr, &keeper_share);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Input validation
 // ---------------------------------------------------------------------------
@@ -99,6 +171,9 @@ pub fn do_update_indices(env: &Env, symbol: &Symbol) {
         return;
     }
 
+    // Load borrow/funding rate config from ConfigManager
+    let rate_config = load_borrow_rate_config(env);
+
     // Borrow rate from utilization
     let total_reserved = storage::get_total_reserved(env);
     let vault_addr = storage::get_vault_address(env);
@@ -106,14 +181,23 @@ pub fn do_update_indices(env: &Env, symbol: &Symbol) {
     let free_liq = vault.free_liquidity();
     let total_assets = free_liq + total_reserved;
     let util_bps = math::calc_utilization_bps(total_reserved, total_assets);
-    let borrow_rate = math::calc_borrow_rate(util_bps);
+    let borrow_rate = math::calc_borrow_rate(
+        util_bps,
+        rate_config.base_borrow_rate_bps,
+        rate_config.slope1_bps,
+        rate_config.slope2_bps,
+        rate_config.optimal_utilization_bps,
+    );
 
     market.acc_borrow_index =
         math::accumulate_borrow_index(market.acc_borrow_index, borrow_rate, time_delta);
 
     // Funding rate from OI imbalance
-    let funding_rate =
-        math::calc_funding_rate(market.long_open_interest, market.short_open_interest);
+    let funding_rate = math::calc_funding_rate(
+        market.long_open_interest,
+        market.short_open_interest,
+        rate_config.base_funding_rate_bps,
+    );
     market.acc_funding_index =
         math::accumulate_funding_index(market.acc_funding_index, funding_rate, time_delta);
 
@@ -331,8 +415,8 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         market.acc_funding_index,
         pos.is_long,
     );
-    // Settlement (includes PnL tracking + fee accrual + funding cut)
-    settle_close(env, trader, actual_delta, collateral_delta, pnl, borrow_fee, funding_fee);
+    // Settlement (includes PnL tracking + fee distribution + funding cut)
+    settle_close(env, trader, actual_delta, collateral_delta, pnl, borrow_fee, funding_fee, &CloseType::UserClose, None);
 
     // Update market OI
     if pos.is_long {
@@ -372,7 +456,7 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
 
 pub fn do_liquidate_position(
     env: &Env,
-    _caller: &Address,
+    caller: &Address,
     trader: &Address,
     symbol: &Symbol,
 ) {
@@ -422,17 +506,27 @@ pub fn do_liquidate_position(
         token.transfer(&contract_addr, &vault_addr, &pos.collateral);
     }
 
-    // Track the full economic outcome (price PnL minus fees plus funding)
-    let net_economic_pnl = pnl - borrow_fee + funding_fee;
+    // Compute funding protocol cut (consistent with settle_close)
+    let funding_protocol_cut = if funding_fee > 0 {
+        let limits = load_limits(env);
+        funding_fee * (limits.funding_cut_bps as i128) / math::BPS
+    } else {
+        0
+    };
+    let effective_funding = funding_fee - funding_protocol_cut;
+
+    // Track the full economic outcome using effective_funding (after protocol cut)
+    let net_economic_pnl = pnl - borrow_fee + effective_funding;
     let old_net_pnl = storage::get_net_global_trader_pnl(env);
     let new_net_pnl = old_net_pnl + net_economic_pnl;
     storage::set_net_global_trader_pnl(env, new_net_pnl);
     vault.update_net_pnl(&contract_addr, &new_net_pnl);
 
-    // Accrue borrow fees to vault
-    if borrow_fee > 0 {
-        vault.accrue_fees(&contract_addr, &borrow_fee);
-    }
+    // Distribute fees: include funding protocol cut, but cap to collateral
+    // (position is underwater, so actual tokens received = collateral)
+    let total_fees = borrow_fee + funding_protocol_cut;
+    let distributable_fees = core::cmp::min(total_fees, pos.collateral);
+    distribute_fees(env, &vault, distributable_fees, &CloseType::Liquidation, Some(caller));
 
     // Update market OI
     if pos.is_long {
@@ -495,6 +589,12 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     // Calculate PnL, fees, health
     let pnl =
         math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
+
+    // Guard: only profitable positions can be ADL'd
+    if pnl <= 0 {
+        panic_with_error!(env, PositionManagerError::AdlTargetNotProfitable);
+    }
+
     let borrow_fee =
         math::calc_borrow_fee(pos.size, pos.entry_borrow_index, market.acc_borrow_index);
     let funding_fee = math::calc_funding_fee(
@@ -503,8 +603,8 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
         market.acc_funding_index,
         pos.is_long,
     );
-    // Settlement (same as full close, includes PnL tracking + fee accrual + funding cut)
-    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee);
+    // Settlement (same as full close, includes PnL tracking + fee distribution + funding cut)
+    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::Deleverage, None);
 
     // Update market OI
     if pos.is_long {
@@ -577,7 +677,7 @@ fn validate_tp_sl(env: &Env, pos: &Position, take_profit: i128, stop_loss: i128)
 // execute_order logic
 // ---------------------------------------------------------------------------
 
-pub fn do_execute_order(env: &Env, trader: &Address, symbol: &Symbol) {
+pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &Symbol) {
     // Refresh indices so fees are current
     do_update_indices(env, symbol);
 
@@ -616,7 +716,7 @@ pub fn do_execute_order(env: &Env, trader: &Address, symbol: &Symbol) {
         market.acc_funding_index,
         pos.is_long,
     );
-    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee);
+    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::OrderExecution, Some(keeper));
 
     // Update market OI
     if pos.is_long {
@@ -658,6 +758,8 @@ fn settle_close(
     pnl: i128,
     borrow_fee: i128,
     funding_fee: i128,
+    close_type: &CloseType,
+    keeper: Option<&Address>,
 ) {
     let vault_addr = storage::get_vault_address(env);
     let vault = VaultContractClient::new(env, &vault_addr);
@@ -714,9 +816,7 @@ fn settle_close(
     storage::set_net_global_trader_pnl(env, new_net_pnl);
     vault.update_net_pnl(&contract_addr, &new_net_pnl);
 
-    // Accrue borrow fees + funding protocol cut to vault
+    // Distribute fees according to close type and FeeSplits config
     let total_fees = borrow_fee + funding_protocol_cut;
-    if total_fees > 0 {
-        vault.accrue_fees(&contract_addr, &total_fees);
-    }
+    distribute_fees(env, &vault, total_fees, close_type, keeper);
 }

@@ -155,7 +155,7 @@ impl PositionManager for PositionManagerContract {
         logic::require_initialized(&env);
         logic::require_not_paused(&env);
         logic::require_keeper(&env, &caller);
-        logic::do_execute_order(&env, &trader, &symbol);
+        logic::do_execute_order(&env, &caller, &trader, &symbol);
         shared::bump_instance_ttl(&env);
     }
 

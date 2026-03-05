@@ -4,7 +4,7 @@
 
 This protocol is a decentralized, non-custodial perpetual exchange built on the Soroban smart contract platform. It utilizes a unified liquidity pool model (GLP-style) where Liquidity Providers (LPs) act as the counterparty to all traders. The protocol supports leveraged trading of assets with zero price impact, relying on oracle feeds for pricing.
 
-The system employs a **Single-Asset Vault (USDC)** architecture. LPs deposit USDC to mint a liquid, interest-bearing SEP-41 token (STELLARS_LP), while traders use USDC as collateral to open Long or Short positions. Solvency is maintained via a network of Keeper bots that perform liquidations, update funding rates, and execute Auto-Deleveraging (ADL) when necessary.
+The system employs a **Single-Asset Vault (USDC)** architecture. LPs deposit USDC to mint a liquid, interest-bearing SEP-41 token (`sLP`), while traders use USDC as collateral to open Long or Short positions. Solvency is maintained via a network of Keeper bots that perform liquidations, update funding rates, and execute Auto-Deleveraging (ADL) when necessary.
 
 ---
 
@@ -14,43 +14,45 @@ The protocol consists of four interacting smart contracts. State is managed to e
 
 ### 2.1 `Vault` (Liquidity & Token)
 
-**Role:** The central treasury. It utilizes OpenZeppelin's Soroban Token Standard to implement the SEP-41 LP share token (`STELLARS_LP`). To ensure robust security and upgrade paths, it integrates OpenZeppelin's `Initializable` (for setup) and `Pausable` (for emergency stops) modules. It strictly manages "Free Liquidity" to prevent insolvency and bank runs.
+**Role:** The central treasury. Implements the ERC-4626 tokenized vault standard via OpenZeppelin's `FungibleVault`, issuing the SEP-41 LP share token `sLP` ("Stellars LP"). Integrates OpenZeppelin's `Initializable`, `Pausable`, and `Upgradeable` modules. It strictly manages "Free Liquidity" to prevent insolvency and bank runs.
 
-**State Variables (`Persistent` Storage):**
+**State Variables:**
 
-* **Token Ledger (SEP-41 Standard):**
-* `TotalSupply`: Total amount of `STELLARS_LP` tokens in existence.
-* `Balances`: Map of `Address -> Amount` (User LP balances).
-* `Allowances`: Map of `(Owner, Spender) -> Amount`.
+* **Instance Storage:**
+  * `ConfigManager`: Address of the ConfigManager contract.
+  * `PositionManager`: Address of the PositionManager contract (the only caller for settlement functions).
+  * `ReservedUSDC`: Total USDC currently locked backing open positions.
+  * `UnclaimedFees`: Accumulated protocol revenue (keeper + dev shares) not yet withdrawn.
+  * `NetGlobalTraderPnL`: Net unrealized PnL across all traders, updated by the PositionManager on every position close.
+  * `IsPaused`: Boolean flag controlled by the `PAUSER` role.
 
+* **Persistent Storage:**
+  * `LastDepositTime(Address)`: Timestamp of each user's last deposit, used to enforce the cooldown period before withdrawals.
 
-* **Asset Tracking:**
-* `TotalUSDC`: The actual `contract.balance` of USDC held in the vault.
-* `ReservedUSDC`: The total amount of USDC currently "locked" as collateral for open positions.
-* `UnclaimedFees`: Protocol revenue (the Keeper/Dev spread) that has not yet been withdrawn.
-
-
-* **System State:**
-* `IsPaused`: Boolean flag controlled by the `PAUSER_ROLE`.
-
+* **OZ-Managed (FungibleVault / FungibleToken):**
+  * LP share balances, total supply, and allowances are managed internally by OpenZeppelin's token implementation.
 
 
 **Key Functions:**
 
-* `initialize(admin, config_manager)`: OpenZeppelin standard to set initial parameters. Can only be called once.
-* `deposit(amount)`: Reverts if `IsPaused == true`. Transfers USDC in, calculates current share price, and mints `STELLARS_LP`.
-* `withdraw(amount)`: Reverts if `IsPaused == true`. Calculates **Free Liquidity** to ensure the protocol remains solvent against active winning trades:
+* `initialize(admin, asset, config_manager, position_manager)`: One-time setup. Sets the USDC asset address, links ConfigManager and PositionManager, configures the LP token with name "Stellars LP", symbol "sLP", and `decimals_offset=6`.
+* `deposit(assets, receiver, from, operator)` / `mint(shares, receiver, from, operator)`: ERC-4626 standard. Reverts if paused. Records the caller's `LastDepositTime` for cooldown enforcement.
+* `withdraw(assets, receiver, owner, operator)` / `redeem(shares, receiver, owner, operator)`: ERC-4626 standard. Reverts if paused. Enforces the cooldown period (`now >= LastDepositTime + cooldown_duration`). Calculates **Free Liquidity** to ensure the protocol remains solvent against active winning trades:
 
-$$\text{Free Liquidity} = \text{TotalUSDC} - \text{ReservedUSDC} - \text{UnclaimedFees} - \max(0, \text{NetGlobalTraderPnL})$$
+$$\text{Free Liquidity} = \max\left(0,\; \text{total\_assets} - \text{reserved\_usdc} - \text{unclaimed\_fees} - \max(0,\; \text{net\_global\_trader\_pnl})\right)$$
 
-
-
-If the requested withdrawal amount exceeds Free Liquidity, the transaction **reverts** to protect active traders. Otherwise, it burns `STELLARS_LP` and transfers USDC out.
-* `settle_pnl(amount, is_profit)`: Callable only by the `PositionManager`. Adjusts `TotalUSDC` and `ReservedUSDC` balances.
-* `pause()` / `unpause()`: Callable strictly by the `PAUSER_ROLE` defined in the `ConfigManager`.
-* **TTL Management:**
+If the requested withdrawal amount exceeds Free Liquidity, the transaction **reverts** to protect active traders. Otherwise, it burns `sLP` and transfers USDC out.
+* `max_withdraw(owner)` / `max_redeem(owner)`: Returns `min(user_assets, free_liquidity)`, or 0 if paused.
+* `settle_pnl(caller, trader, amount, reserved_delta, is_profit)`: Callable only by the `PositionManager`. Settles a position close. If profit: vault transfers USDC to the trader. If loss: the PositionManager sends margin to the vault. Atomically releases `reserved_delta` from reserved liquidity.
+* `reserve_liquidity(caller, amount)` / `release_liquidity(caller, amount)`: Callable only by the `PositionManager`. Increments or decrements `ReservedUSDC`.
+* `update_net_pnl(caller, pnl)`: Callable only by the `PositionManager`. Overwrites `NetGlobalTraderPnL`.
+* `accrue_fees(caller, amount)`: Callable only by the `PositionManager`. Increments `UnclaimedFees`.
+* `claim_fees(caller, recipient)`: Callable by `ADMIN` role. Transfers all `UnclaimedFees` to the recipient.
+* `claim_fees_to(caller, recipient, amount)`: Callable only by the `PositionManager`. Transfers a specific amount from `UnclaimedFees` (used to pay keeper rewards on liquidation/order execution).
+* `pause(caller)` / `unpause(caller)`: Callable strictly by the `PAUSER` role defined in the `ConfigManager`.
+* `free_liquidity()`: Read-only view returning the current free liquidity.
 * `bump_vault_state()`: Extends the Time-To-Live (TTL) of the Vault's instance storage to prevent the contract from being archived by the Soroban network.
-* `bump_user_balance(user_address)`: Extends the TTL for a specific user's LP token balance in persistent storage.
+* `upgrade(operator, new_wasm_hash)`: Callable by `UPGRADER` role. OZ UpgradeableMigratable.
 
 ---
 
@@ -58,35 +60,50 @@ If the requested withdrawal amount exceeds Free Liquidity, the transaction **rev
 
 **Role:** The core logic contract. It merges "Market" and "Position" state to reduce cross-contract calls. It utilizes OpenZeppelin's `Initializable` and `Pausable` modules, alongside Math/SafeCast libraries to prevent overflow panics during complex PnL and index calculations. It enforces rigorous utilization caps and time-locks to prevent oracle front-running.
 
-**State Variables (`Persistent` Storage):**
-*(Note: Uses `MarketInfo` and `Position` structs as defined previously. Below are the specific additions for security.)*
+**State Variables:**
 
-* **Risk & Security Parameters:**
-* `MaxUtilizationRatio`: The hard cap for new trades (e.g., 85%). If `ReservedUSDC / TotalUSDC` exceeds this, no new positions can be opened, ensuring a buffer always exists for LP withdrawals.
-* `MinPositionLifetime`: A required time-lock (e.g., 5 minutes) to neutralize high-frequency oracle front-running and toxic wash trading.
-* `IsPaused`: Boolean flag for emergency trading halts.
+* **Instance Storage:**
+  * `VaultAddress`, `ConfigManager`, `OracleRouter`: Contract addresses.
+  * `IsPaused`: Boolean flag for emergency trading halts.
+  * `TotalReserved`: Total USDC reserved across all open positions.
+  * `NetGlobalTraderPnL`: Running net PnL of all traders (mirrored to the Vault on every close).
+  * `MaxLeverage(Symbol)`: Per-market maximum leverage multiplier.
+
+* **Persistent Storage:**
+  * `Position(trader, symbol)`: Individual position records (see below).
+  * `Market(Symbol)`: Per-market aggregate state (see below).
+
+Risk parameters (`MaxUtilizationRatio`, `MinPositionLifetime`, ADL thresholds) are read from the `ConfigManager` at runtime, not stored locally.
+
+**Position Struct:** `collateral`, `size`, `entry_price` (1e7), `entry_borrow_index` (1e14), `entry_funding_index` (1e14), `is_long`, `last_increased_time`, `take_profit` (0 = unset), `stop_loss` (0 = unset).
+
+**MarketInfo Struct:** `global_long_avg_price`, `global_short_avg_price`, `long_open_interest`, `short_open_interest`, `acc_borrow_index` (1e14), `acc_funding_index` (signed, 1e14), `last_index_update`.
 
 
 **Key Functions:**
 
-* `initialize(vault_address, config_manager)`: OpenZeppelin setup function.
-* `increase_position(...)`: Opens or adds to a position.
-* **Checks:** Reverts if `IsPaused == true`. Reverts if the new trade pushes the Vault's utilization past the `MaxUtilizationRatio` (85%).
-* **Action:** Updates Global Average Prices, Fee Indices, and reserves USDC in the Vault.
-* **Security:** Records the current block timestamp into the user's `LastIncreasedTime` state variable.
+* `initialize(admin, vault, config_manager, oracle_router)`: One-time setup linking all dependent contracts.
+* `increase_position(trader, symbol, size, collateral, is_long, take_profit, stop_loss)`: Opens or adds to a position.
+  * **Checks:** Reverts if paused. Validates leverage (`size <= collateral * max_leverage`). Validates TP/SL against direction. Checks utilization cap (`total_reserved / total_assets <= max_utilization_ratio`).
+  * **Action:** Transfers collateral from trader to PositionManager. For existing positions, weighted-averages entry price and fee indices. Updates market OI, global average prices, and reserves USDC in the Vault.
+  * **Security:** Records the current block timestamp into the position's `last_increased_time`.
 
 
-* `decrease_position(...)`: Closes or reduces a position and realizes PnL.
-* **Checks:** Reverts if `current_time < LastIncreasedTime + MinPositionLifetime` (e.g., trade has been open for less than 5 minutes).
-* **Emergency Access:** This function purposefully **bypasses the `Pausable` lock**. Even if the protocol is paused, users can always close positions to reduce their risk exposure.
+* `decrease_position(trader, symbol, size_delta)`: Partially or fully closes a position and realizes PnL. If `size_delta >= position.size`, treats as full close.
+  * **Checks:** Reverts if `current_time < last_increased_time + min_position_lifetime`.
+  * **Emergency Access:** This function purposefully **bypasses the `Pausable` lock**. Even if the protocol is paused, users can always close positions to reduce their risk exposure.
 
 
-* `liquidate_position(...)`: Callable by `KEEPER_ROLE`. Checks if `Collateral < Fees + Loss`.
-* `update_indices()`: Callable by `KEEPER_ROLE`. Forces a sync of global borrow and funding accumulators.
-* `execute_order(...)`: Callable by `KEEPER_ROLE`. Triggers limit/stop orders.
-* `deleverage_position(...)`: Callable by `KEEPER_ROLE`. Identifies the highest RoE positions and force-closes them if utilization hits critical emergency thresholds (e.g., > 95%).
-* **TTL Management:**
-* `bump_position(user_address, symbol)`: Extends the Soroban TTL for a specific active user position. Keepers can be incentivized to call this periodically for all open positions to ensure no active trade data is archived.
+* `liquidate_position(caller, trader, symbol)`: Callable by `KEEPER` role. **Bypasses pause.** Checks health factor: `health = collateral + unrealized_pnl - borrow_fee + funding_fee`. Reverts if `health >= 0`. Seizes all collateral to the Vault. Keeper receives `keeper_bps` share of total fees.
+* `update_indices(caller, symbol)`: Callable by `KEEPER` role. Advances `acc_borrow_index` and `acc_funding_index` based on elapsed time, utilization, and OI imbalance. Automatically called at the start of every position-mutating function.
+* `execute_order(caller, trader, symbol)`: Callable by `KEEPER` role. Checks if a position's TP or SL price has been triggered by the current oracle price, then fully closes the position. Keeper receives `keeper_bps` share of fees.
+* `set_tp_sl(trader, symbol, take_profit, stop_loss)`: Sets or updates Take Profit and Stop Loss prices on an existing position. TP must be above entry for longs (below for shorts), SL must be below entry for longs (above for shorts). Passing 0 clears the value; passing 0 when an existing value is set preserves it.
+* `deleverage_position(caller, trader, symbol)`: Callable by `KEEPER` role. **Bypasses pause.** ADL: force-closes a profitable position when system stress is detected. Reverts unless at least one ADL trigger is breached (`net_pnl * BPS / total_assets > adl_pnl_bps` **OR** `total_reserved * BPS / total_assets > adl_utilization_bps`). Reverts if the target position's PnL is not positive. The trader is fully paid out. No keeper reward on ADL.
+* `set_max_leverage(caller, symbol, max_leverage)`: Callable by `ADMIN` role. Sets per-market leverage cap.
+* `get_position(trader, symbol)` / `get_market(symbol)` / `get_max_leverage(symbol)`: Read-only views.
+* `pause(caller)` / `unpause(caller)`: Callable by `PAUSER` role.
+* `bump_position(user, symbol)`: Extends the Soroban TTL for a specific active position. Callable by anyone.
+* `upgrade(operator, new_wasm_hash)`: Callable by `UPGRADER` role.
 
 ---
 
@@ -94,35 +111,36 @@ If the requested withdrawal amount exceeds Free Liquidity, the transaction **rev
 
 **Role:** The central brain for protocol parameters and permissions. It acts as the definitive source of truth for the `Vault`, `PositionManager`, and `OracleRouter`. It extensively utilizes OpenZeppelin's `AccessControl` for strict permissioning and `Initializable` for secure deployment.
 
-**State Variables (`Persistent` & `Instance` Storage):**
+**State Variables:**
 
-* **Access Control Registry (OpenZeppelin Standard):**
-* `DEFAULT_ADMIN_ROLE`: The ultimate authority (usually a multi-sig or DAO). Can grant or revoke all other roles.
-* `UPGRADER_ROLE`: Authorized to call the Soroban `upgrade` function to push new WASM code for any of the protocol's upgradeable contracts.
-* `PAUSER_ROLE`: Authorized to pause/unpause the `Vault` and `PositionManager` during market emergencies or bug discoveries.
-* `KEEPER_ROLE`: The whitelisted bot network authorized to execute liquidations, trigger ADL, execute limit orders, and update global indices.
+* **Instance Storage:**
+  * `Admin`: The current admin address.
+  * `FeeSplits`: Revenue distribution configuration (all in basis points, must sum to 10,000): `keeper_bps`, `dev_bps`, `lp_bps`.
+  * `ProtocolLimits`: Global risk and timing parameters (see below).
+  * `BorrowRateConfig`: Kink-curve parameters for borrow and funding rates (see below).
 
+* **Persistent Storage:**
+  * `RoleMember(role, account) -> bool`: Role assignments. TTL is automatically bumped on every read/write so active roles never silently expire.
 
-* **Fee Configuration:** * `DepositFee`: A small fee charged on LP minting to prevent short-term arbitrage against the Vault.
-* `FeeSplits`: A struct defining the distribution of protocol revenue (e.g., 5% to Keepers, 5% to Dev Wallet, 90% retained in Vault for LPs). Designed to be extensible to support future token launches, buybacks, or staking rewards.
+* **Roles:** `ADMIN` (ultimate authority, multi-sig or DAO), `UPGRADER` (push new WASM), `PAUSER` (pause/unpause Vault and PositionManager), `KEEPER` (liquidations, ADL, order execution, index updates).
 
+**ProtocolLimits:** `min_collateral` (minimum USDC to open a position), `cooldown_duration` (seconds between deposit and withdrawal, max 30 days), `min_position_lifetime` (seconds before a position can be decreased, max 24 hours), `max_utilization_ratio` (hard cap on vault utilization in bps), `funding_cut_bps` (protocol's cut of positive funding payments), `adl_pnl_bps` (ADL trigger: net PnL / total assets threshold), `adl_utilization_bps` (ADL trigger: reserved / total assets threshold).
 
-* **Global Protocol Limits:**
-* `MinCollateral`: Minimum USDC required to open a position (prevents dust/spam attacks).
-* `CooldownDuration`: The time required between `Vault.deposit` and `Vault.withdraw` to prevent sandwich attacks.
-* `MinPositionLifetime`: Global configuration for the anti-front-running lock (default: 5 minutes) enforced by the `PositionManager`.
-* `MaxUtilizationRatio`: The global ceiling (e.g., 85%) for Vault utilization to protect "Free Liquidity" for LPs.
-
+**BorrowRateConfig:** `base_borrow_rate_bps`, `slope1_bps` (low-utilization slope), `slope2_bps` (high-utilization slope, must be >= slope1), `optimal_utilization_bps` (kink point), `base_funding_rate_bps`.
 
 
 **Key Functions:**
 
-* `initialize(admin_address)`: OpenZeppelin setup function. Grants the `DEFAULT_ADMIN_ROLE` to the deploying multi-sig.
-* `grant_role(role, account)` / `revoke_role(role, account)`: Standard OpenZeppelin functions strictly callable by the `DEFAULT_ADMIN_ROLE`.
-* `update_fee_splits(...)`: Modifies the protocol revenue routing.
-* `update_protocol_limits(...)`: Adjusts collateral requirements, cooldowns, and utilization ratios based on market conditions.
-* **TTL Management:**
+* `initialize(admin)`: One-time setup. Grants the `ADMIN` role to the deploying address.
+* `grant_role(caller, role, account)` / `revoke_role(caller, role, account)`: Callable by `ADMIN`. Cannot grant/revoke the ADMIN role through this path.
+* `transfer_admin(caller, new_admin)`: Atomic admin transfer requiring both current and new admin signatures.
+* `has_role(role, account) -> bool`: Read-only role check used by all other contracts via cross-contract call.
+* `update_fee_splits(caller, fee_splits)`: Callable by `ADMIN`. Validates shares sum to 10,000 bps.
+* `update_protocol_limits(caller, limits)`: Callable by `ADMIN`. Adjusts collateral requirements, cooldowns, utilization ratios, and ADL thresholds.
+* `update_borrow_rate_config(caller, config)`: Callable by `ADMIN`. Sets kink-curve parameters. Validates slope2 >= slope1.
+* `get_fee_splits()` / `get_protocol_limits()` / `get_borrow_rate_config()`: Read-only views.
 * `bump_config_state()`: Extends the Soroban Time-To-Live (TTL) of the global configuration variables to ensure these critical parameters are never archived by the network.
+* `upgrade(operator, new_wasm_hash)`: Callable by `UPGRADER` role.
 
 ---
 
@@ -130,35 +148,30 @@ If the requested withdrawal amount exceeds Free Liquidity, the transaction **rev
 
 **Role:** The protocol's pricing engine. It aggregates price data from multiple providers to return a secure median price, preventing flash-loan manipulation and single-point-of-failure risks. Sources must strictly implement the SEP-40 Oracle Standard. It utilizes OpenZeppelin's `Initializable` for deployment and relies on the `ConfigManager` for access control. To optimize gas costs on Soroban and reduce cross-contract call overhead, it implements a strict time-based caching mechanism.
 
-**State Variables (`Instance` Storage):**
+**State Variables:**
 
-* **Feed Configuration:**
-* `PrimarySources`: Map of `Symbol -> List[Address]` (e.g., Band Protocol, Pyth).
-* `SecondarySources`: Backup oracles if primary feeds fail or return stale data.
+* **Instance Storage:**
+  * `ConfigManager`: Address of the ConfigManager contract.
+  * `OracleConfig`: Safety thresholds — `max_deviation_bps` (max allowed spread between sources, e.g. 100 = 1%), `staleness_threshold` (max age of a SEP-40 price in seconds), `cache_duration` (how long the internal cache is valid, must be <= staleness_threshold).
+  * `CachedPrice(Symbol)`: Cached median price and timestamp per symbol.
 
-
-* **Cache State (Gas Optimization):**
-* `CachedPrices`: Map of `Symbol -> Price`.
-* `LastUpdateTime`: Map of `Symbol -> Timestamp`.
-
-
-* **Safety Thresholds:** * `MaxDeviation`: Maximum allowed price difference between primary oracle sources (e.g., 1%). If the spread is larger, the protocol pauses trading for that asset to prevent toxic arbitrage.
-* `StalenessThreshold`: Max time before an external SEP-40 price feed is rejected as outdated.
-* `CacheDuration`: How long the internal cache remains valid (e.g., 10 seconds) before a fresh cross-contract call to the external oracles is required.
-
+* **Persistent Storage:**
+  * `PrimarySources(Symbol)`: List of primary SEP-40 oracle addresses per symbol (e.g., Band Protocol, Pyth).
+  * `SecondarySources(Symbol)`: Fallback oracle addresses if all primaries fail or return stale data.
 
 
 **Key Functions:**
 
-* `initialize(config_manager_address)`: OpenZeppelin setup function to link the router to the central governance contract.
-* `get_price(symbol)`: The core pricing function called by the `PositionManager`.
-* **Caching Logic:** Checks if `current_time <= LastUpdateTime + CacheDuration`. If true, it returns the value from `CachedPrices` to save compute fees.
-* **Fetch Logic:** If the cache is expired, it queries the `PrimarySources` via SEP-40, enforces the `MaxDeviation` and `StalenessThreshold` checks, updates the `CachedPrices` and `LastUpdateTime`, and returns the validated price.
+* `initialize(config_manager)`: One-time setup to link the router to the central governance contract.
+* `get_price(symbol) -> i128`: The core pricing function called by the `PositionManager`. Returns a validated price (1e7 scaled).
+  * **Caching Logic:** Checks if `current_time <= last_update + cache_duration`. If true, returns the cached price.
+  * **Fetch Logic:** On cache miss, queries primary sources via SEP-40 `try_get_price`/`try_last_update` (broken sources silently skipped), filters stale and non-positive prices, falls back to secondary sources if all primaries fail, sorts valid prices, takes the median, enforces the `max_deviation_bps` check, caches the result, and returns.
 
-
-* `set_oracle_sources(...)`: Allows the `DEFAULT_ADMIN_ROLE` (via `ConfigManager`) to add or remove SEP-40 compliant oracle addresses.
-* **TTL Management:**
+* `set_oracle_sources(caller, symbol, primary, secondary)`: Callable by `ADMIN` role (via `ConfigManager`). Configures the oracle source lists for a symbol. Deduplicates primary sources.
+* `set_oracle_config(caller, config)`: Callable by `ADMIN` role. Updates staleness, deviation, and cache thresholds.
+* `get_oracle_config() -> OracleConfig`: Read-only view.
 * `bump_oracle_state()`: Extends the Soroban Time-To-Live (TTL) of the OracleRouter's instance storage, ensuring the configuration and thresholds are not archived by the network.
+* `upgrade(operator, new_wasm_hash)`: Callable by `UPGRADER` role.
 
 ---
 
@@ -193,13 +206,13 @@ $$I_{new}=I_{old}+(\text{Rate} \times \Delta t)$$
 
 ### 3.2 Liquidity Provider (LP) Economics
 
-The `Vault` issues `STELLARS_LP` tokens representing a share of the total pool.
+The `Vault` issues `sLP` tokens representing a share of the total pool via the ERC-4626 standard.
 
-* **Minting**: `STELLARS_LP` is minted when USDC is deposited.
-* **Burning**: `STELLARS_LP` is burned when USDC is withdrawn.
-* **Exchange Rate**: The price of `STELLARS_LP` auto-compounds based on the pool's performance (Trading Fees + Trader Losses - Trader Profits).
+* **Minting**: `sLP` is minted when USDC is deposited.
+* **Burning**: `sLP` is burned when USDC is withdrawn.
+* **Exchange Rate**: The price of `sLP` auto-compounds based on the pool's performance (Trading Fees + Trader Losses - Trader Profits).
 
-$$\text{Price} = \frac{\text{Total USDC Balance} + \text{Unrealized PnL}}{\text{Total STELLARSLP Supply}}$$
+$$\text{Price} = \frac{\text{Total USDC Balance} + \text{Unrealized PnL}}{\text{Total sLP Supply}}$$
 
 #### 3.2.1 Calculating the Unrealized PnL
 
@@ -246,9 +259,10 @@ $$R_{borrow} = \begin{cases} \text{Base} + (U \times S_1) & \text{if } U \le U_{
 
 $$\text{Fee} = (I_{current\_borrow} - I_{entry\_borrow}) \times \text{Position Size}$$
 
-* **95%**: Retained in Pool (Increases `STELLARS_LP` value).
-* **5%**: Sent to Developer Wallet.
-*(Note: Exact curve slopes, optimal utilization points, and distribution percentages are variables defined in the `ConfigManager`).*
+Distribution is configured via `FeeSplits` in the `ConfigManager` (all in basis points, must sum to 10,000):
+* `lp_bps`: Retained in the pool (increases `sLP` value).
+* `dev_bps`: Accrued to `UnclaimedFees`, claimable by admin.
+* `keeper_bps`: Paid to the executing keeper (only on liquidations and order executions; zero on user closes and ADL).
 
 ---
 
@@ -261,31 +275,18 @@ Let $O_L$ be Long Open Interest and $O_S$ be Short Open Interest. The **Imbalanc
 
 $$P=O_L-O_S$$
 
-**The Velocity Formula**
-Unlike standard interest, Funding Rates in modern perpetual DEXs often use **Velocity**. The rate accelerates if the imbalance persists.
+**The Proportional Model**
 
-$$\text{Rate}_{funding} = \text{Previous Rate} + (\text{Velocity Constant} \times P)$$
+$$\text{Rate}_{funding} = \text{base\_funding\_rate} \times \left(\frac{O_L - O_S}{O_L + O_S}\right)$$
 
-*However, for a V1 implementation, a simpler **Proportional Model** is often safer and easier to maintain:*
-
-$$\text{Rate}_{funding} = \text{Base} \times \left(\frac{O_L - O_S}{O_L + O_S}\right)$$
-
-**Settlement Logic (The "Spread")**
+If total OI is zero, the funding rate is zero. The `base_funding_rate_bps` is configured in `BorrowRateConfig`.
 
 * If $\text{Rate}_{funding} > 0$: Longs pay Shorts.
 * If $\text{Rate}_{funding} < 0$: Shorts pay Longs.
 
-The protocol takes a cut ($C_{keeper} \approx 5\%$) from the transfer to incentivize Keepers and generate revenue.
+**Protocol Cut:** When a position is closed, if the trader owes positive funding fees, the protocol takes a `funding_cut_bps` share (configured in `ProtocolLimits`). This cut is deducted from the trader's health and accrued alongside borrow fees for distribution.
 
-$$F_{payer} = S \times \text{Rate}_{funding}$$
-
-$$F_{receiver} = S \times \text{Rate}_{funding} \times (1 - C_{keeper})$$
-
-$$F_{protocol} = S \times \text{Rate}_{funding} \times C_{keeper}$$
-
-* *Payer Side*: Pays 100% of the calculated rate.
-* *Receiver Side*: Receives the rate minus the spread.
-* *Keeper/Dev*: Receives the $F_{protocol}$ portion immediately from the Vault (configurable via `ConfigManager`).
+$$\text{effective\_funding} = \text{funding\_fee} - \left(\text{funding\_fee} \times \frac{\text{funding\_cut\_bps}}{\text{BPS}}\right)$$
 
 ---
 
@@ -301,27 +302,27 @@ The Keeper is an off-chain bot responsible for maintaining system health. It is 
 
 ### 4.2 Liquidations
 
-- **Trigger**: When a position's `Health Factor < 1.0`.
+- **Trigger**: When a position's health drops below zero.
 
-$$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fees}$$
+$$\text{Health} = \text{Collateral} + \text{Unrealized PnL} - \text{Borrow Fee} + \text{Funding Fee}$$
 
-- **Action**: Calls `liquidate(position_id)`.
+- **Action**: Calls `liquidate_position(caller, trader, symbol)`.
 - **Result**:
-    1. Position is closed.
-    2. Remaining collateral is seized by the Vault.
-    3. A fixed reward (gas cost + premium) is sent to the Keeper.
+    1. Position is deleted.
+    2. All remaining collateral is seized by the Vault.
+    3. Keeper receives `keeper_bps` share of total fees (capped at collateral).
 
-### 4.3 Order Execution
+### 4.3 TP/SL Order Execution
 
-- **Trigger**: Market price crosses a user's defined Limit, Stop Loss, or Take Profit price.
-- **Action**: Calls `execute_order(order_id)`.
-- **Result**: The trade is executed against the pool, and the Keeper receives the execution fee attached to the order.
+- **Trigger**: The oracle price crosses a position's Take Profit or Stop Loss threshold. TP triggers when `mark_price >= take_profit` for longs (`<= take_profit` for shorts). SL triggers when `mark_price <= stop_loss` for longs (`>= stop_loss` for shorts).
+- **Action**: Calls `execute_order(caller, trader, symbol)`.
+- **Result**: The position is fully closed at the current oracle price. Keeper receives `keeper_bps` share of fees.
 
 ### 4.4 Auto-Deleveraging (ADL)
 
-- **Trigger**: Keepers actively monitor Vault health. If Total Reserved PnL > 90% of Vault Balance, Keepers are authorized to call deleverage_position(), targeting accounts sorted by highest Return on Equity (RoE).
-- **Action**: Calls `deleverage(position_id)`.
-- **Logic**: Identifies the most profitable, highly leveraged positions and force-closes them at the current oracle price. This reduces the pool's liability and frees up liquidity.
+- **Trigger**: Keepers can initiate ADL when *either* threshold (configured in `ProtocolLimits`) is breached: `net_pnl * BPS / total_assets > adl_pnl_bps` **OR** `total_reserved * BPS / total_assets > adl_utilization_bps`.
+- **Action**: Calls `deleverage_position(caller, trader, symbol)`. The keeper picks the target off-chain; the contract validates that the target position has positive PnL (reverts with `AdlTargetNotProfitable` otherwise).
+- **Result**: The trader is fully paid out (profits included), but their position is closed. No keeper reward on ADL. This instantly reduces the Vault's liability and frees up liquidity.
 
 ---
 
@@ -329,36 +330,42 @@ $$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fee
 
 ### 5.1 Liquidity Provision
 
-1. **User** calls `Vault.deposit(1000 USDC)`.
-2. **Vault** calculates current `PricePerShare`.
-3. **Vault** transfers 1000 USDC from User to Vault.
-4. **Vault** mints equivalent `STELLARS_LP` tokens to User.
+1. **User** calls `Vault.deposit(assets, receiver, from, operator)`.
+2. **Vault** calculates shares via ERC-4626 conversion.
+3. **Vault** transfers USDC from user to Vault and mints equivalent `sLP` tokens.
+4. **Vault** records the user's `LastDepositTime` for cooldown enforcement.
 5. _Result_: User holds a liquid SEP-41 token representing their share.
 
 ### 5.2 Opening a Position (Long)
 
 1. **User** approves `PositionManager` to spend USDC.
-2. **User** calls `PositionManager.open_position(size, collateral, is_long)`.
+2. **User** calls `PositionManager.increase_position(trader, symbol, size, collateral, is_long, take_profit, stop_loss)`.
 3. **PositionManager**:
-    - Pulls USDC collateral to the Vault.
-    - Records `EntryPrice` from Oracle.
-    - Records `EntryBorrowIndex` and `EntryFundingIndex` from global state.
-    - Increments `TotalOpenInterest`.
+    - Updates borrow and funding indices.
+    - Transfers USDC collateral from trader to PositionManager.
+    - Records `entry_price` from OracleRouter, snapshots `entry_borrow_index` and `entry_funding_index`.
+    - For existing positions: weighted-averages entry price and indices with the new values.
+    - Validates leverage and TP/SL.
+    - Updates market OI and global average prices.
+    - Checks utilization cap.
 4. **Vault** reserves the required liquidity.
 
 ### 5.3 Closing a Position
 
-1. **User** calls `PositionManager.close_position()`.
+1. **User** calls `PositionManager.decrease_position(trader, symbol, size_delta)`.
 2. **PositionManager**:
-    - Calculates PnL: `(CurrentPrice - EntryPrice) * Size`.
-    - Calculates Fees: `(CurrIndex - EntryIndex) * Size`.
-    - Net Payout = `Collateral + PnL - Fees`.
-    
-3. **Vault**:
-    - If Net Payout > 0: Transfers USDC to User.
-    - If Net Payout < 0: User owes money (capped at collateral), remainder stays in Vault.
+    - Enforces `min_position_lifetime`.
+    - Calculates proportional collateral, PnL, borrow fee, and funding fee for the closed portion.
+    - Computes health: `collateral_delta + pnl - borrow_fee + effective_funding`.
+    - Trader payout = `max(0, health)`.
 
-4. **System**: Updates Global OI and releases reserved liquidity.
+3. **Settlement**:
+    - Vault releases reserved liquidity for the closed size.
+    - If trader is profitable beyond their collateral: Vault sends the excess.
+    - If trader is at a loss: PositionManager sends the loss amount to the Vault.
+    - Remaining collateral goes to the trader.
+
+4. **System**: Updates market OI, total reserved, and `NetGlobalTraderPnL` in both PositionManager and Vault.
 
 ---
 
@@ -367,7 +374,7 @@ $$\text{Health} = \text{Collateral} - \text{Unrealized Loss} - \text{Accrued Fee
 - **Max Leverage**: Configurable per asset (e.g., 30x for BTC, 50x for FX).
 - **Global Liquidity Cap**: Maximum total OI allowed relative to Vault Balance to ensure payouts.
 - **Minimum Collateral**: Minimum $ amount required to open a position (prevents dust spam).
-- **Cooldown Period**: A 15-minute delay after depositing into the Vault before a withdrawal is permitted, preventing front-running of oracle updates or liquidation events.
+- **Cooldown Period**: A configurable `cooldown_duration` (in seconds, max 30 days) after depositing into the Vault before a withdrawal is permitted, preventing front-running of oracle updates or liquidation events.
 
 
 ### 6.1 The "Infinite Upside" Risk (Long Squeeze)
@@ -391,14 +398,14 @@ _This ensures that even if price doubles, the Vault can pay out._
 
 **The Solution (ADL):** This is a "forced profit-taking" mechanism designed as the protocol's nuclear defense against insolvency and bank runs. Keepers actively monitor the Vault's health and are authorized to intervene if critical thresholds are breached.
 
-1. **The Triggers (Dual-Condition):** Keepers can initiate ADL if *either* of the following conditions is met:
-* **Insolvency Risk (PnL-Based):** `Total Reserved PnL > 90% of Vault Balance`. (Traders are winning too much, and the Vault is running out of funds to pay them).
-* **Liquidity Crisis Risk (Utilization-Based):** `ReservedUSDC / TotalUSDC > 95%`. (Too much of the Vault's collateral is locked up backing trades, meaning LPs have no exit liquidity).
+1. **The Triggers (Dual-Condition):** Keepers can initiate ADL if *either* of the following conditions is met (thresholds are configurable in `ProtocolLimits`):
+* **Insolvency Risk (PnL-Based):** `net_global_trader_pnl * BPS / total_assets > adl_pnl_bps`. (Traders are winning too much, and the Vault is running out of funds to pay them).
+* **Liquidity Crisis Risk (Utilization-Based):** `total_reserved * BPS / total_assets > adl_utilization_bps`. (Too much of the Vault's collateral is locked up backing trades, meaning LPs have no exit liquidity).
 
 
-2. **Selection:** The `PositionManager` identifies the most profitable traders by sorting for the highest **Return on Equity (RoE) / PnL Percentage**.
-3. **Action:** A Keeper calls `deleverage_position()`, and the smart contract forcibly closes the targeted trader's position at the current oracle price.
-4. **Outcome:** The trader keeps all of their accrued profits (they are fully paid out), but their position is closed. This instantly reduces the Vault's liability and frees up USDC back into the `Free Liquidity` pool, re-securing the protocol.
+2. **Selection:** The keeper picks the target off-chain. The contract validates that the target position has positive PnL (reverts with `AdlTargetNotProfitable` otherwise).
+3. **Action:** A Keeper calls `deleverage_position(caller, trader, symbol)`, and the smart contract forcibly closes the targeted trader's position at the current oracle price.
+4. **Outcome:** The trader keeps all of their accrued profits (they are fully paid out), but their position is closed. No keeper reward on ADL. This instantly reduces the Vault's liability and frees up USDC back into the `Free Liquidity` pool, re-securing the protocol.
 
 ### 6.3 Oracle Front-Running
 
@@ -415,8 +422,6 @@ To neutralize high-frequency oracle front-running and toxic wash trading without
 1. **The Lock:** When a user opens or adds to a position, the `PositionManager` records the current block timestamp as `LastIncreasedTime`.
 2. **The Enforcement:** The `MinPositionLifetime` parameter (configurable in the `ConfigManager`, default: 5 minutes) dictates how long the position must remain open. If a user attempts to call `decrease_position` before `LastIncreasedTime + MinPositionLifetime` has passed, the transaction will revert.
 3. **The Result:** The trader is forced to hold the position and take on real market risk for at least 5 minutes. This entirely destroys the viability of risk-free, instant arbitrage against oracle latency.
-Here is the draft for your V2 Roadmap. It outlines these advanced features perfectly, framing them as deliberate, complex innovations for the protocol's next phase. You can drop this directly at the bottom of your Readme!
-
 ---
 
 ## 7. V2 Roadmap: Capital Efficiency & Advanced Margin
@@ -429,8 +434,8 @@ While Version 1 of the protocol prioritizes strict $O(1)$ scalability, isolated 
 
 **The Mechanism:**
 
-* In V1, the `STELLARS_LP` token auto-compounds both trader PnL (the Vault's wins/losses) and trader fees (Borrowing/Funding rates).
-* In V2, the protocol will introduce a native `StakingContract`. The base `STELLARS_LP` token will only reflect the net PnL of traders. To earn the lucrative protocol fees (the 95% revenue split), users must **stake** their LP tokens.
+* In V1, the `sLP` token auto-compounds both trader PnL (the Vault's wins/losses) and trader fees (Borrowing/Funding rates).
+* In V2, the protocol will introduce a native `StakingContract`. The base `sLP` token will only reflect the net PnL of traders. To earn the lucrative protocol fees (the 95% revenue split), users must **stake** their LP tokens.
 * **Economic Impact:** This allows the protocol to introduce time-locks or boosted emissions for long-term stakers, creating highly "sticky liquidity" that defends against sudden capital flight while rewarding committed LPs.
 
 ### 7.2 Cross-Margin Account Health
@@ -449,6 +454,6 @@ While Version 1 of the protocol prioritizes strict $O(1)$ scalability, isolated 
 
 **The Mechanism:**
 
-* A user deposits USDC, receives `STELLARS_LP`, stakes it to earn protocol fees, and then uses the value of that staked LP position as collateral to open a 10x Long.
+* A user deposits USDC, receives `sLP`, stakes it to earn protocol fees, and then uses the value of that staked LP position as collateral to open a 10x Long.
 * **Economic Impact:** The user is effectively acting as the "House" (earning yield) while simultaneously trading, maximizing their capital efficiency.
-* **Risk Mitigation:** Because the value of the `STELLARS_LP` token fluctuates based on global trader performance, using it as collateral introduces the risk of a "death spiral" (where a drop in LP value triggers cascading trader liquidations). V2 will introduce strict Collateral Haircuts (e.g., LP tokens are only valued at 80% of their face value for margin purposes) to safely isolate the volatility of yield-bearing collateral.
+* **Risk Mitigation:** Because the value of the `sLP` token fluctuates based on global trader performance, using it as collateral introduces the risk of a "death spiral" (where a drop in LP value triggers cascading trader liquidations). V2 will introduce strict Collateral Haircuts (e.g., LP tokens are only valued at 80% of their face value for margin purposes) to safely isolate the volatility of yield-bearing collateral.

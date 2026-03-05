@@ -9,7 +9,7 @@ use crate::{
         require_admin_with_auth, set_role_member,
     },
     storage,
-    types::{roles, FeeSplits, ProtocolLimits, UpgradeData},
+    types::{roles, BorrowRateConfig, FeeSplits, ProtocolLimits, UpgradeData},
 };
 
 #[derive(UpgradeableMigratable)]
@@ -47,6 +47,12 @@ pub trait ConfigManager {
 
     /// Extends the Soroban TTL of critical config variables to prevent archival.
     fn bump_config_state(env: Env);
+
+    /// Update borrow rate and funding rate configuration. Callable only by DEFAULT_ADMIN_ROLE.
+    fn update_borrow_rate_config(env: Env, caller: Address, config: BorrowRateConfig);
+
+    /// Returns the current borrow rate configuration.
+    fn get_borrow_rate_config(env: Env) -> BorrowRateConfig;
 
     /// Transfer the DEFAULT_ADMIN_ROLE from `caller` to `new_admin`.
     /// Updates both the instance-storage Admin key and the persistent
@@ -150,6 +156,29 @@ impl ConfigManager for ConfigManagerContract {
 
     fn bump_config_state(env: Env) {
         bump_instance_ttl(&env);
+    }
+
+    fn update_borrow_rate_config(env: Env, caller: Address, config: BorrowRateConfig) {
+        require_admin_with_auth(&env, &caller);
+        if config.base_borrow_rate_bps < 0
+            || config.slope1_bps < 0
+            || config.slope2_bps < 0
+            || config.base_funding_rate_bps < 0
+        {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
+        if config.optimal_utilization_bps < 1 || config.optimal_utilization_bps > 10_000 {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
+        if config.slope2_bps < config.slope1_bps {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
+        storage::save_borrow_rate_config(&env, &config);
+        bump_instance_ttl(&env);
+    }
+
+    fn get_borrow_rate_config(env: Env) -> BorrowRateConfig {
+        storage::load_borrow_rate_config(&env)
     }
 
     fn transfer_admin(env: Env, caller: Address, new_admin: Address) {

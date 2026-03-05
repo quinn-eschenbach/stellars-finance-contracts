@@ -138,6 +138,20 @@ fn setup_full<'a>() -> TestFixture<'a> {
         adl_utilization_bps: 9_500,
     });
 
+    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
+
+    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
+        keeper_bps: 500,
+        dev_bps: 500,
+        lp_bps: 9000,
+    });
+
     // --- 2. MockToken (USDC) ---
     let usdc_id = env.register(MockToken, ());
     let usdc_client = MockTokenClient::new(&env, &usdc_id);

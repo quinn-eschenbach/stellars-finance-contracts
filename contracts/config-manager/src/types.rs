@@ -45,6 +45,22 @@ pub struct ProtocolLimits {
     pub adl_utilization_bps: u32,
 }
 
+/// Borrow rate kink curve and funding rate parameters (all in basis points).
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct BorrowRateConfig {
+    /// Base borrow rate (e.g. 100 = 1% annualized).
+    pub base_borrow_rate_bps: i128,
+    /// Slope below optimal utilization (e.g. 500 = 5%).
+    pub slope1_bps: i128,
+    /// Slope above optimal utilization (e.g. 5000 = 50%).
+    pub slope2_bps: i128,
+    /// Optimal utilization breakpoint (e.g. 8000 = 80%).
+    pub optimal_utilization_bps: i128,
+    /// Base funding rate (e.g. 100 = 1% annualized).
+    pub base_funding_rate_bps: i128,
+}
+
 /// Role identifiers — canonical strings are defined in the `shared` crate.
 /// Re-exported here so existing code referencing `roles::DEFAULT_ADMIN` etc. compiles unchanged.
 pub mod roles {

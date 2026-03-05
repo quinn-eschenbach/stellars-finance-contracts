@@ -7,14 +7,6 @@ pub const INDEX_PRECISION: i128 = 100_000_000_000_000; // 1e14
 pub const BPS: i128 = 10_000;
 pub const SECONDS_PER_YEAR: u64 = 31_536_000; // 365 days
 
-// V1 borrow rate constants
-pub const BASE_BORROW_RATE: i128 = 100; // 1% annualized (in BPS)
-pub const SLOPE1: i128 = 500; // 5% slope below optimal
-pub const SLOPE2: i128 = 5_000; // 50% slope above optimal
-pub const OPTIMAL_UTIL: i128 = 8_000; // 80% optimal utilization
-
-// V1 funding rate constants
-pub const BASE_FUNDING_RATE: i128 = 100; // 1% annualized base
 
 pub fn calc_unrealized_pnl(
     size: i128,
@@ -64,34 +56,36 @@ pub fn calc_health(
     collateral + unrealized_pnl - borrow_fee + funding_fee
 }
 
-pub fn calc_borrow_rate(utilization_bps: i128) -> i128 {
-    if utilization_bps <= OPTIMAL_UTIL {
-        BASE_BORROW_RATE + (utilization_bps * SLOPE1 / BPS)
+pub fn calc_borrow_rate(
+    utilization_bps: i128,
+    base_borrow_rate: i128,
+    slope1: i128,
+    slope2: i128,
+    optimal_util: i128,
+) -> i128 {
+    if utilization_bps <= optimal_util {
+        base_borrow_rate + (utilization_bps * slope1 / BPS)
     } else {
-        BASE_BORROW_RATE
-            + (OPTIMAL_UTIL * SLOPE1 / BPS)
-            + ((utilization_bps - OPTIMAL_UTIL) * SLOPE2 / BPS)
+        base_borrow_rate
+            + (optimal_util * slope1 / BPS)
+            + ((utilization_bps - optimal_util) * slope2 / BPS)
     }
 }
 
-pub fn calc_funding_rate(long_oi: i128, short_oi: i128) -> i128 {
+pub fn calc_funding_rate(long_oi: i128, short_oi: i128, base_funding_rate: i128) -> i128 {
     let total = long_oi + short_oi;
     if total == 0 {
         return 0;
     }
-    // Compute BASE_FUNDING_RATE * (long_oi - short_oi) / total without overflow.
-    // When values are small enough, use direct multiplication for full precision.
-    // Otherwise, divide first to avoid overflow (small precision loss acceptable).
     let imbalance = long_oi - short_oi;
-    match imbalance.checked_mul(BASE_FUNDING_RATE) {
+    match imbalance.checked_mul(base_funding_rate) {
         Some(product) => product / total,
         None => {
-            // Overflow path: scale both numerator and denominator down to fit
             let scale = total / BPS;
             if scale == 0 {
                 return 0;
             }
-            BASE_FUNDING_RATE * (imbalance / scale) / (total / scale)
+            base_funding_rate * (imbalance / scale) / (total / scale)
         }
     }
 }

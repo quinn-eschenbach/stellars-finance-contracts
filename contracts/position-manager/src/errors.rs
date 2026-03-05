@@ -30,4 +30,6 @@ pub enum PositionManagerError {
     DirectionMismatch = 15,
     /// Collateral below the protocol's min_collateral limit.
     BelowMinCollateral = 16,
+    /// ADL target position is not profitable (PnL <= 0).
+    AdlTargetNotProfitable = 17,
 }

@@ -66,6 +66,14 @@ fn setup() -> TestFixture {
         adl_utilization_bps: 9_500,
     });
 
+    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
+
     // --- vault ---
     let vault_id = env.register(crate::VaultContract, ());
     let vault_client = crate::VaultContractClient::new(&env, &vault_id);

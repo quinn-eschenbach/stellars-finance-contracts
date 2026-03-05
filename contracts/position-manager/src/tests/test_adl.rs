@@ -55,6 +55,9 @@ const TEST_TIMESTAMP: u64 = 1_700_000_000;
 /// Min position lifetime (60s) + oracle cache (10s) + buffer
 const TIME_ADVANCE: u64 = 75;
 
+/// Slightly higher BTC price ($50,100) to make long positions profitable for ADL tests.
+const BTC_PRICE_UP: i128 = 50_100 * PRECISION;
+
 // ===========================================================================
 // Test fixture
 // ===========================================================================
@@ -119,6 +122,20 @@ fn setup_adl<'a>() -> TestFixture<'a> {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+    });
+
+    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
+
+    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
+        keeper_bps: 500,
+        dev_bps: 500,
+        lp_bps: 9000,
     });
 
     // --- 2. MockToken (USDC) ---
@@ -243,6 +260,20 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+    });
+
+    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
+
+    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
+        keeper_bps: 500,
+        dev_bps: 500,
+        lp_bps: 9000,
     });
 
     let usdc_id = env.register(MockToken, ());
@@ -458,8 +489,8 @@ fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
         storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
     });
 
-    // Advance time past oracle cache
-    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+    // Advance time past oracle cache; price up slightly so position is profitable
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
     // ADL should succeed because utilization (96k/100k = 9600 bps) > 9500 bps
     f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
@@ -553,7 +584,7 @@ fn test_adl_deletes_position_and_decreases_oi() {
         storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
     });
 
-    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
     f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 
@@ -599,7 +630,7 @@ fn test_adl_decreases_total_reserved() {
         storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
     });
 
-    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
     f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
 
@@ -640,7 +671,7 @@ fn test_adl_succeeds_when_paused() {
         storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
     });
 
-    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
     // Pause the contract
     f.pm_client.pause(&f.admin);
@@ -694,7 +725,7 @@ fn test_adl_does_not_affect_other_traders_positions() {
         storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
     });
 
-    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
     // ADL trader1 only
     f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);

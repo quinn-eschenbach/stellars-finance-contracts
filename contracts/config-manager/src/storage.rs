@@ -1,7 +1,7 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env, Symbol};
 
 use crate::errors::ConfigManagerError;
-use crate::types::{FeeSplits, ProtocolLimits};
+use crate::types::{BorrowRateConfig, FeeSplits, ProtocolLimits};
 
 /// Composite key for role membership entries.
 #[contracttype]
@@ -23,6 +23,8 @@ pub enum StorageKey {
     FeeSplits,
     /// Protocol risk and timing limits (single struct replaces four separate keys).
     ProtocolLimits,
+    /// Borrow rate kink curve and funding rate parameters.
+    BorrowRateConfig,
     /// Current contract version (written by migration).
     Version,
 }
@@ -93,6 +95,23 @@ pub fn save_protocol_limits(env: &Env, limits: &ProtocolLimits) {
     env.storage()
         .instance()
         .set(&StorageKey::ProtocolLimits, limits);
+}
+
+// ---------------------------------------------------------------------------
+// BorrowRateConfig helpers
+// ---------------------------------------------------------------------------
+
+pub fn load_borrow_rate_config(env: &Env) -> BorrowRateConfig {
+    env.storage()
+        .instance()
+        .get(&StorageKey::BorrowRateConfig)
+        .unwrap_or_else(|| panic_with_error!(env, ConfigManagerError::NotInitialized))
+}
+
+pub fn save_borrow_rate_config(env: &Env, config: &BorrowRateConfig) {
+    env.storage()
+        .instance()
+        .set(&StorageKey::BorrowRateConfig, config);
 }
 
 // ---------------------------------------------------------------------------

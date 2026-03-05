@@ -56,6 +56,8 @@ pub trait VaultInterface {
 
     fn claim_fees(env: Env, caller: Address, recipient: Address);
 
+    fn claim_fees_to(env: Env, caller: Address, recipient: Address, amount: i128);
+
     fn pause(env: Env, caller: Address);
 
     fn unpause(env: Env, caller: Address);
@@ -321,6 +323,26 @@ impl VaultContract {
         let vault_addr = env.current_contract_address();
         vault_logic::transfer_asset(&env, &asset, &vault_addr, &recipient, fees);
         vault_storage::set_unclaimed_fees(&env, 0);
+        shared::bump_instance_ttl(&env);
+    }
+
+    pub fn claim_fees_to(env: Env, caller: Address, recipient: Address, amount: i128) {
+        vault_logic::require_initialized(&env);
+        vault_logic::require_position_manager(&env, &caller);
+
+        if amount <= 0 {
+            panic_with_error!(&env, VaultError::ZeroAmount);
+        }
+
+        let fees = vault_storage::get_unclaimed_fees(&env);
+        if amount > fees {
+            panic_with_error!(&env, VaultError::InsufficientFees);
+        }
+
+        let asset = Vault::query_asset(&env);
+        let vault_addr = env.current_contract_address();
+        vault_logic::transfer_asset(&env, &asset, &vault_addr, &recipient, amount);
+        vault_storage::set_unclaimed_fees(&env, fees - amount);
         shared::bump_instance_ttl(&env);
     }
 

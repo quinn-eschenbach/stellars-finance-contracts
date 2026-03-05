@@ -78,6 +78,13 @@ impl<'a> Fixture<'a> {
         config_manager.grant_role(&admin, &keeper_role, &admin);
         config_manager.grant_role(&admin, &keeper_role, &keeper);
 
+        // Set fee splits: 5% keeper, 5% dev, 90% LP
+        config_manager.update_fee_splits(&admin, &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        });
+
         // Set protocol limits
         config_manager.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
             min_collateral: 1_000_000,
@@ -87,6 +94,14 @@ impl<'a> Fixture<'a> {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 9_500,
+        });
+
+        config_manager.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
         });
 
         // 2. MockToken (USDC) + MockOracle

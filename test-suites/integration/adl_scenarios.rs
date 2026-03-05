@@ -27,6 +27,13 @@ fn lower_adl_thresholds(f: &Fixture) {
             adl_utilization_bps: 5_000,
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -51,6 +58,13 @@ fn test_adl_triggers_via_pnl_ratio() {
             adl_utilization_bps: 9_500,   // keep util threshold high (won't trigger)
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     // Open a large position that we'll close at profit to push net_pnl up
     let trader_b = f.create_funded_trader(50_000 * USDC_UNIT);
@@ -109,13 +123,21 @@ fn test_adl_triggers_via_utilization() {
             adl_utilization_bps: 3_000,   // low: 30% utilization triggers ADL
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     // Open enough positions to exceed 30% utilization
     let trader = f.create_funded_trader(50_000 * USDC_UNIT);
     f.open_long(&trader, 400_000 * USDC_UNIT, 40_000 * USDC_UNIT);
 
+    // Price up slightly so position is profitable (required for ADL)
     f.advance_time(TEST_TIMESTAMP + 75);
-    f.set_btc_price(50_000);
+    f.set_btc_price(50_100);
 
     // utilization = 400k / 1M = 4000 bps > 3000 → ADL should trigger
     f.position_manager
@@ -129,12 +151,14 @@ fn test_adl_triggers_via_utilization() {
 // ADL payout: trader with negative health gets 0
 // ---------------------------------------------------------------------------
 
+/// ADL on an underwater position (negative PnL) is now rejected by the
+/// `AdlTargetNotProfitable` guard. Such positions should be liquidated instead.
 #[test]
+#[should_panic(expected = "Error(Contract, #17)")]
 fn test_adl_payout_zero_when_health_negative() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // Low ADL threshold
     f.config_manager.update_protocol_limits(
         &f.admin,
         &config_manager::ProtocolLimits {
@@ -147,27 +171,24 @@ fn test_adl_payout_zero_when_health_negative() {
             adl_utilization_bps: 3_000,
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
-    // Open risky position (10x) then crash — health will be negative
     let trader = f.create_funded_trader(50_000 * USDC_UNIT);
     f.open_long(&trader, 400_000 * USDC_UNIT, 40_000 * USDC_UNIT);
 
-    // 15% crash → PnL = 400k * -15% = -60k. Health = 40k - 60k = -20k < 0
+    // 15% crash → PnL = 400k * -15% = -60k < 0 → AdlTargetNotProfitable
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(42_500);
 
-    let balance_before = f.usdc.balance(&trader);
-
-    // ADL triggers via utilization (>30%)
+    // Should panic with AdlTargetNotProfitable (#17)
     f.position_manager
         .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
-
-    let balance_after = f.usdc.balance(&trader);
-    // Trader should get 0 (health < 0 → payout = max(0, health) = 0)
-    assert_eq!(
-        balance_after, balance_before,
-        "ADL'd trader with negative health must get zero payout"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +212,13 @@ fn test_adl_reduces_oi() {
             adl_utilization_bps: 3_000,
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     let trader_a = f.create_funded_trader(50_000 * USDC_UNIT);
     let trader_b = f.create_funded_trader(20_000 * USDC_UNIT);
@@ -202,8 +230,9 @@ fn test_adl_reduces_oi() {
     assert_eq!(market_before.long_open_interest, 300_000 * USDC_UNIT);
     assert_eq!(market_before.short_open_interest, 100_000 * USDC_UNIT);
 
+    // Price up slightly so long position is profitable (required for ADL)
     f.advance_time(TEST_TIMESTAMP + 75);
-    f.set_btc_price(50_000);
+    f.set_btc_price(50_100);
 
     // ADL the long position (utilization > 30%)
     f.position_manager
@@ -239,9 +268,16 @@ fn test_adl_cascade_multiple_positions() {
             max_utilization_ratio: 8_500,
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
-            adl_utilization_bps: 2_000, // very low: 20%
+            adl_utilization_bps: 2_100, // low: 21% — chosen so third ADL at ~200k/1M ≈ 20% fails
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     let trader_a = f.create_funded_trader(30_000 * USDC_UNIT);
     let trader_b = f.create_funded_trader(30_000 * USDC_UNIT);
@@ -251,8 +287,9 @@ fn test_adl_cascade_multiple_positions() {
     f.open_long(&trader_b, 200_000 * USDC_UNIT, 20_000 * USDC_UNIT);
     f.open_long(&trader_c, 200_000 * USDC_UNIT, 20_000 * USDC_UNIT);
 
+    // Price up slightly so long positions are profitable (required for ADL)
     f.advance_time(TEST_TIMESTAMP + 75);
-    f.set_btc_price(50_000);
+    f.set_btc_price(50_100);
 
     // Total utilization = 600k / 1M = 60% > 20% threshold
     // ADL all three sequentially
@@ -302,12 +339,20 @@ fn test_adl_short_position() {
             adl_utilization_bps: 3_000,
         },
     );
+    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
+        base_borrow_rate_bps: 100,
+        slope1_bps: 500,
+        slope2_bps: 5_000,
+        optimal_utilization_bps: 8_000,
+        base_funding_rate_bps: 100,
+    });
 
     let trader = f.create_funded_trader(50_000 * USDC_UNIT);
     f.open_short(&trader, 400_000 * USDC_UNIT, 40_000 * USDC_UNIT);
 
+    // Price down slightly so short position is profitable (required for ADL)
     f.advance_time(TEST_TIMESTAMP + 75);
-    f.set_btc_price(50_000);
+    f.set_btc_price(49_900);
 
     let balance_before = f.usdc.balance(&trader);
 
@@ -320,10 +365,10 @@ fn test_adl_short_position() {
 
     let balance_after = f.usdc.balance(&trader);
     let payout = balance_after - balance_before;
-    // At same price, PnL = 0, so payout ≈ collateral - borrow fees
+    // At slightly lower price, PnL > 0, so payout ≈ collateral + small profit - borrow fees
     assert!(
-        payout > 0 && payout <= 40_000 * USDC_UNIT,
-        "Short ADL payout must be roughly collateral minus fees: payout={}",
+        payout > 0 && payout <= 41_000 * USDC_UNIT,
+        "Short ADL payout must be roughly collateral plus small profit minus fees: payout={}",
         payout
     );
 }
