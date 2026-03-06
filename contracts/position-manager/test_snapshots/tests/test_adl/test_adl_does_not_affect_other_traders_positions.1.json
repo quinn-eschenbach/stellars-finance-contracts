@@ -2388,6 +2388,51 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "MarketUnrealizedPnl"
+                },
+                {
+                  "symbol": "BTC"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "MarketUnrealizedPnl"
+                    },
+                    {
+                      "symbol": "BTC"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "i128": "80000000"
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          794980
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+            "key": {
+              "vec": [
+                {
                   "symbol": "Position"
                 },
                 {
@@ -2611,18 +2656,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "NetGlobalTraderPnl"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i128": "79992990"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "OracleRouter"
                             }
                           ]
@@ -2635,12 +2668,36 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "RealizedPnl"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": "79992990"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "TotalReserved"
                             }
                           ]
                         },
                         "val": {
                           "i128": "56000000000"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "TotalUnrealizedPnl"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": "80000000"
                         }
                       },
                       {
@@ -2868,7 +2925,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "79992990"
+                          "i128": "159992990"
                         }
                       },
                       {

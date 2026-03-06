@@ -6,6 +6,7 @@ pub const PRECISION: i128 = 10_000_000; // 1e7
 pub const INDEX_PRECISION: i128 = 100_000_000_000_000; // 1e14
 pub const BPS: i128 = 10_000;
 pub const SECONDS_PER_YEAR: u64 = 31_536_000; // 365 days
+pub const MAX_LEVERAGE_CAP: i128 = 200;
 
 
 pub fn calc_unrealized_pnl(
@@ -150,6 +151,49 @@ pub fn is_sl_triggered(stop_loss: i128, mark_price: i128, is_long: bool) -> bool
     } else {
         mark_price >= stop_loss
     }
+}
+
+/// Recalculate the global average price after removing a portion of OI.
+/// Returns 0 if the remaining OI is zero or the result would be negative.
+pub fn remove_from_global_avg_price(
+    current_avg: i128,
+    current_oi: i128,
+    removed_entry_price: i128,
+    removed_size: i128,
+) -> i128 {
+    let remaining_oi = current_oi - removed_size;
+    if remaining_oi <= 0 {
+        return 0;
+    }
+    let numerator = current_avg * current_oi - removed_entry_price * removed_size;
+    if numerator <= 0 {
+        return 0;
+    }
+    numerator / remaining_oi
+}
+
+/// Calculate the unrealized PnL for an entire market side.
+/// Long PnL = long_oi * (mark - long_avg) / long_avg
+/// Short PnL = short_oi * (short_avg - mark) / short_avg
+/// Returns the net (long_pnl + short_pnl).
+pub fn calc_market_unrealized_pnl(
+    long_oi: i128,
+    long_avg: i128,
+    short_oi: i128,
+    short_avg: i128,
+    mark_price: i128,
+) -> i128 {
+    let long_pnl = if long_oi > 0 && long_avg > 0 {
+        long_oi * (mark_price - long_avg) / long_avg
+    } else {
+        0
+    };
+    let short_pnl = if short_oi > 0 && short_avg > 0 {
+        short_oi * (short_avg - mark_price) / short_avg
+    } else {
+        0
+    };
+    long_pnl + short_pnl
 }
 
 pub fn calc_utilization_bps(reserved: i128, total_assets: i128) -> i128 {

@@ -165,7 +165,16 @@ pub fn require_positive(env: &Env, value: i128) {
 pub fn do_update_indices(env: &Env, symbol: &Symbol) {
     let mut market = storage::get_market(env, symbol);
     let now = env.ledger().timestamp();
-    let time_delta = now.saturating_sub(market.last_index_update);
+
+    // Clamp effective start to max(last_index_update, last_unpause_time)
+    // so fees don't accumulate during pause periods
+    let last_unpause = storage::get_last_unpause_time(env);
+    let effective_start = if market.last_index_update > last_unpause {
+        market.last_index_update
+    } else {
+        last_unpause
+    };
+    let time_delta = now.saturating_sub(effective_start);
 
     if time_delta == 0 {
         return;
@@ -203,6 +212,44 @@ pub fn do_update_indices(env: &Env, symbol: &Symbol) {
 
     market.last_index_update = now;
     storage::set_market(env, symbol, &market);
+
+    // Refresh unrealized PnL with current oracle price
+    let oracle_addr = storage::get_oracle_router(env);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
+    let mark_price = oracle.get_price(symbol);
+    refresh_market_unrealized_pnl(env, symbol, mark_price);
+}
+
+// ---------------------------------------------------------------------------
+// Unrealized PnL refresh
+// ---------------------------------------------------------------------------
+
+/// Recompute a market's unrealized PnL from its current OI/avg prices and the
+/// given mark price.  Updates the per-market cache, the global total, and
+/// syncs the combined (realized + unrealized) PnL to the Vault.
+pub fn refresh_market_unrealized_pnl(env: &Env, symbol: &Symbol, mark_price: i128) {
+    let market = storage::get_market(env, symbol);
+    let new_market_pnl = math::calc_market_unrealized_pnl(
+        market.long_open_interest,
+        market.global_long_avg_price,
+        market.short_open_interest,
+        market.global_short_avg_price,
+        mark_price,
+    );
+
+    let old_market_pnl = storage::get_market_unrealized_pnl(env, symbol);
+    let delta = new_market_pnl - old_market_pnl;
+
+    storage::set_market_unrealized_pnl(env, symbol, new_market_pnl);
+    let new_total = storage::get_total_unrealized_pnl(env) + delta;
+    storage::set_total_unrealized_pnl(env, new_total);
+
+    // Push combined (realized + unrealized) to vault
+    let combined = storage::get_realized_pnl(env) + new_total;
+    let vault_addr = storage::get_vault_address(env);
+    let vault = VaultContractClient::new(env, &vault_addr);
+    let contract_addr = env.current_contract_address();
+    vault.update_net_pnl(&contract_addr, &combined);
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +390,9 @@ pub fn do_increase_position(
     storage::set_total_reserved(env, new_reserved);
     storage::set_position(env, trader, symbol, &position);
     storage::set_market(env, symbol, &market);
+
+    // Refresh unrealized PnL after market state change
+    refresh_market_unrealized_pnl(env, symbol, mark_price);
 }
 
 /// Transfer USDC collateral from trader to this contract.
@@ -418,10 +468,22 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
     // Settlement (includes PnL tracking + fee distribution + funding cut)
     settle_close(env, trader, actual_delta, collateral_delta, pnl, borrow_fee, funding_fee, &CloseType::UserClose, None);
 
-    // Update market OI
+    // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
+        market.global_long_avg_price = math::remove_from_global_avg_price(
+            market.global_long_avg_price,
+            market.long_open_interest,
+            pos.entry_price,
+            actual_delta,
+        );
         market.long_open_interest -= actual_delta;
     } else {
+        market.global_short_avg_price = math::remove_from_global_avg_price(
+            market.global_short_avg_price,
+            market.short_open_interest,
+            pos.entry_price,
+            actual_delta,
+        );
         market.short_open_interest -= actual_delta;
     }
 
@@ -448,6 +510,9 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
     }
 
     storage::set_market(env, symbol, &market);
+
+    // Refresh unrealized PnL after market state change
+    refresh_market_unrealized_pnl(env, symbol, mark_price);
 }
 
 // ---------------------------------------------------------------------------
@@ -515,12 +580,10 @@ pub fn do_liquidate_position(
     };
     let effective_funding = funding_fee - funding_protocol_cut;
 
-    // Track the full economic outcome using effective_funding (after protocol cut)
+    // Track the full economic outcome in realized PnL
     let net_economic_pnl = pnl - borrow_fee + effective_funding;
-    let old_net_pnl = storage::get_net_global_trader_pnl(env);
-    let new_net_pnl = old_net_pnl + net_economic_pnl;
-    storage::set_net_global_trader_pnl(env, new_net_pnl);
-    vault.update_net_pnl(&contract_addr, &new_net_pnl);
+    let old_realized = storage::get_realized_pnl(env);
+    storage::set_realized_pnl(env, old_realized + net_economic_pnl);
 
     // Distribute fees: include funding protocol cut, but cap to collateral
     // (position is underwater, so actual tokens received = collateral)
@@ -528,10 +591,22 @@ pub fn do_liquidate_position(
     let distributable_fees = core::cmp::min(total_fees, pos.collateral);
     distribute_fees(env, &vault, distributable_fees, &CloseType::Liquidation, Some(caller));
 
-    // Update market OI
+    // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
+        market.global_long_avg_price = math::remove_from_global_avg_price(
+            market.global_long_avg_price,
+            market.long_open_interest,
+            pos.entry_price,
+            pos.size,
+        );
         market.long_open_interest -= pos.size;
     } else {
+        market.global_short_avg_price = math::remove_from_global_avg_price(
+            market.global_short_avg_price,
+            market.short_open_interest,
+            pos.entry_price,
+            pos.size,
+        );
         market.short_open_interest -= pos.size;
     }
 
@@ -542,6 +617,9 @@ pub fn do_liquidate_position(
     // Delete position
     storage::delete_position(env, trader, symbol);
     storage::set_market(env, symbol, &market);
+
+    // Refresh unrealized PnL after market state change
+    refresh_market_unrealized_pnl(env, symbol, mark_price);
 }
 
 // ---------------------------------------------------------------------------
@@ -562,9 +640,9 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     let adl_pnl_bps = limits.adl_pnl_bps as i128;
     let adl_util_bps = limits.adl_utilization_bps as i128;
 
-    let net_pnl = storage::get_net_global_trader_pnl(env);
-    let pnl_ratio = if total_assets > 0 && net_pnl > 0 {
-        net_pnl * math::BPS / total_assets
+    let combined_pnl = storage::get_realized_pnl(env) + storage::get_total_unrealized_pnl(env);
+    let pnl_ratio = if total_assets > 0 && combined_pnl > 0 {
+        combined_pnl * math::BPS / total_assets
     } else {
         0
     };
@@ -606,10 +684,22 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     // Settlement (same as full close, includes PnL tracking + fee distribution + funding cut)
     settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::Deleverage, None);
 
-    // Update market OI
+    // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
+        market.global_long_avg_price = math::remove_from_global_avg_price(
+            market.global_long_avg_price,
+            market.long_open_interest,
+            pos.entry_price,
+            pos.size,
+        );
         market.long_open_interest -= pos.size;
     } else {
+        market.global_short_avg_price = math::remove_from_global_avg_price(
+            market.global_short_avg_price,
+            market.short_open_interest,
+            pos.entry_price,
+            pos.size,
+        );
         market.short_open_interest -= pos.size;
     }
 
@@ -620,6 +710,9 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     // Delete position
     storage::delete_position(env, trader, symbol);
     storage::set_market(env, symbol, &market);
+
+    // Refresh unrealized PnL after market state change
+    refresh_market_unrealized_pnl(env, symbol, mark_price);
 }
 
 // ---------------------------------------------------------------------------
@@ -718,10 +811,22 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
     );
     settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::OrderExecution, Some(keeper));
 
-    // Update market OI
+    // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
+        market.global_long_avg_price = math::remove_from_global_avg_price(
+            market.global_long_avg_price,
+            market.long_open_interest,
+            pos.entry_price,
+            pos.size,
+        );
         market.long_open_interest -= pos.size;
     } else {
+        market.global_short_avg_price = math::remove_from_global_avg_price(
+            market.global_short_avg_price,
+            market.short_open_interest,
+            pos.entry_price,
+            pos.size,
+        );
         market.short_open_interest -= pos.size;
     }
 
@@ -732,6 +837,9 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
     // Delete position
     storage::delete_position(env, trader, symbol);
     storage::set_market(env, symbol, &market);
+
+    // Refresh unrealized PnL after market state change
+    refresh_market_unrealized_pnl(env, symbol, mark_price);
 }
 
 // ---------------------------------------------------------------------------
@@ -809,12 +917,10 @@ fn settle_close(
         token.transfer(&contract_addr, trader, &pm_to_trader);
     }
 
-    // Track the full economic outcome (price PnL minus fees plus funding)
+    // Track the full economic outcome in realized PnL
     let net_economic_pnl = pnl - borrow_fee + effective_funding;
-    let old_net_pnl = storage::get_net_global_trader_pnl(env);
-    let new_net_pnl = old_net_pnl + net_economic_pnl;
-    storage::set_net_global_trader_pnl(env, new_net_pnl);
-    vault.update_net_pnl(&contract_addr, &new_net_pnl);
+    let old_realized = storage::get_realized_pnl(env);
+    storage::set_realized_pnl(env, old_realized + net_economic_pnl);
 
     // Distribute fees according to close type and FeeSplits config
     let total_fees = borrow_fee + funding_protocol_cut;

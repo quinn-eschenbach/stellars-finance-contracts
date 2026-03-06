@@ -521,7 +521,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "63000000000"
+                  "i128": "77000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N"
@@ -549,7 +549,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "63000000000"
+                      "i128": "77000000000"
                     }
                   ]
                 }
@@ -571,7 +571,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "63000000000"
+                  "i128": "77000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYRE5"
@@ -599,7 +599,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "63000000000"
+                      "i128": "77000000000"
                     }
                   ]
                 }
@@ -621,7 +621,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "63000000000"
+                  "i128": "77000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2ZMN"
@@ -649,7 +649,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "63000000000"
+                      "i128": "77000000000"
                     }
                   ]
                 }
@@ -671,7 +671,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "63000000000"
+                  "i128": "77000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4BV5"
@@ -699,7 +699,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "63000000000"
+                      "i128": "77000000000"
                     }
                   ]
                 }
@@ -1809,7 +1809,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1252000000000"
+                  "i128": "1308000000000"
                 }
               }
             },
@@ -2063,7 +2063,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1352000000000"
+                          "i128": "1408000000000"
                         }
                       }
                     ]
@@ -2516,7 +2516,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "63000000000000000"
+                  "i128": "77000000000000000"
                 }
               }
             },
@@ -2561,7 +2561,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "63000000000000000"
+                  "i128": "77000000000000000"
                 }
               }
             },
@@ -2606,7 +2606,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "63000000000000000"
+                  "i128": "77000000000000000"
                 }
               }
             },
@@ -2651,7 +2651,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "63000000000000000"
+                  "i128": "77000000000000000"
                 }
               }
             },
@@ -3034,7 +3034,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1252000000000000000"
+                          "i128": "1308000000000000000"
                         }
                       },
                       {

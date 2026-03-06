@@ -66,18 +66,21 @@ If the requested withdrawal amount exceeds Free Liquidity, the transaction **rev
   * `VaultAddress`, `ConfigManager`, `OracleRouter`: Contract addresses.
   * `IsPaused`: Boolean flag for emergency trading halts.
   * `TotalReserved`: Total USDC reserved across all open positions.
-  * `NetGlobalTraderPnL`: Running net PnL of all traders (mirrored to the Vault on every close).
+  * `RealizedPnl`: Cumulative economic outcome (PnL minus fees) of all closed positions.
+  * `TotalUnrealizedPnl`: Running sum of unrealized PnL across all active markets, updated on every index update and position change.
+  * `LastUnpauseTime`: Timestamp of last unpause, used to clamp fee accumulation during pause periods.
   * `MaxLeverage(Symbol)`: Per-market maximum leverage multiplier.
 
 * **Persistent Storage:**
   * `Position(trader, symbol)`: Individual position records (see below).
   * `Market(Symbol)`: Per-market aggregate state (see below).
+  * `MarketUnrealizedPnl(Symbol)`: Per-market cached unrealized PnL.
 
 Risk parameters (`MaxUtilizationRatio`, `MinPositionLifetime`, ADL thresholds) are read from the `ConfigManager` at runtime, not stored locally.
 
 **Position Struct:** `collateral`, `size`, `entry_price` (1e7), `entry_borrow_index` (1e14), `entry_funding_index` (1e14), `is_long`, `last_increased_time`, `take_profit` (0 = unset), `stop_loss` (0 = unset).
 
-**MarketInfo Struct:** `global_long_avg_price`, `global_short_avg_price`, `long_open_interest`, `short_open_interest`, `acc_borrow_index` (1e14), `acc_funding_index` (signed, 1e14), `last_index_update`.
+**MarketInfo Struct:** `global_long_avg_price`, `global_short_avg_price` (updated on both position open and close), `long_open_interest`, `short_open_interest`, `acc_borrow_index` (1e14), `acc_funding_index` (signed, 1e14), `last_index_update`.
 
 
 **Key Functions:**
@@ -89,19 +92,19 @@ Risk parameters (`MaxUtilizationRatio`, `MinPositionLifetime`, ADL thresholds) a
   * **Security:** Records the current block timestamp into the position's `last_increased_time`.
 
 
-* `decrease_position(trader, symbol, size_delta)`: Partially or fully closes a position and realizes PnL. If `size_delta >= position.size`, treats as full close.
+* `decrease_position(trader, symbol, size_delta)`: Partially or fully closes a position and realizes PnL. If `size_delta >= position.size`, treats as full close. Recalculates the market's global average entry price by removing the closed portion's contribution.
   * **Checks:** Reverts if `current_time < last_increased_time + min_position_lifetime`.
   * **Emergency Access:** This function purposefully **bypasses the `Pausable` lock**. Even if the protocol is paused, users can always close positions to reduce their risk exposure.
 
 
 * `liquidate_position(caller, trader, symbol)`: Callable by `KEEPER` role. **Bypasses pause.** Checks health factor: `health = collateral + unrealized_pnl - borrow_fee + funding_fee`. Reverts if `health >= 0`. Seizes all collateral to the Vault. Keeper receives `keeper_bps` share of total fees.
-* `update_indices(caller, symbol)`: Callable by `KEEPER` role. Advances `acc_borrow_index` and `acc_funding_index` based on elapsed time, utilization, and OI imbalance. Automatically called at the start of every position-mutating function.
+* `update_indices(caller, symbol)`: Callable by `KEEPER` role. Advances `acc_borrow_index` and `acc_funding_index` based on elapsed time, utilization, and OI imbalance. Also fetches the current oracle price and refreshes the market's unrealized PnL, syncing the combined (realized + unrealized) PnL to the Vault. Automatically called at the start of every position-mutating function.
 * `execute_order(caller, trader, symbol)`: Callable by `KEEPER` role. Checks if a position's TP or SL price has been triggered by the current oracle price, then fully closes the position. Keeper receives `keeper_bps` share of fees.
-* `set_tp_sl(trader, symbol, take_profit, stop_loss)`: Sets or updates Take Profit and Stop Loss prices on an existing position. TP must be above entry for longs (below for shorts), SL must be below entry for longs (above for shorts). Passing 0 clears the value; passing 0 when an existing value is set preserves it.
+* `set_tp_sl(trader, symbol, take_profit, stop_loss)`: Sets or updates Take Profit and Stop Loss prices on an existing position. TP must be above entry for longs (below for shorts), SL must be below entry for longs (above for shorts). Passing 0 clears the value. To preserve an existing TP or SL when updating the other, use `increase_position` with 0 for the value to keep.
 * `deleverage_position(caller, trader, symbol)`: Callable by `KEEPER` role. **Bypasses pause.** ADL: force-closes a profitable position when system stress is detected. Reverts unless at least one ADL trigger is breached (`net_pnl * BPS / total_assets > adl_pnl_bps` **OR** `total_reserved * BPS / total_assets > adl_utilization_bps`). Reverts if the target position's PnL is not positive. The trader is fully paid out. No keeper reward on ADL.
-* `set_max_leverage(caller, symbol, max_leverage)`: Callable by `ADMIN` role. Sets per-market leverage cap.
+* `set_max_leverage(caller, symbol, max_leverage)`: Callable by `ADMIN` role. Sets per-market leverage cap. Capped at 200x absolute ceiling.
 * `get_position(trader, symbol)` / `get_market(symbol)` / `get_max_leverage(symbol)`: Read-only views.
-* `pause(caller)` / `unpause(caller)`: Callable by `PAUSER` role.
+* `pause(caller)` / `unpause(caller)`: Callable by `PAUSER` role. `unpause` records the current timestamp to prevent fee accumulation for the paused duration.
 * `bump_position(user, symbol)`: Extends the Soroban TTL for a specific active position. Callable by anyone.
 * `upgrade(operator, new_wasm_hash)`: Callable by `UPGRADER` role.
 
@@ -131,7 +134,7 @@ Risk parameters (`MaxUtilizationRatio`, `MinPositionLifetime`, ADL thresholds) a
 
 **Key Functions:**
 
-* `initialize(admin)`: One-time setup. Grants the `ADMIN` role to the deploying address.
+* `initialize(admin)`: One-time setup. Grants the `ADMIN` role to the deploying address and sets default values for FeeSplits (90% LP / 5% keeper / 5% dev), ProtocolLimits, and BorrowRateConfig.
 * `grant_role(caller, role, account)` / `revoke_role(caller, role, account)`: Callable by `ADMIN`. Cannot grant/revoke the ADMIN role through this path.
 * `transfer_admin(caller, new_admin)`: Atomic admin transfer requiring both current and new admin signatures.
 * `has_role(role, account) -> bool`: Read-only role check used by all other contracts via cross-contract call.
@@ -284,7 +287,7 @@ If total OI is zero, the funding rate is zero. The `base_funding_rate_bps` is co
 * If $\text{Rate}_{funding} > 0$: Longs pay Shorts.
 * If $\text{Rate}_{funding} < 0$: Shorts pay Longs.
 
-**Protocol Cut:** When a position is closed, if the trader owes positive funding fees, the protocol takes a `funding_cut_bps` share (configured in `ProtocolLimits`). This cut is deducted from the trader's health and accrued alongside borrow fees for distribution.
+**Protocol Cut:** When a position is closed, if the trader receives positive funding fees (funding_fee > 0), the protocol takes a `funding_cut_bps` share (configured in `ProtocolLimits`). This cut is deducted from the trader's health and accrued alongside borrow fees for distribution.
 
 $$\text{effective\_funding} = \text{funding\_fee} - \left(\text{funding\_fee} \times \frac{\text{funding\_cut\_bps}}{\text{BPS}}\right)$$
 

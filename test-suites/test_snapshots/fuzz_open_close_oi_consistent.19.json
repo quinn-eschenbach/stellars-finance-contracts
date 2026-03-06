@@ -526,13 +526,13 @@
                   "symbol": "BTC"
                 },
                 {
-                  "i128": "36000000000"
+                  "i128": "15000000000"
                 },
                 {
-                  "i128": "4654800000"
+                  "i128": "2214000000"
                 },
                 {
-                  "bool": false
+                  "bool": true
                 },
                 {
                   "i128": "0"
@@ -557,7 +557,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON"
                     },
                     {
-                      "i128": "4654800000"
+                      "i128": "2214000000"
                     }
                   ]
                 }
@@ -586,7 +586,7 @@
                   "symbol": "BTC"
                 },
                 {
-                  "i128": "36000000000"
+                  "i128": "15000000000"
                 }
               ]
             }
@@ -1739,7 +1739,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1001080001741"
+                  "i128": "999550000688"
                 }
               }
             },
@@ -1784,7 +1784,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "3575798259"
+                  "i128": "2664999312"
                 }
               }
             },
@@ -1858,7 +1858,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1104655800000"
+                          "i128": "1102215000000"
                         }
                       }
                     ]
@@ -2196,7 +2196,7 @@
                         "symbol": "acc_borrow_index"
                       },
                       "val": {
-                        "i128": "53906648991627"
+                        "i128": "53906648747462"
                       }
                     },
                     {
@@ -2204,7 +2204,7 @@
                         "symbol": "acc_funding_index"
                       },
                       "val": {
-                        "i128": "-2219685"
+                        "i128": "2219685"
                       }
                     },
                     {
@@ -2220,7 +2220,7 @@
                         "symbol": "global_short_avg_price"
                       },
                       "val": {
-                        "i128": "500000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -2248,6 +2248,51 @@
                       }
                     }
                   ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          794980
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "MarketUnrealizedPnl"
+                },
+                {
+                  "symbol": "BTC"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "MarketUnrealizedPnl"
+                    },
+                    {
+                      "symbol": "BTC"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "i128": "0"
                 }
               }
             },
@@ -2334,18 +2379,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "NetGlobalTraderPnl"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i128": "-1080001741"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "OracleRouter"
                             }
                           ]
@@ -2358,7 +2391,31 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "RealizedPnl"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": "449999312"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "TotalReserved"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": "0"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "TotalUnrealizedPnl"
                             }
                           ]
                         },
@@ -2591,7 +2648,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "-1080001741"
+                          "i128": "449999312"
                         }
                       },
                       {
@@ -2639,7 +2696,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "47"
+                          "i128": "17"
                         }
                       },
                       {

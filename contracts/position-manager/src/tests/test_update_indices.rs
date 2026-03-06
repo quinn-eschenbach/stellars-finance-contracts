@@ -14,6 +14,7 @@
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     Address, Env, String, Symbol,
+    symbol_short, vec,
 };
 
 use crate::contract::PositionManagerContract;
@@ -24,6 +25,9 @@ use crate::math::{
 use crate::storage;
 use crate::types::MarketInfo;
 use crate::PositionManagerClient;
+
+use mock_oracle::{MockOracle, MockOracleClient};
+use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -57,6 +61,7 @@ struct UpdateIndicesFixture {
     config_client: config_manager::ConfigManagerClient<'static>,
     token_id: Address,
     token_client: mock_token::MockTokenClient<'static>,
+    oracle_client: MockOracleClient<'static>,
     admin: Address,
     keeper: Address,
     non_keeper: Address,
@@ -123,17 +128,54 @@ fn setup() -> UpdateIndicesFixture {
     let vault_client = vault::VaultContractClient::new(&env, &vault_id);
     vault_client.initialize(&admin, &token_id, &config_id, &pm_id);
 
-    // -- Deploy a dummy oracle router (just a random address for now) --
-    let oracle = Address::generate(&env);
+    // -- Deploy MockOracle + OracleRouter --
+    let oracle_id = env.register(MockOracle, ());
+    let oracle_client = MockOracleClient::new(&env, &oracle_id);
+    oracle_client.initialize();
+    // Set default prices for common symbols
+    oracle_client.set_price(&symbol_short!("BTC"), &(50_000 * 10_000_000_i128));
+    oracle_client.set_price(&symbol_short!("ETH"), &(3_000 * 10_000_000_i128));
+    oracle_client.set_price(&Symbol::new(&env, "SOL"), &(100 * 10_000_000_i128));
+
+    let oracle_router_id = env.register(OracleRouterContract, ());
+    let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
+    oracle_router_client.initialize(&config_id);
+    oracle_router_client.set_oracle_config(
+        &admin,
+        &OracleConfig {
+            max_deviation_bps: 500,
+            staleness_threshold: 86400,
+            cache_duration: 10,
+        },
+    );
+    oracle_router_client.set_oracle_sources(
+        &admin,
+        &symbol_short!("BTC"),
+        &vec![&env, oracle_id.clone()],
+        &vec![&env],
+    );
+    oracle_router_client.set_oracle_sources(
+        &admin,
+        &symbol_short!("ETH"),
+        &vec![&env, oracle_id.clone()],
+        &vec![&env],
+    );
+    oracle_router_client.set_oracle_sources(
+        &admin,
+        &Symbol::new(&env, "SOL"),
+        &vec![&env, oracle_id.clone()],
+        &vec![&env],
+    );
 
     // -- Initialize PositionManager --
-    pm_client.initialize(&admin, &vault_id, &config_id, &oracle);
+    pm_client.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
 
     // SAFETY: env lives in the fixture, clients borrow from it.
     let pm_client = unsafe { core::mem::transmute(pm_client) };
     let vault_client = unsafe { core::mem::transmute(vault_client) };
     let config_client = unsafe { core::mem::transmute(config_client) };
     let token_client = unsafe { core::mem::transmute(token_client) };
+    let oracle_client = unsafe { core::mem::transmute(oracle_client) };
 
     UpdateIndicesFixture {
         env,
@@ -144,6 +186,7 @@ fn setup() -> UpdateIndicesFixture {
         config_client,
         token_id,
         token_client,
+        oracle_client,
         admin,
         keeper,
         non_keeper,
@@ -573,6 +616,9 @@ fn test_update_indices_large_time_delta() {
     let one_year: u64 = 31_536_000;
     let t1 = T0 + one_year;
     advance_time(&f, t1);
+
+    // Re-set oracle price so it's not stale after the large time advance
+    f.oracle_client.set_price(&symbol, &(50_000 * 10_000_000_i128));
 
     // This must not panic from overflow
     f.pm_client.update_indices(&f.keeper, &symbol);

@@ -74,6 +74,39 @@ impl ConfigManager for ConfigManagerContract {
         storage::set_admin(&env, &admin_address);
         let admin_role = admin_role_symbol(&env);
         set_role_member(&env, &admin_role, &admin_address, true);
+
+        // Set sensible defaults so PM never panics reading unconfigured values
+        storage::save_fee_splits(
+            &env,
+            &FeeSplits {
+                keeper_bps: shared::DEFAULT_KEEPER_BPS,
+                dev_bps: shared::DEFAULT_DEV_BPS,
+                lp_bps: shared::DEFAULT_LP_BPS,
+            },
+        );
+        storage::save_protocol_limits(
+            &env,
+            &ProtocolLimits {
+                min_collateral: shared::DEFAULT_MIN_COLLATERAL,
+                cooldown_duration: shared::DEFAULT_COOLDOWN_DURATION,
+                min_position_lifetime: shared::DEFAULT_MIN_POSITION_LIFETIME,
+                max_utilization_ratio: shared::DEFAULT_MAX_UTILIZATION_RATIO,
+                funding_cut_bps: shared::DEFAULT_FUNDING_CUT_BPS,
+                adl_pnl_bps: shared::DEFAULT_ADL_PNL_BPS,
+                adl_utilization_bps: shared::DEFAULT_ADL_UTILIZATION_BPS,
+            },
+        );
+        storage::save_borrow_rate_config(
+            &env,
+            &BorrowRateConfig {
+                base_borrow_rate_bps: shared::DEFAULT_BASE_BORROW_RATE_BPS,
+                slope1_bps: shared::DEFAULT_SLOPE1_BPS,
+                slope2_bps: shared::DEFAULT_SLOPE2_BPS,
+                optimal_utilization_bps: shared::DEFAULT_OPTIMAL_UTILIZATION_BPS,
+                base_funding_rate_bps: shared::DEFAULT_BASE_FUNDING_RATE_BPS,
+            },
+        );
+
         storage::set_initialized(&env);
         bump_instance_ttl(&env);
     }

@@ -25,8 +25,14 @@ pub enum StorageKey {
     TotalReserved,
     // Contract version (set by migrations)
     Version,
-    // Running net PnL of all traders (positive = traders winning)
-    NetGlobalTraderPnl,
+    // Cumulative economic outcome (PnL minus fees) of all closed positions
+    RealizedPnl,
+    // Running sum of unrealized PnL across all active markets
+    TotalUnrealizedPnl,
+    // Per-market cached unrealized PnL (persistent storage)
+    MarketUnrealizedPnl(Symbol),
+    // Timestamp of the last unpause (for fee clamping during pause periods)
+    LastUnpauseTime,
     // Per-market max leverage (instance storage, admin-configured)
     MaxLeverage(Symbol),
     // Per-position state (persistent storage)
@@ -138,20 +144,54 @@ pub fn set_total_reserved(env: &Env, amount: i128) {
 }
 
 // ---------------------------------------------------------------------------
-// Instance storage: NetGlobalTraderPnl
+// Instance storage: RealizedPnl
 // ---------------------------------------------------------------------------
 
-pub fn get_net_global_trader_pnl(env: &Env) -> i128 {
+pub fn get_realized_pnl(env: &Env) -> i128 {
     env.storage()
         .instance()
-        .get(&StorageKey::NetGlobalTraderPnl)
+        .get(&StorageKey::RealizedPnl)
         .unwrap_or(0i128)
 }
 
-pub fn set_net_global_trader_pnl(env: &Env, value: i128) {
+pub fn set_realized_pnl(env: &Env, value: i128) {
     env.storage()
         .instance()
-        .set(&StorageKey::NetGlobalTraderPnl, &value);
+        .set(&StorageKey::RealizedPnl, &value);
+}
+
+// ---------------------------------------------------------------------------
+// Instance storage: TotalUnrealizedPnl
+// ---------------------------------------------------------------------------
+
+pub fn get_total_unrealized_pnl(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&StorageKey::TotalUnrealizedPnl)
+        .unwrap_or(0i128)
+}
+
+pub fn set_total_unrealized_pnl(env: &Env, value: i128) {
+    env.storage()
+        .instance()
+        .set(&StorageKey::TotalUnrealizedPnl, &value);
+}
+
+// ---------------------------------------------------------------------------
+// Persistent storage: MarketUnrealizedPnl
+// ---------------------------------------------------------------------------
+
+pub fn get_market_unrealized_pnl(env: &Env, symbol: &Symbol) -> i128 {
+    let key = StorageKey::MarketUnrealizedPnl(symbol.clone());
+    env.storage().persistent().get(&key).unwrap_or(0i128)
+}
+
+pub fn set_market_unrealized_pnl(env: &Env, symbol: &Symbol, value: i128) {
+    let key = StorageKey::MarketUnrealizedPnl(symbol.clone());
+    env.storage().persistent().set(&key, &value);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, shared::SHARED_THRESHOLD, shared::SHARED_BUMP);
 }
 
 // ---------------------------------------------------------------------------
@@ -230,6 +270,23 @@ pub fn set_market(env: &Env, symbol: &Symbol, market: &MarketInfo) {
     env.storage()
         .persistent()
         .extend_ttl(&key, shared::SHARED_THRESHOLD, shared::SHARED_BUMP);
+}
+
+// ---------------------------------------------------------------------------
+// Instance storage: LastUnpauseTime
+// ---------------------------------------------------------------------------
+
+pub fn get_last_unpause_time(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&StorageKey::LastUnpauseTime)
+        .unwrap_or(0u64)
+}
+
+pub fn set_last_unpause_time(env: &Env, ts: u64) {
+    env.storage()
+        .instance()
+        .set(&StorageKey::LastUnpauseTime, &ts);
 }
 
 // ---------------------------------------------------------------------------

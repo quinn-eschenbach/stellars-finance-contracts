@@ -192,12 +192,16 @@ impl PositionManager for PositionManagerContract {
         logic::require_initialized(&env);
         logic::require_pauser(&env, &caller);
         storage::set_paused(&env, false);
+        storage::set_last_unpause_time(&env, env.ledger().timestamp());
     }
 
     fn set_max_leverage(env: Env, caller: Address, symbol: Symbol, max_leverage: i128) {
         logic::require_initialized(&env);
         logic::require_admin(&env, &caller);
         logic::require_positive(&env, max_leverage);
+        if max_leverage > crate::math::MAX_LEVERAGE_CAP {
+            panic_with_error!(&env, PositionManagerError::LeverageCapExceeded);
+        }
         storage::set_max_leverage(&env, &symbol, max_leverage);
         shared::bump_instance_ttl(&env);
     }

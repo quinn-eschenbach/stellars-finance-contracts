@@ -32,4 +32,6 @@ pub enum PositionManagerError {
     BelowMinCollateral = 16,
     /// ADL target position is not profitable (PnL <= 0).
     AdlTargetNotProfitable = 17,
+    /// Max leverage exceeds the absolute safety cap (200x).
+    LeverageCapExceeded = 18,
 }

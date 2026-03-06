@@ -37,6 +37,43 @@ pub const ROLE_PAUSER: &str = "PAUSER";
 pub const ROLE_KEEPER: &str = "KEEPER";
 
 // ---------------------------------------------------------------------------
+// Protocol default constants (used by ConfigManager::initialize)
+// ---------------------------------------------------------------------------
+
+/// Default keeper fee share: 5% (500 bps).
+pub const DEFAULT_KEEPER_BPS: u32 = 500;
+/// Default dev/treasury fee share: 5% (500 bps).
+pub const DEFAULT_DEV_BPS: u32 = 500;
+/// Default LP fee share: 90% (9000 bps).
+pub const DEFAULT_LP_BPS: u32 = 9_000;
+
+/// Default minimum collateral: $1 USDC at 1e7 precision.
+pub const DEFAULT_MIN_COLLATERAL: i128 = 10_000_000;
+/// Default cooldown between vault deposit and withdrawal: 5 minutes.
+pub const DEFAULT_COOLDOWN_DURATION: u64 = 300;
+/// Default minimum position lifetime: 60 seconds.
+pub const DEFAULT_MIN_POSITION_LIFETIME: u64 = 60;
+/// Default max vault utilization: 85% (8500 bps).
+pub const DEFAULT_MAX_UTILIZATION_RATIO: i128 = 8_500;
+/// Default protocol cut of positive funding fees: 5% (500 bps).
+pub const DEFAULT_FUNDING_CUT_BPS: u32 = 500;
+/// Default ADL trigger: net PnL / total assets threshold: 90% (9000 bps).
+pub const DEFAULT_ADL_PNL_BPS: u32 = 9_000;
+/// Default ADL trigger: utilization threshold: 95% (9500 bps).
+pub const DEFAULT_ADL_UTILIZATION_BPS: u32 = 9_500;
+
+/// Default base borrow rate: 1% annualized (100 bps).
+pub const DEFAULT_BASE_BORROW_RATE_BPS: i128 = 100;
+/// Default borrow rate slope below optimal utilization: 5% (500 bps).
+pub const DEFAULT_SLOPE1_BPS: i128 = 500;
+/// Default borrow rate slope above optimal utilization: 50% (5000 bps).
+pub const DEFAULT_SLOPE2_BPS: i128 = 5_000;
+/// Default optimal utilization breakpoint: 80% (8000 bps).
+pub const DEFAULT_OPTIMAL_UTILIZATION_BPS: i128 = 8_000;
+/// Default base funding rate: 1% annualized (100 bps).
+pub const DEFAULT_BASE_FUNDING_RATE_BPS: i128 = 100;
+
+// ---------------------------------------------------------------------------
 // Access control — cross-contract role checking via ConfigManager
 //
 // Uses a minimal contractclient trait (NOT the full config-manager crate) so
