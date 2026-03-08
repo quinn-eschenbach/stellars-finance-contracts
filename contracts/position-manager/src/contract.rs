@@ -1,4 +1,6 @@
-use soroban_sdk::{contract, contractclient, contractimpl, contracttype, panic_with_error, Address, Env, Symbol};
+use soroban_sdk::{
+    contract, contractclient, contractimpl, contracttype, panic_with_error, Address, Env, Symbol,
+};
 
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
@@ -122,7 +124,16 @@ impl PositionManager for PositionManagerContract {
         trader.require_auth();
         logic::require_positive(&env, size);
         logic::require_positive(&env, collateral);
-        logic::do_increase_position(&env, &trader, &symbol, size, collateral, is_long, take_profit, stop_loss);
+        logic::do_increase_position(
+            &env,
+            &trader,
+            &symbol,
+            size,
+            collateral,
+            is_long,
+            take_profit,
+            stop_loss,
+        );
         shared::bump_instance_ttl(&env);
     }
 
@@ -153,7 +164,7 @@ impl PositionManager for PositionManagerContract {
 
     fn execute_order(env: Env, caller: Address, trader: Address, symbol: Symbol) {
         logic::require_initialized(&env);
-        logic::require_not_paused(&env);
+        // TP/SL orders protect traders and must execute during emergencies
         logic::require_keeper(&env, &caller);
         logic::do_execute_order(&env, &caller, &trader, &symbol);
         shared::bump_instance_ttl(&env);
@@ -161,6 +172,7 @@ impl PositionManager for PositionManagerContract {
 
     fn set_tp_sl(env: Env, trader: Address, symbol: Symbol, take_profit: i128, stop_loss: i128) {
         logic::require_initialized(&env);
+        logic::require_not_paused(&env);
         trader.require_auth();
         logic::do_set_tp_sl(&env, &trader, &symbol, take_profit, stop_loss);
         shared::bump_instance_ttl(&env);

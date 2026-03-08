@@ -258,9 +258,9 @@ pub fn get_market(env: &Env, symbol: &Symbol) -> MarketInfo {
         global_short_avg_price: 0,
         long_open_interest: 0,
         short_open_interest: 0,
-        acc_borrow_index: 0,
-        acc_funding_index: 0,
-        last_index_update: 0,
+        acc_borrow_index: crate::math::INDEX_PRECISION,
+        acc_funding_index: crate::math::INDEX_PRECISION,
+        last_index_update: env.ledger().timestamp(),
     })
 }
 

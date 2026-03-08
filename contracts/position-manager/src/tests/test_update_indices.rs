@@ -727,30 +727,26 @@ fn test_update_indices_does_not_modify_oi_or_avg_prices() {
 #[test]
 fn test_update_indices_nonexistent_market_creates_defaults() {
     // Scenario: Calling update_indices on a symbol that has never been written
-    // to storage. get_market returns defaults (all zeros). The implementation
-    // should handle this gracefully. With OI = 0, funding rate = 0. With
-    // acc_borrow_index = 0, the accumulation starts from 0.
+    // to storage. get_market returns defaults with acc_borrow_index and
+    // acc_funding_index at INDEX_PRECISION and last_index_update = now.
+    // Since time_delta is 0, update_indices is a no-op. Verify that the
+    // default market is correctly initialized when subsequently queried.
     let f = setup();
     let symbol = Symbol::new(&f.env, "SOL"); // never seeded
 
     seed_vault_liquidity(&f, 1_000_000 * ONE_USDC);
 
-    // Advance time so there is a non-zero delta from last_index_update=0
-    let t1 = T0 + ONE_HOUR;
-    advance_time(&f, t1);
-
-    f.pm_client.update_indices(&f.keeper, &symbol);
-
-    let updated = f.pm_client.get_market(&symbol);
+    // get_market returns defaults even without any prior write
+    let market = f.pm_client.get_market(&symbol);
+    assert_eq!(market.long_open_interest, 0);
+    assert_eq!(market.short_open_interest, 0);
     assert_eq!(
-        updated.last_index_update, t1,
-        "last_index_update must be set even for a previously non-existent market"
+        market.acc_borrow_index, INDEX_PRECISION,
+        "Default borrow index must be INDEX_PRECISION"
     );
-    // With default acc_borrow_index=0, after accumulation it should be > 0
-    // (base rate 100 bps * t1 seconds)
-    assert!(
-        updated.acc_borrow_index > 0,
-        "Borrow index must advance from zero on a fresh default market"
+    assert_eq!(
+        market.acc_funding_index, INDEX_PRECISION,
+        "Default funding index must be INDEX_PRECISION"
     );
 }
 

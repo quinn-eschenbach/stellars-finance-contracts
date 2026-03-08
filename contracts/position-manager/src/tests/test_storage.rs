@@ -301,9 +301,9 @@ fn test_get_market_returns_default_when_missing() {
         assert_eq!(market.global_short_avg_price, 0);
         assert_eq!(market.long_open_interest, 0);
         assert_eq!(market.short_open_interest, 0);
-        assert_eq!(market.acc_borrow_index, 0);
-        assert_eq!(market.acc_funding_index, 0);
-        assert_eq!(market.last_index_update, 0);
+        assert_eq!(market.acc_borrow_index, crate::math::INDEX_PRECISION);
+        assert_eq!(market.acc_funding_index, crate::math::INDEX_PRECISION);
+        assert_eq!(market.last_index_update, env.ledger().timestamp());
     });
 }
 

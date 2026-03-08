@@ -82,11 +82,20 @@ pub fn calc_funding_rate(long_oi: i128, short_oi: i128, base_funding_rate: i128)
     match imbalance.checked_mul(base_funding_rate) {
         Some(product) => product / total,
         None => {
-            let scale = total / BPS;
-            if scale == 0 {
-                return 0;
+            // Progressive halving preserves the imbalance/total ratio
+            // better than dividing by a shared scale factor.
+            let mut im = imbalance;
+            let mut tot = total;
+            loop {
+                im /= 2;
+                tot /= 2;
+                if tot == 0 {
+                    return 0;
+                }
+                if let Some(product) = im.checked_mul(base_funding_rate) {
+                    return product / tot;
+                }
             }
-            base_funding_rate * (imbalance / scale) / (total / scale)
         }
     }
 }

@@ -867,9 +867,8 @@ fn test_execute_order_not_keeper_reverts() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
-fn test_execute_order_paused_reverts() {
-    // Contract is paused. execute_order requires not paused -> Paused (3).
+fn test_execute_order_succeeds_when_paused() {
+    // TP/SL orders protect traders and must execute during emergencies.
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
@@ -884,8 +883,29 @@ fn test_execute_order_paused_reverts() {
     let trigger_price = 56_000 * PRECISION;
     advance_and_set_price(&f, trigger_price);
 
-    // execute_order should fail because paused
+    // execute_order should succeed even when paused
     f.pm_client.execute_order(&f.keeper, &f.trader, &symbol);
+
+    // Verify position is gone
+    f.env.as_contract(&f.pm_addr, || {
+        let pos = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(pos.is_none(), "Position must be deleted after execute_order");
+    });
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")]
+fn test_set_tp_sl_reverts_when_paused() {
+    // Setting TP/SL is a non-emergency action and must be blocked when paused.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    f.pm_client.pause(&f.admin);
+
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
 }
 
 #[test]

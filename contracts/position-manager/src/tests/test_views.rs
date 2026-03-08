@@ -33,6 +33,7 @@ struct TestFixture<'a> {
     pm_client: PositionManagerClient<'a>,
     config_client: ConfigManagerClient<'a>,
     usdc_client: MockTokenClient<'a>,
+    oracle_client: MockOracleClient<'a>,
     admin: Address,
     keeper: Address,
     trader: Address,
@@ -143,12 +144,14 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let pm_client = unsafe { core::mem::transmute(pm_client) };
     let config_client = unsafe { core::mem::transmute(config_client) };
     let usdc_client = unsafe { core::mem::transmute(usdc_client) };
+    let oracle_client = unsafe { core::mem::transmute(oracle_client) };
 
     TestFixture {
         env,
         pm_client,
         config_client,
         usdc_client,
+        oracle_client,
         admin,
         keeper,
         trader,
@@ -216,13 +219,41 @@ fn test_bump_position_callable_by_anyone() {
 // ===========================================================================
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
-fn test_execute_order_reverts_when_paused() {
+fn test_execute_order_allowed_when_paused() {
+    // TP/SL orders protect traders and must execute during emergencies.
+    // This test verifies execute_order does not revert due to pause.
+    // It will still revert for other reasons (no position), but NOT #3 (Paused).
     let f = setup_full();
+
+    // Open a position and set TP before pausing
+    f.pm_client.increase_position(
+        &f.trader,
+        &soroban_sdk::symbol_short!("BTC"),
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true, &0, &0,
+    );
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &soroban_sdk::symbol_short!("BTC"), &tp, &0);
+
     f.pm_client.pause(&f.admin);
-    let trader = Address::generate(&f.env);
-    let symbol = soroban_sdk::symbol_short!("BTC");
-    f.pm_client.execute_order(&f.keeper, &trader, &symbol);
+
+    // Advance time past min lifetime and set trigger price
+    let trigger_price = 56_000 * PRECISION;
+    f.env.ledger().set(LedgerInfo {
+        timestamp: f.env.ledger().timestamp() + 120,
+        sequence_number: f.env.ledger().sequence(),
+        protocol_version: 23,
+        network_id: [0u8; 32],
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+    f.oracle_client.set_price(&soroban_sdk::symbol_short!("BTC"), &trigger_price);
+
+    // Should succeed even when paused
+    f.pm_client.execute_order(&f.keeper, &f.trader, &soroban_sdk::symbol_short!("BTC"));
 }
 
 // ===========================================================================
@@ -266,8 +297,8 @@ fn test_get_market_returns_defaults_for_unknown_symbol() {
     let market = f.pm_client.get_market(&symbol_short!("ETH"));
     assert_eq!(market.long_open_interest, 0);
     assert_eq!(market.short_open_interest, 0);
-    assert_eq!(market.acc_borrow_index, 0);
-    assert_eq!(market.acc_funding_index, 0);
+    assert_eq!(market.acc_borrow_index, crate::math::INDEX_PRECISION);
+    assert_eq!(market.acc_funding_index, crate::math::INDEX_PRECISION);
 }
 
 #[test]

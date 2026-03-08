@@ -6,6 +6,8 @@
 use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env};
 use test_suites::testutils::{Fixture, TEST_TIMESTAMP, USDC_UNIT};
 
+const INDEX_PRECISION: i128 = 100_000_000_000_000; // 1e14 — must match position_manager::math
+
 const MIN_POSITION_LIFETIME: u64 = 60;
 
 // ---------------------------------------------------------------------------
@@ -131,10 +133,10 @@ fn test_funding_rate_longs_pay_shorts() {
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
-    // Funding index should be positive (longs pay)
+    // Funding index should be above baseline (longs pay)
     assert!(
-        market.acc_funding_index > 0,
-        "Funding index must be positive when long OI > short OI"
+        market.acc_funding_index > INDEX_PRECISION,
+        "Funding index must be above INDEX_PRECISION when long OI > short OI"
     );
 
     // Close both at same price — long should pay more fees, short receives funding benefit
@@ -194,10 +196,10 @@ fn test_funding_rate_shorts_pay_longs() {
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
-    // Funding index should be negative (shorts pay)
+    // Funding index should be below baseline (shorts pay)
     assert!(
-        market.acc_funding_index < 0,
-        "Funding index must be negative when short OI > long OI"
+        market.acc_funding_index < INDEX_PRECISION,
+        "Funding index must be below INDEX_PRECISION when short OI > long OI"
     );
 }
 
@@ -223,10 +225,10 @@ fn test_balanced_oi_zero_funding() {
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
-    // Funding rate should be zero when OI is balanced
+    // Funding rate should be zero when OI is balanced — index stays at baseline
     assert_eq!(
-        market.acc_funding_index, 0,
-        "Balanced OI must produce zero funding index"
+        market.acc_funding_index, INDEX_PRECISION,
+        "Balanced OI must produce zero funding delta"
     );
 }
 
@@ -328,7 +330,7 @@ fn test_multiple_index_updates_compound() {
     f.open_long(&f.trader, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
 
     // 3 updates, each 8 hours apart
-    let mut prev_borrow_index = 0_i128;
+    let mut prev_borrow_index = INDEX_PRECISION;
     for i in 1..=3 {
         f.advance_time(TEST_TIMESTAMP + 28_800 * i);
         f.set_btc_price(50_000);
