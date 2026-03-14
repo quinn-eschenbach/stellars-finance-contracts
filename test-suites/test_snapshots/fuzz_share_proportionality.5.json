@@ -521,7 +521,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "96000000000"
+                  "i128": "63000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N"
@@ -549,7 +549,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "96000000000"
+                      "i128": "63000000000"
                     }
                   ]
                 }
@@ -570,7 +570,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "288000000000"
+                  "i128": "315000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYRE5"
@@ -598,7 +598,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "288000000000"
+                      "i128": "315000000000"
                     }
                   ]
                 }
@@ -1707,7 +1707,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1384000000000"
+                  "i128": "1378000000000"
                 }
               }
             },
@@ -1871,7 +1871,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1484000000000"
+                          "i128": "1478000000000"
                         }
                       }
                     ]
@@ -2324,7 +2324,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "96000000000000000"
+                  "i128": "63000000000000000"
                 }
               }
             },
@@ -2369,7 +2369,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "288000000000000000"
+                  "i128": "315000000000000000"
                 }
               }
             },
@@ -2662,7 +2662,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1384000000000000000"
+                          "i128": "1378000000000000000"
                         }
                       },
                       {
@@ -2814,7 +2814,7 @@
                     "symbol": "amount"
                   },
                   "val": {
-                    "i128": "288000000000"
+                    "i128": "315000000000"
                   }
                 },
                 {
@@ -2858,7 +2858,7 @@
                     "symbol": "assets"
                   },
                   "val": {
-                    "i128": "288000000000"
+                    "i128": "315000000000"
                   }
                 },
                 {
@@ -2866,7 +2866,7 @@
                     "symbol": "shares"
                   },
                   "val": {
-                    "i128": "288000000000000000"
+                    "i128": "315000000000000000"
                   }
                 }
               ]

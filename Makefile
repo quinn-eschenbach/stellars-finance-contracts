@@ -1,7 +1,7 @@
 CONTRACTS = vault position-manager config-manager oracle-router
 WASM_DIR  = target/wasm32v1-none/release
 
-.PHONY: build optimize test bind clean
+.PHONY: build optimize test bind sdk publish-sdk clean
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -28,10 +28,22 @@ bind: optimize
 		echo "Generating TypeScript bindings for $$contract..."; \
 		stellar contract bindings typescript \
 			--wasm "$$wasm" \
-			--contract-id placeholder \
 			--output-dir "bindings/$$contract" \
 			--overwrite; \
+		echo "Patching package name for $$contract..."; \
+		sed -i '' 's/"name": *"[^"]*"/"name": "@stellars-finance\/'"$$contract"'"/' \
+			"bindings/$$contract/package.json"; \
 	done
+
+sdk: bind
+	@for contract in $(CONTRACTS); do \
+		echo "Building bindings for $$contract..."; \
+		(cd bindings/$$contract && npm install && (npm run build || true)); \
+	done
+	cd sdk && npm install && npm run build
+
+publish-sdk: sdk
+	cd sdk && npm publish
 
 clean:
 	cargo clean

@@ -1,1 +1,5 @@
 /target
+bindings/
+sdk/node_modules/
+sdk/dist/
+*.tgz

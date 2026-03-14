@@ -1,6 +1,8 @@
 #![no_std]
 
-use soroban_sdk::{contracterror, contractclient, panic_with_error, Address, Env, Symbol};
+use soroban_sdk::{
+    contractclient, contracterror, contracttype, panic_with_error, Address, Env, Symbol,
+};
 
 // ---------------------------------------------------------------------------
 // TTL constants (single source of truth for all protocol contracts)
@@ -118,4 +120,85 @@ pub fn require_role(env: &Env, caller: &Address, config_manager: &Address, role:
 pub trait Sep40OracleInterface {
     fn get_price(env: Env, symbol: Symbol) -> i128;
     fn last_update(env: Env, symbol: Symbol) -> u64;
+}
+
+// ---------------------------------------------------------------------------
+// Protocol-wide types (single source of truth — used by ConfigManager,
+// PositionManager, Vault, and tests)
+// ---------------------------------------------------------------------------
+
+/// Defines how protocol revenue is split between parties.
+/// All values are in basis points (bps). Must sum to 10_000.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct FeeSplits {
+    pub keeper_bps: u32,
+    pub dev_bps: u32,
+    pub lp_bps: u32,
+}
+
+/// Global protocol risk and timing parameters.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ProtocolLimits {
+    pub min_collateral: i128,
+    pub cooldown_duration: u64,
+    pub min_position_lifetime: u64,
+    pub max_utilization_ratio: i128,
+    pub funding_cut_bps: u32,
+    pub adl_pnl_bps: u32,
+    pub adl_utilization_bps: u32,
+}
+
+/// Borrow rate kink curve and funding rate parameters (all in basis points).
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct BorrowRateConfig {
+    pub base_borrow_rate_bps: i128,
+    pub slope1_bps: i128,
+    pub slope2_bps: i128,
+    pub optimal_utilization_bps: i128,
+    pub base_funding_rate_bps: i128,
+}
+
+// ---------------------------------------------------------------------------
+// Cross-contract client traits (lightweight — no cdylib linking required)
+//
+// These generate *Client structs that can call the corresponding contracts
+// without pulling in the contract crate as a Cargo dependency.
+// ---------------------------------------------------------------------------
+
+/// Query-only ConfigManager interface for cross-contract calls.
+#[contractclient(name = "ConfigManagerQueryClient")]
+pub trait ConfigManagerQueryInterface {
+    fn get_protocol_limits(env: Env) -> ProtocolLimits;
+    fn get_borrow_rate_config(env: Env) -> BorrowRateConfig;
+    fn get_fee_splits(env: Env) -> FeeSplits;
+}
+
+/// OracleRouter interface for cross-contract price queries.
+#[contractclient(name = "OracleRouterQueryClient")]
+pub trait OracleRouterQueryInterface {
+    fn get_price(env: Env, symbol: Symbol) -> i128;
+}
+
+/// Vault interface for cross-contract calls from PositionManager.
+#[contractclient(name = "VaultQueryClient")]
+pub trait VaultQueryInterface {
+    fn free_liquidity(env: Env) -> i128;
+    fn total_assets(env: Env) -> i128;
+    fn query_asset(env: Env) -> Address;
+    fn reserve_liquidity(env: Env, caller: Address, amount: i128);
+    fn release_liquidity(env: Env, caller: Address, amount: i128);
+    fn update_net_pnl(env: Env, caller: Address, pnl: i128);
+    fn accrue_fees(env: Env, caller: Address, amount: i128);
+    fn claim_fees_to(env: Env, caller: Address, recipient: Address, amount: i128);
+    fn settle_pnl(
+        env: Env,
+        caller: Address,
+        trader: Address,
+        amount: i128,
+        reserved_delta: i128,
+        is_profit: bool,
+    );
 }

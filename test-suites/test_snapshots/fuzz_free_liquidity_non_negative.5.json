@@ -520,7 +520,7 @@
               "function_name": "deposit",
               "args": [
                 {
-                  "i128": "182000000000"
+                  "i128": "176000000000"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAXI7N"
@@ -548,7 +548,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVAX5"
                     },
                     {
-                      "i128": "182000000000"
+                      "i128": "176000000000"
                     }
                   ]
                 }
@@ -1658,7 +1658,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "1182000000000"
+                  "i128": "1176000000000"
                 }
               }
             },
@@ -1777,7 +1777,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1282000000000"
+                          "i128": "1276000000000"
                         }
                       }
                     ]
@@ -2230,7 +2230,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "i128": "182000000000000000"
+                  "i128": "176000000000000000"
                 }
               }
             },
@@ -2478,7 +2478,7 @@
                           ]
                         },
                         "val": {
-                          "i128": "1182000000000000000"
+                          "i128": "1176000000000000000"
                         }
                       },
                       {

@@ -1,0 +1,21 @@
+{
+  "name": "stellars-finance-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts"
+  },
+  "dependencies": {
+    "@stellars-finance/vault": "file:../bindings/vault",
+    "@stellars-finance/position-manager": "file:../bindings/position-manager",
+    "@stellars-finance/config-manager": "file:../bindings/config-manager",
+    "@stellars-finance/oracle-router": "file:../bindings/oracle-router"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0"
+  }
+}
