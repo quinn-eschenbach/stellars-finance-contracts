@@ -1,6 +1,6 @@
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
-use shared::ConfigManagerQueryClient;
+use config_manager::ConfigManagerClient;
 use stellar_tokens::vault::Vault;
 
 use crate::errors::VaultError;
@@ -61,7 +61,7 @@ pub fn record_deposit_time(env: &Env, user: &Address) {
 pub fn require_cooldown_elapsed(env: &Env, user: &Address) {
     if let Some(last_deposit) = storage::get_last_deposit_time(env, user) {
         let config_mgr = storage::get_config_manager(env);
-        let limits = ConfigManagerQueryClient::new(env, &config_mgr).get_protocol_limits();
+        let limits = ConfigManagerClient::new(env, &config_mgr).get_protocol_limits();
         let now = env.ledger().timestamp();
         if now < last_deposit + limits.cooldown_duration {
             panic_with_error!(env, VaultError::CooldownNotElapsed);

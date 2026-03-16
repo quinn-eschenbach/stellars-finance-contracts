@@ -111,18 +111,6 @@ pub fn require_role(env: &Env, caller: &Address, config_manager: &Address, role:
 }
 
 // ---------------------------------------------------------------------------
-// SEP-40 oracle interface
-// ---------------------------------------------------------------------------
-
-/// Standard SEP-40 price oracle interface.
-/// Any contract acting as a price source must implement these two selectors.
-#[contractclient(name = "Sep40OracleClient")]
-pub trait Sep40OracleInterface {
-    fn get_price(env: Env, symbol: Symbol) -> i128;
-    fn last_update(env: Env, symbol: Symbol) -> u64;
-}
-
-// ---------------------------------------------------------------------------
 // Protocol-wide types (single source of truth — used by ConfigManager,
 // PositionManager, Vault, and tests)
 // ---------------------------------------------------------------------------
@@ -161,44 +149,3 @@ pub struct BorrowRateConfig {
     pub base_funding_rate_bps: i128,
 }
 
-// ---------------------------------------------------------------------------
-// Cross-contract client traits (lightweight — no cdylib linking required)
-//
-// These generate *Client structs that can call the corresponding contracts
-// without pulling in the contract crate as a Cargo dependency.
-// ---------------------------------------------------------------------------
-
-/// Query-only ConfigManager interface for cross-contract calls.
-#[contractclient(name = "ConfigManagerQueryClient")]
-pub trait ConfigManagerQueryInterface {
-    fn get_protocol_limits(env: Env) -> ProtocolLimits;
-    fn get_borrow_rate_config(env: Env) -> BorrowRateConfig;
-    fn get_fee_splits(env: Env) -> FeeSplits;
-}
-
-/// OracleRouter interface for cross-contract price queries.
-#[contractclient(name = "OracleRouterQueryClient")]
-pub trait OracleRouterQueryInterface {
-    fn get_price(env: Env, symbol: Symbol) -> i128;
-}
-
-/// Vault interface for cross-contract calls from PositionManager.
-#[contractclient(name = "VaultQueryClient")]
-pub trait VaultQueryInterface {
-    fn free_liquidity(env: Env) -> i128;
-    fn total_assets(env: Env) -> i128;
-    fn query_asset(env: Env) -> Address;
-    fn reserve_liquidity(env: Env, caller: Address, amount: i128);
-    fn release_liquidity(env: Env, caller: Address, amount: i128);
-    fn update_net_pnl(env: Env, caller: Address, pnl: i128);
-    fn accrue_fees(env: Env, caller: Address, amount: i128);
-    fn claim_fees_to(env: Env, caller: Address, recipient: Address, amount: i128);
-    fn settle_pnl(
-        env: Env,
-        caller: Address,
-        trader: Address,
-        amount: i128,
-        reserved_delta: i128,
-        is_profit: bool,
-    );
-}

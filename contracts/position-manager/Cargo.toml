@@ -13,6 +13,9 @@ testutils = ["soroban-sdk/testutils"]
 [dependencies]
 soroban-sdk = { workspace = true }
 shared = { workspace = true }
+config-manager = { path = "../config-manager" }
+vault = { path = "../vault" }
+oracle-router = { path = "../oracle-router" }
 stellar-access = { workspace = true }
 stellar-contract-utils = { workspace = true }
 stellar-macros = { workspace = true }

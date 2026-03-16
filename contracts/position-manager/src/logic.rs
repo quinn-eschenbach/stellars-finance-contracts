@@ -2,10 +2,11 @@
 
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env, Symbol};
 
-use shared::{
-    ConfigManagerQueryClient, OracleRouterQueryClient, VaultQueryClient,
-    BorrowRateConfig, FeeSplits, ProtocolLimits,
-};
+use config_manager::ConfigManagerClient;
+use oracle_router::OracleRouterClient;
+use vault::VaultClient;
+
+use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
 
 use crate::errors::PositionManagerError;
 use crate::math;
@@ -88,19 +89,19 @@ pub fn require_admin(env: &Env, caller: &Address) {
 /// Load protocol limits from ConfigManager via cross-contract call.
 fn load_limits(env: &Env) -> ProtocolLimits {
     let config_mgr = storage::get_config_manager(env);
-    ConfigManagerQueryClient::new(env, &config_mgr).get_protocol_limits()
+    ConfigManagerClient::new(env, &config_mgr).get_protocol_limits()
 }
 
 /// Load borrow rate config from ConfigManager via cross-contract call.
 fn load_borrow_rate_config(env: &Env) -> BorrowRateConfig {
     let config_mgr = storage::get_config_manager(env);
-    ConfigManagerQueryClient::new(env, &config_mgr).get_borrow_rate_config()
+    ConfigManagerClient::new(env, &config_mgr).get_borrow_rate_config()
 }
 
 /// Load fee splits from ConfigManager via cross-contract call.
 fn load_fee_splits(env: &Env) -> FeeSplits {
     let config_mgr = storage::get_config_manager(env);
-    ConfigManagerQueryClient::new(env, &config_mgr).get_fee_splits()
+    ConfigManagerClient::new(env, &config_mgr).get_fee_splits()
 }
 
 /// Distribute fees according to close type and FeeSplits config.
@@ -113,7 +114,7 @@ fn load_fee_splits(env: &Env) -> FeeSplits {
 /// The keeper is then paid via `claim_fees_to`.
 fn distribute_fees(
     env: &Env,
-    vault: &VaultQueryClient,
+    vault: &VaultClient,
     total_fees: i128,
     close_type: &CloseType,
     keeper: Option<&Address>,
@@ -187,7 +188,7 @@ pub fn do_update_indices(env: &Env, symbol: &Symbol) {
     // Borrow rate from utilization
     let total_reserved = storage::get_total_reserved(env);
     let vault_addr = storage::get_vault_address(env);
-    let vault = VaultQueryClient::new(env, &vault_addr);
+    let vault = VaultClient::new(env, &vault_addr);
     let free_liq = vault.free_liquidity();
     let total_assets = free_liq + total_reserved;
     let util_bps = math::calc_utilization_bps(total_reserved, total_assets);
@@ -216,7 +217,7 @@ pub fn do_update_indices(env: &Env, symbol: &Symbol) {
 
     // Refresh unrealized PnL with current oracle price
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterQueryClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
     refresh_market_unrealized_pnl(env, symbol, mark_price);
 }
@@ -248,7 +249,7 @@ pub fn refresh_market_unrealized_pnl(env: &Env, symbol: &Symbol, mark_price: i12
     // Push combined (realized + unrealized) to vault
     let combined = storage::get_realized_pnl(env) + new_total;
     let vault_addr = storage::get_vault_address(env);
-    let vault = VaultQueryClient::new(env, &vault_addr);
+    let vault = VaultClient::new(env, &vault_addr);
     let contract_addr = env.current_contract_address();
     vault.update_net_pnl(&contract_addr, &combined);
 }
@@ -272,11 +273,11 @@ pub fn do_increase_position(
 
     // Transfer USDC collateral from trader to PM
     let vault_addr = storage::get_vault_address(env);
-    let vault = VaultQueryClient::new(env, &vault_addr);
+    let vault = VaultClient::new(env, &vault_addr);
 
     // Get the vault's underlying asset for token transfers
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterQueryClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Transfer collateral from trader to this contract
@@ -411,7 +412,7 @@ fn transfer_collateral_in(env: &Env, trader: &Address, amount: i128) {
 }
 
 fn get_vault_asset(env: &Env, vault_addr: &Address) -> Address {
-    VaultQueryClient::new(env, vault_addr).query_asset()
+    VaultClient::new(env, vault_addr).query_asset()
 }
 
 // ---------------------------------------------------------------------------
@@ -443,7 +444,7 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
 
     // Get mark price from oracle
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterQueryClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Load market
@@ -534,7 +535,7 @@ pub fn do_liquidate_position(
 
     // Get mark price
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterQueryClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Load market
@@ -559,7 +560,7 @@ pub fn do_liquidate_position(
 
     // Liquidation: seize all collateral, trader gets nothing
     let vault_addr = storage::get_vault_address(env);
-    let vault = VaultQueryClient::new(env, &vault_addr);
+    let vault = VaultClient::new(env, &vault_addr);
     let contract_addr = env.current_contract_address();
 
     // Release vault reservation
@@ -634,7 +635,7 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     // Check ADL trigger conditions: PnL-based OR utilization-based
     let total_reserved = storage::get_total_reserved(env);
     let vault_addr = storage::get_vault_address(env);
-    let vault = VaultQueryClient::new(env, &vault_addr);
+    let vault = VaultClient::new(env, &vault_addr);
     let total_assets = vault.total_assets();
 
     let limits = load_limits(env);
@@ -659,7 +660,7 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
 
     // Get mark price
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterQueryClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Load market
@@ -787,7 +788,7 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
 
     // Get mark price
     let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterQueryClient::new(env, &oracle_addr);
+    let oracle = OracleRouterClient::new(env, &oracle_addr);
     let mark_price = oracle.get_price(symbol);
 
     // Check if TP or SL is triggered
@@ -871,7 +872,7 @@ fn settle_close(
     keeper: Option<&Address>,
 ) {
     let vault_addr = storage::get_vault_address(env);
-    let vault = VaultQueryClient::new(env, &vault_addr);
+    let vault = VaultClient::new(env, &vault_addr);
     let contract_addr = env.current_contract_address();
     let asset = get_vault_asset(env, &vault_addr);
     let token = TokenClient::new(env, &asset);

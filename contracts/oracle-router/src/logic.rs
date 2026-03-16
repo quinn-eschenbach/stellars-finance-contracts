@@ -1,4 +1,5 @@
-use shared::{bump_instance_ttl, Sep40OracleClient, ROLE_ADMIN, ROLE_UPGRADER};
+use oracle::OracleClient;
+use shared::{bump_instance_ttl, ROLE_ADMIN, ROLE_UPGRADER};
 use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec};
 
 use crate::errors::OracleRouterError;
@@ -41,7 +42,7 @@ pub fn query_sources(
 ) -> Vec<i128> {
     let mut valid_prices: Vec<i128> = Vec::new(env);
     for source in sources.iter() {
-        let client = Sep40OracleClient::new(env, &source);
+        let client = OracleClient::new(env, &source);
         let price = match client.try_get_price(symbol) {
             Ok(Ok(p)) => p,
             _ => continue,
