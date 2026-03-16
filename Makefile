@@ -20,6 +20,22 @@ optimize: build
 		stellar contract optimize --wasm "$$wasm"; \
 	done
 
+BIND_CONTRACTS = vault position-manager config-manager oracle-router
+BIND_OUT       = packages/bindings
+
+bind: optimize
+	@rm -rf $(BIND_OUT)
+	@mkdir -p $(BIND_OUT)
+	@for contract in $(BIND_CONTRACTS); do \
+		wasm="$(WASM_DIR)/$$(echo $$contract | tr '-' '_').optimized.wasm"; \
+		echo "Generating bindings for $$contract..."; \
+		stellar contract bindings typescript \
+			--wasm "$$wasm" \
+			--output-dir "$(BIND_OUT)/$$contract" \
+			--overwrite; \
+	done
+	@echo '{ "name": "@stellars/bindings", "version": "0.0.1", "private": true, "type": "module" }' > $(BIND_OUT)/package.json
+
 test:
 	cargo test
 
