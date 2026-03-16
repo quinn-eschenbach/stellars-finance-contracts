@@ -4,6 +4,7 @@ use stellar_macros::UpgradeableMigratable;
 
 use crate::{
     errors::ConfigManagerError,
+    events,
     logic::{
         admin_role_symbol, bump_instance_ttl, get_role_member, remove_role_member,
         require_admin_with_auth, set_role_member,
@@ -119,19 +120,17 @@ impl ConfigManager for ConfigManagerContract {
             panic_with_error!(&env, ConfigManagerError::Unauthorized);
         }
         set_role_member(&env, &role, &account, true);
+        events::RoleChange { role: role.clone(), account: account.clone(), is_grant: true }.publish(&env);
     }
 
     fn revoke_role(env: Env, caller: Address, role: Symbol, account: Address) {
         require_admin_with_auth(&env, &caller);
-        // The ADMIN role is controlled exclusively via admin transfer, not
-        // via revoke_role.  Blocking this prevents split-brain between the
-        // instance-storage Admin key and the persistent RoleMember entry.
         let admin_role = admin_role_symbol(&env);
         if role == admin_role {
             panic_with_error!(&env, ConfigManagerError::Unauthorized);
         }
-        // Idempotent: remove regardless of whether the entry existed.
         remove_role_member(&env, &role, &account);
+        events::RoleChange { role: role.clone(), account: account.clone(), is_grant: false }.publish(&env);
     }
 
     fn has_role(env: Env, role: Symbol, account: Address) -> bool {
@@ -147,6 +146,7 @@ impl ConfigManager for ConfigManagerContract {
             panic_with_error!(&env, ConfigManagerError::InvalidFeeSplits);
         }
         storage::save_fee_splits(&env, &fee_splits);
+        events::FeeSplitsUpdate { keeper_bps: fee_splits.keeper_bps, dev_bps: fee_splits.dev_bps, lp_bps: fee_splits.lp_bps }.publish(&env);
         bump_instance_ttl(&env);
     }
 
@@ -176,6 +176,15 @@ impl ConfigManager for ConfigManagerContract {
             panic_with_error!(&env, ConfigManagerError::InvalidLimits);
         }
         storage::save_protocol_limits(&env, &limits);
+        events::LimitsUpdate {
+            min_collateral: limits.min_collateral,
+            cooldown_duration: limits.cooldown_duration,
+            min_position_lifetime: limits.min_position_lifetime,
+            max_utilization_ratio: limits.max_utilization_ratio,
+            funding_cut_bps: limits.funding_cut_bps,
+            adl_pnl_bps: limits.adl_pnl_bps,
+            adl_utilization_bps: limits.adl_utilization_bps,
+        }.publish(&env);
         bump_instance_ttl(&env);
     }
 
@@ -207,6 +216,13 @@ impl ConfigManager for ConfigManagerContract {
             panic_with_error!(&env, ConfigManagerError::InvalidLimits);
         }
         storage::save_borrow_rate_config(&env, &config);
+        events::BorrowRateUpdate {
+            base_borrow_rate_bps: config.base_borrow_rate_bps,
+            slope1_bps: config.slope1_bps,
+            slope2_bps: config.slope2_bps,
+            optimal_utilization_bps: config.optimal_utilization_bps,
+            base_funding_rate_bps: config.base_funding_rate_bps,
+        }.publish(&env);
         bump_instance_ttl(&env);
     }
 

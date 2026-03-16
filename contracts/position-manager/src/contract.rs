@@ -6,6 +6,7 @@ use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
 
 use crate::errors::PositionManagerError;
+use crate::events;
 use crate::logic;
 use crate::storage;
 use crate::types::{MarketInfo, Position};
@@ -198,6 +199,7 @@ impl PositionManager for PositionManagerContract {
         logic::require_initialized(&env);
         logic::require_pauser(&env, &caller);
         storage::set_paused(&env, true);
+        events::Pause { is_paused: true, caller: caller.clone() }.publish(&env);
     }
 
     fn unpause(env: Env, caller: Address) {
@@ -205,6 +207,7 @@ impl PositionManager for PositionManagerContract {
         logic::require_pauser(&env, &caller);
         storage::set_paused(&env, false);
         storage::set_last_unpause_time(&env, env.ledger().timestamp());
+        events::Pause { is_paused: false, caller: caller.clone() }.publish(&env);
     }
 
     fn set_max_leverage(env: Env, caller: Address, symbol: Symbol, max_leverage: i128) {
@@ -215,6 +218,7 @@ impl PositionManager for PositionManagerContract {
             panic_with_error!(&env, PositionManagerError::LeverageCapExceeded);
         }
         storage::set_max_leverage(&env, &symbol, max_leverage);
+        events::SetMaxLeverage { symbol: symbol.clone(), max_leverage }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 

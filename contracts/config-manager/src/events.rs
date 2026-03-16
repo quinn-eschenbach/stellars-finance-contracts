@@ -1,0 +1,39 @@
+use soroban_sdk::{contractevent, Address, Env, Symbol};
+
+#[contractevent(topics = ["role"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoleChange {
+    pub role: Symbol,
+    pub account: Address,
+    pub is_grant: bool,
+}
+
+#[contractevent(topics = ["feecfg"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeSplitsUpdate {
+    pub keeper_bps: u32,
+    pub dev_bps: u32,
+    pub lp_bps: u32,
+}
+
+#[contractevent(topics = ["limits"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LimitsUpdate {
+    pub min_collateral: i128,
+    pub cooldown_duration: u64,
+    pub min_position_lifetime: u64,
+    pub max_utilization_ratio: i128,
+    pub funding_cut_bps: u32,
+    pub adl_pnl_bps: u32,
+    pub adl_utilization_bps: u32,
+}
+
+#[contractevent(topics = ["rates"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BorrowRateUpdate {
+    pub base_borrow_rate_bps: i128,
+    pub slope1_bps: i128,
+    pub slope2_bps: i128,
+    pub optimal_utilization_bps: i128,
+    pub base_funding_rate_bps: i128,
+}

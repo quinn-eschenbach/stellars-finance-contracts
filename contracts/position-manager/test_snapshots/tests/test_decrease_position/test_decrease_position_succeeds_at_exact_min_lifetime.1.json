@@ -2892,6 +2892,96 @@
     {
       "event": {
         "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "indices"
+              },
+              {
+                "symbol": "BTC"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "100000002363964"
+                },
+                {
+                  "i128": "100000002251395"
+                },
+                {
+                  "u64": "1700000071"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "price"
+              },
+              {
+                "symbol": "BTC"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "500000000000"
+                },
+                {
+                  "u64": "1700000071"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "release"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "10000000000"
+                },
+                {
+                  "i128": "0"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
         "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM",
         "type_": "contract",
         "body": {
@@ -2963,6 +3053,78 @@
                     "symbol": "to_muxed_id"
                   },
                   "val": "void"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fees"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "11"
+                },
+                {
+                  "i128": "11"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "decrease"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "symbol": "BTC"
+                },
+                {
+                  "i128": "10000000000"
+                },
+                {
+                  "i128": "0"
+                },
+                {
+                  "i128": "236"
+                },
+                {
+                  "i128": "-225"
+                },
+                {
+                  "i128": "500000000000"
+                },
+                {
+                  "bool": true
                 }
               ]
             }

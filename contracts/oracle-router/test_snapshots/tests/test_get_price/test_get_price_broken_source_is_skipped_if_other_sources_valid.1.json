@@ -859,5 +859,36 @@
       ]
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "price"
+              },
+              {
+                "symbol": "ETH"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "10000000000"
+                },
+                {
+                  "u64": "100"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }

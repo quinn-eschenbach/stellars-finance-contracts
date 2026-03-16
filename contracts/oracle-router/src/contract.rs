@@ -3,7 +3,7 @@ use soroban_sdk::{contract, contractclient, contractimpl, contracttype, Address,
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
 
-use crate::{logic, storage, types::OracleConfig};
+use crate::{events, logic, storage, types::OracleConfig};
 
 #[contracttype]
 pub struct UpgradeData {
@@ -86,6 +86,11 @@ impl OracleRouter for OracleRouterContract {
         logic::require_oracle_admin(&env, &caller);
         logic::validate_oracle_config(&env, &config);
         storage::save_oracle_config(&env, &config);
+        events::OracleConfigUpdate {
+            staleness: config.staleness_threshold,
+            deviation: config.max_deviation_bps,
+            cache_duration: config.cache_duration,
+        }.publish(&env);
         bump_instance_ttl(&env);
     }
 

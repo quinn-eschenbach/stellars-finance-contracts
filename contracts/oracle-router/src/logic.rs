@@ -3,6 +3,7 @@ use shared::{bump_instance_ttl, ROLE_ADMIN, ROLE_UPGRADER};
 use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec};
 
 use crate::errors::OracleRouterError;
+use crate::events;
 use crate::storage;
 use crate::types::{CachedPrice, OracleConfig};
 
@@ -101,6 +102,7 @@ pub fn fetch_and_validate_price(env: &Env, symbol: Symbol) -> i128 {
     }
 
     storage::save_cached_price(env, &symbol, CachedPrice { price: median, last_update: current_time });
+    events::PriceFetch { symbol: symbol.clone(), price: median, timestamp: current_time }.publish(env);
     bump_instance_ttl(env);
 
     median

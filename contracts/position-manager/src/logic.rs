@@ -9,6 +9,7 @@ use vault::VaultClient;
 use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
 
 use crate::errors::PositionManagerError;
+use crate::events;
 use crate::math;
 use crate::storage;
 use crate::types::Position;
@@ -215,6 +216,13 @@ pub fn do_update_indices(env: &Env, symbol: &Symbol) {
     market.last_index_update = now;
     storage::set_market(env, symbol, &market);
 
+    events::UpdateIndices {
+        symbol: symbol.clone(),
+        acc_borrow_index: market.acc_borrow_index,
+        acc_funding_index: market.acc_funding_index,
+        timestamp: now,
+    }.publish(env);
+
     // Refresh unrealized PnL with current oracle price
     let oracle_addr = storage::get_oracle_router(env);
     let oracle = OracleRouterClient::new(env, &oracle_addr);
@@ -393,6 +401,19 @@ pub fn do_increase_position(
     storage::set_position(env, trader, symbol, &position);
     storage::set_market(env, symbol, &market);
 
+    events::IncreasePosition {
+        trader: trader.clone(),
+        symbol: symbol.clone(),
+        size_delta: size,
+        collateral,
+        entry_price: position.entry_price,
+        is_long,
+        tp: position.take_profit,
+        sl: position.stop_loss,
+        new_total_size: position.size,
+        new_total_collateral: position.collateral,
+    }.publish(env);
+
     // Refresh unrealized PnL after market state change
     refresh_market_unrealized_pnl(env, symbol, mark_price);
 }
@@ -469,6 +490,17 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
     );
     // Settlement (includes PnL tracking + fee distribution + funding cut)
     settle_close(env, trader, actual_delta, collateral_delta, pnl, borrow_fee, funding_fee, &CloseType::UserClose, None);
+
+    events::DecreasePosition {
+        trader: trader.clone(),
+        symbol: symbol.clone(),
+        size_delta: actual_delta,
+        pnl,
+        borrow_fee,
+        funding_fee,
+        mark_price,
+        is_full_close,
+    }.publish(env);
 
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
@@ -593,6 +625,18 @@ pub fn do_liquidate_position(
     let distributable_fees = core::cmp::min(total_fees, pos.collateral);
     distribute_fees(env, &vault, distributable_fees, &CloseType::Liquidation, Some(caller));
 
+    events::Liquidate {
+        trader: trader.clone(),
+        symbol: symbol.clone(),
+        size: pos.size,
+        collateral: pos.collateral,
+        pnl,
+        borrow_fee,
+        funding_fee,
+        mark_price,
+        keeper: caller.clone(),
+    }.publish(env);
+
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
         market.global_long_avg_price = math::remove_from_global_avg_price(
@@ -686,6 +730,14 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     // Settlement (same as full close, includes PnL tracking + fee distribution + funding cut)
     settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::Deleverage, None);
 
+    events::Adl {
+        trader: trader.clone(),
+        symbol: symbol.clone(),
+        size: pos.size,
+        pnl,
+        mark_price,
+    }.publish(env);
+
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
         market.global_long_avg_price = math::remove_from_global_avg_price(
@@ -736,6 +788,13 @@ pub fn do_set_tp_sl(
     pos.take_profit = take_profit;
     pos.stop_loss = stop_loss;
     storage::set_position(env, trader, symbol, &pos);
+
+    events::SetTpSl {
+        trader: trader.clone(),
+        symbol: symbol.clone(),
+        take_profit,
+        stop_loss,
+    }.publish(env);
 }
 
 /// Validate TP/SL prices against position direction and entry price.
@@ -812,6 +871,16 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
         pos.is_long,
     );
     settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::OrderExecution, Some(keeper));
+
+    events::ExecuteOrder {
+        trader: trader.clone(),
+        symbol: symbol.clone(),
+        size: pos.size,
+        pnl,
+        mark_price,
+        is_tp: tp_hit,
+        keeper: keeper.clone(),
+    }.publish(env);
 
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {

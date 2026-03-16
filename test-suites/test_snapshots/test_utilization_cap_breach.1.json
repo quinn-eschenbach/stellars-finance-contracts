@@ -2403,6 +2403,36 @@
     {
       "event": {
         "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "price"
+              },
+              {
+                "symbol": "BTC"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "500000000000"
+                },
+                {
+                  "u64": "1700000000"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": true
+    },
+    {
+      "event": {
+        "ext": "v0",
         "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
         "type_": "contract",
         "body": {

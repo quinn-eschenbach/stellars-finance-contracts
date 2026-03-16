@@ -8,12 +8,19 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "start": "node dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@stellars/config": "workspace:*"
+    "@stellars/config": "workspace:*",
+    "@stellars/db": "workspace:*",
+    "@stellar/stellar-sdk": "^13.0.0",
+    "drizzle-orm": "^0.38.0",
+    "pg": "^8.13.0",
+    "dotenv": "^16.4.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
   }
 }

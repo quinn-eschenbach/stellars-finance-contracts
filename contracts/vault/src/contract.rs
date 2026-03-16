@@ -11,6 +11,7 @@ use stellar_tokens::{
 };
 
 use crate::errors::VaultError;
+use crate::events as vault_events;
 use crate::logic as vault_logic;
 use crate::storage as vault_storage;
 
@@ -119,7 +120,9 @@ impl FungibleVault for VaultContract {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
         vault_logic::record_deposit_time(e, &receiver);
-        Vault::deposit(e, assets, receiver, from, operator)
+        let shares = Vault::deposit(e, assets, receiver.clone(), from.clone(), operator);
+        vault_events::Deposit { receiver: receiver.clone(), assets, shares, from }.publish(e);
+        shares
     }
 
     fn max_mint(e: &Env, receiver: Address) -> i128 {
@@ -137,7 +140,9 @@ impl FungibleVault for VaultContract {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
         vault_logic::record_deposit_time(e, &receiver);
-        Vault::mint(e, shares, receiver, from, operator)
+        let assets = Vault::mint(e, shares, receiver.clone(), from.clone(), operator);
+        vault_events::Mint { receiver: receiver.clone(), shares, assets, from }.publish(e);
+        assets
     }
 
     fn max_withdraw(e: &Env, owner: Address) -> i128 {
@@ -164,7 +169,9 @@ impl FungibleVault for VaultContract {
         vault_logic::require_initialized(e);
         vault_logic::require_cooldown_elapsed(e, &owner);
         vault_logic::require_free_liquidity(e, assets);
-        Vault::withdraw(e, assets, receiver, owner, operator)
+        let shares = Vault::withdraw(e, assets, receiver.clone(), owner.clone(), operator);
+        vault_events::Withdraw { owner: owner.clone(), assets, shares, receiver }.publish(e);
+        shares
     }
 
     fn max_redeem(e: &Env, owner: Address) -> i128 {
@@ -185,7 +192,9 @@ impl FungibleVault for VaultContract {
         vault_logic::require_cooldown_elapsed(e, &owner);
         let assets = Vault::preview_redeem(e, shares);
         vault_logic::require_free_liquidity(e, assets);
-        Vault::redeem(e, shares, receiver, owner, operator)
+        let result = Vault::redeem(e, shares, receiver.clone(), owner.clone(), operator);
+        vault_events::Redeem { owner: owner.clone(), shares, assets: result, receiver }.publish(e);
+        result
     }
 }
 
@@ -257,6 +266,7 @@ impl VaultContract {
             vault_logic::transfer_asset(&env, &asset, &caller, &vault_addr, amount);
         }
 
+        vault_events::SettlePnl { trader: trader.clone(), amount, reserved_delta, is_profit }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -275,6 +285,7 @@ impl VaultContract {
             panic_with_error!(&env, VaultError::ReservationExceedsTotalAssets);
         }
         vault_storage::set_reserved_usdc(&env, new_reserved);
+        vault_events::Reserve { amount, new_total: new_reserved }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -290,7 +301,9 @@ impl VaultContract {
         if amount > current {
             panic_with_error!(&env, VaultError::InsufficientFreeLiquidity);
         }
-        vault_storage::set_reserved_usdc(&env, current - amount);
+        let new_reserved = current - amount;
+        vault_storage::set_reserved_usdc(&env, new_reserved);
+        vault_events::Release { amount, new_total: new_reserved }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -310,7 +323,9 @@ impl VaultContract {
         }
 
         let current = vault_storage::get_unclaimed_fees(&env);
-        vault_storage::set_unclaimed_fees(&env, current + amount);
+        let new_total = current + amount;
+        vault_storage::set_unclaimed_fees(&env, new_total);
+        vault_events::AccrueFees { amount, new_total }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -327,6 +342,7 @@ impl VaultContract {
         let vault_addr = env.current_contract_address();
         vault_logic::transfer_asset(&env, &asset, &vault_addr, &recipient, fees);
         vault_storage::set_unclaimed_fees(&env, 0);
+        vault_events::ClaimFees { amount: fees, recipient: recipient.clone() }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -354,6 +370,7 @@ impl VaultContract {
         vault_logic::require_initialized(&env);
         vault_logic::require_pauser(&env, &caller);
         vault_storage::set_paused(&env, true);
+        vault_events::Pause { is_paused: true, caller: caller.clone() }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -361,6 +378,7 @@ impl VaultContract {
         vault_logic::require_initialized(&env);
         vault_logic::require_pauser(&env, &caller);
         vault_storage::set_paused(&env, false);
+        vault_events::Pause { is_paused: false, caller: caller.clone() }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 

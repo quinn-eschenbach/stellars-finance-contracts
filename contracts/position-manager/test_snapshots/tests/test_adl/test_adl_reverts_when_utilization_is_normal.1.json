@@ -2845,5 +2845,69 @@
       ]
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATYON",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "indices"
+              },
+              {
+                "symbol": "BTC"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "100000002497146"
+                },
+                {
+                  "i128": "100000002378234"
+                },
+                {
+                  "u64": "1700000075"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": true
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "price"
+              },
+              {
+                "symbol": "BTC"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "i128": "500000000000"
+                },
+                {
+                  "u64": "1700000075"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": true
+    }
+  ]
 }
