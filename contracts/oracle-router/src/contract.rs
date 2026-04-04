@@ -1,59 +1,14 @@
+use interfaces::{OracleConfig, OracleRouter, UpgradeData};
 use shared::bump_instance_ttl;
-use soroban_sdk::{contract, contractclient, contractimpl, contracttype, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Env, Symbol, Vec};
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
 
-use crate::{events, logic, storage, types::OracleConfig};
-
-#[contracttype]
-pub struct UpgradeData {
-    pub version: u32,
-}
+use crate::{events, logic, storage};
 
 #[derive(UpgradeableMigratable)]
 #[contract]
 pub struct OracleRouterContract;
-
-#[contractclient(name = "OracleRouterClient")]
-pub trait OracleRouter {
-    /// Initialize the oracle router and link it to the ConfigManager.
-    /// Can only be called once.
-    fn initialize(env: Env, config_manager_address: Address);
-
-    /// Return the validated price for `symbol` (scaled by 1e7).
-    ///
-    /// Caching logic:
-    ///   If current_time <= last_update + cache_duration → return CachedPrices[symbol].
-    ///
-    /// Fetch logic (cache miss):
-    ///   1. Query all PrimarySources via SEP-40 cross-contract calls.
-    ///   2. Reject any source whose timestamp is older than StalenessThreshold.
-    ///   3. Compute the median price from valid responses.
-    ///   4. Reject if max one-sided deviation > MaxDeviationBps.
-    ///   5. Update CachedPrices and return the median.
-    fn get_price(env: Env, symbol: Symbol) -> i128;
-
-    /// Add or replace SEP-40 oracle source addresses for a given symbol.
-    /// Callable only by ADMIN role (via ConfigManager).
-    fn set_oracle_sources(
-        env: Env,
-        caller: Address,
-        symbol: Symbol,
-        primary: Vec<Address>,
-        secondary: Vec<Address>,
-    );
-
-    /// Update the global oracle safety thresholds.
-    /// Callable only by ADMIN role (via ConfigManager).
-    fn set_oracle_config(env: Env, caller: Address, config: OracleConfig);
-
-    /// Returns the current oracle configuration.
-    fn get_oracle_config(env: Env) -> OracleConfig;
-
-    /// Extends the Soroban TTL of the OracleRouter's instance storage
-    /// to prevent the oracle config and source lists from being archived.
-    fn bump_oracle_state(env: Env);
-}
 
 #[contractimpl]
 impl OracleRouter for OracleRouterContract {

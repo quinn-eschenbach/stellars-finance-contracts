@@ -1,6 +1,6 @@
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
-use config_manager::ConfigManagerClient;
+use interfaces::ConfigManagerClient;
 use stellar_tokens::vault::Vault;
 
 use crate::errors::VaultError;

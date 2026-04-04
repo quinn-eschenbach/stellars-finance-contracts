@@ -11,6 +11,6 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use contract::{PositionManagerClient, PositionManagerContract, UpgradeData};
+pub use contract::PositionManagerContract;
 pub use errors::PositionManagerError;
-pub use types::{MarketInfo, Position};
+pub use interfaces::{MarketInfo, Position, PositionManagerClient, UpgradeData};

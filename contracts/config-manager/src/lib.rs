@@ -10,6 +10,7 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
-pub use contract::{ConfigManager, ConfigManagerClient, ConfigManagerContract};
+pub use contract::ConfigManagerContract;
 pub use errors::ConfigManagerError;
-pub use types::{BorrowRateConfig, FeeSplits, ProtocolLimits, UpgradeData};
+pub use interfaces::{ConfigManager, ConfigManagerClient, UpgradeData};
+pub use types::{BorrowRateConfig, FeeSplits, ProtocolLimits};

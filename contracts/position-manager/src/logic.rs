@@ -2,9 +2,7 @@
 
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env, Symbol};
 
-use config_manager::ConfigManagerClient;
-use oracle_router::OracleRouterClient;
-use vault::VaultClient;
+use interfaces::{ConfigManagerClient, OracleRouterClient, VaultClient};
 
 use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
 
@@ -221,7 +219,8 @@ pub fn do_update_indices(env: &Env, symbol: &Symbol) {
         acc_borrow_index: market.acc_borrow_index,
         acc_funding_index: market.acc_funding_index,
         timestamp: now,
-    }.publish(env);
+    }
+    .publish(env);
 
     // Refresh unrealized PnL with current oracle price
     let oracle_addr = storage::get_oracle_router(env);
@@ -412,7 +411,8 @@ pub fn do_increase_position(
         sl: position.stop_loss,
         new_total_size: position.size,
         new_total_collateral: position.collateral,
-    }.publish(env);
+    }
+    .publish(env);
 
     // Refresh unrealized PnL after market state change
     refresh_market_unrealized_pnl(env, symbol, mark_price);
@@ -439,7 +439,6 @@ fn get_vault_asset(env: &Env, vault_addr: &Address) -> Address {
 // ---------------------------------------------------------------------------
 // decrease_position logic
 // ---------------------------------------------------------------------------
-
 
 pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_delta: i128) {
     // Refresh indices so fees are current
@@ -480,8 +479,11 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
 
     // Calculate PnL, fees, health
     let pnl = math::calc_unrealized_pnl(actual_delta, pos.entry_price, mark_price, pos.is_long);
-    let borrow_fee =
-        math::calc_borrow_fee(actual_delta, pos.entry_borrow_index, market.acc_borrow_index);
+    let borrow_fee = math::calc_borrow_fee(
+        actual_delta,
+        pos.entry_borrow_index,
+        market.acc_borrow_index,
+    );
     let funding_fee = math::calc_funding_fee(
         actual_delta,
         pos.entry_funding_index,
@@ -489,7 +491,17 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         pos.is_long,
     );
     // Settlement (includes PnL tracking + fee distribution + funding cut)
-    settle_close(env, trader, actual_delta, collateral_delta, pnl, borrow_fee, funding_fee, &CloseType::UserClose, None);
+    settle_close(
+        env,
+        trader,
+        actual_delta,
+        collateral_delta,
+        pnl,
+        borrow_fee,
+        funding_fee,
+        &CloseType::UserClose,
+        None,
+    );
 
     events::DecreasePosition {
         trader: trader.clone(),
@@ -500,7 +512,8 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         funding_fee,
         mark_price,
         is_full_close,
-    }.publish(env);
+    }
+    .publish(env);
 
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
@@ -553,12 +566,7 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
 // liquidate_position logic
 // ---------------------------------------------------------------------------
 
-pub fn do_liquidate_position(
-    env: &Env,
-    caller: &Address,
-    trader: &Address,
-    symbol: &Symbol,
-) {
+pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symbol: &Symbol) {
     // Refresh indices so fees are current
     do_update_indices(env, symbol);
 
@@ -574,8 +582,7 @@ pub fn do_liquidate_position(
     let mut market = storage::get_market(env, symbol);
 
     // Compute health
-    let pnl =
-        math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
+    let pnl = math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
     let borrow_fee =
         math::calc_borrow_fee(pos.size, pos.entry_borrow_index, market.acc_borrow_index);
     let funding_fee = math::calc_funding_fee(
@@ -623,7 +630,13 @@ pub fn do_liquidate_position(
     // (position is underwater, so actual tokens received = collateral)
     let total_fees = borrow_fee + funding_protocol_cut;
     let distributable_fees = core::cmp::min(total_fees, pos.collateral);
-    distribute_fees(env, &vault, distributable_fees, &CloseType::Liquidation, Some(caller));
+    distribute_fees(
+        env,
+        &vault,
+        distributable_fees,
+        &CloseType::Liquidation,
+        Some(caller),
+    );
 
     events::Liquidate {
         trader: trader.clone(),
@@ -635,7 +648,8 @@ pub fn do_liquidate_position(
         funding_fee,
         mark_price,
         keeper: caller.clone(),
-    }.publish(env);
+    }
+    .publish(env);
 
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
@@ -711,8 +725,7 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     let mut market = storage::get_market(env, symbol);
 
     // Calculate PnL, fees, health
-    let pnl =
-        math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
+    let pnl = math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
 
     // Guard: only profitable positions can be ADL'd
     if pnl <= 0 {
@@ -728,7 +741,17 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
         pos.is_long,
     );
     // Settlement (same as full close, includes PnL tracking + fee distribution + funding cut)
-    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::Deleverage, None);
+    settle_close(
+        env,
+        trader,
+        pos.size,
+        pos.collateral,
+        pnl,
+        borrow_fee,
+        funding_fee,
+        &CloseType::Deleverage,
+        None,
+    );
 
     events::Adl {
         trader: trader.clone(),
@@ -736,7 +759,8 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
         size: pos.size,
         pnl,
         mark_price,
-    }.publish(env);
+    }
+    .publish(env);
 
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {
@@ -794,7 +818,8 @@ pub fn do_set_tp_sl(
         symbol: symbol.clone(),
         take_profit,
         stop_loss,
-    }.publish(env);
+    }
+    .publish(env);
 }
 
 /// Validate TP/SL prices against position direction and entry price.
@@ -870,7 +895,17 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
         market.acc_funding_index,
         pos.is_long,
     );
-    settle_close(env, trader, pos.size, pos.collateral, pnl, borrow_fee, funding_fee, &CloseType::OrderExecution, Some(keeper));
+    settle_close(
+        env,
+        trader,
+        pos.size,
+        pos.collateral,
+        pnl,
+        borrow_fee,
+        funding_fee,
+        &CloseType::OrderExecution,
+        Some(keeper),
+    );
 
     events::ExecuteOrder {
         trader: trader.clone(),
@@ -880,7 +915,8 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
         mark_price,
         is_tp: tp_hit,
         keeper: keeper.clone(),
-    }.publish(env);
+    }
+    .publish(env);
 
     // Recalculate global avg price BEFORE decrementing OI
     if pos.is_long {

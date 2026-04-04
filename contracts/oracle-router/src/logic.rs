@@ -1,4 +1,4 @@
-use oracle::OracleClient;
+use interfaces::OracleClient;
 use shared::{bump_instance_ttl, ROLE_ADMIN, ROLE_UPGRADER};
 use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec};
 

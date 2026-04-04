@@ -9,5 +9,6 @@ mod storage;
 #[cfg(test)]
 pub mod tests;
 
-pub use contract::{VaultClient, VaultContract, VaultContractClient, UpgradeData};
+pub use contract::{VaultContract, VaultContractClient};
 pub use errors::VaultError;
+pub use interfaces::{UpgradeData, VaultClient};

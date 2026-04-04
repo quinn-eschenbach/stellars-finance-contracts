@@ -1,6 +1,6 @@
+use interfaces::UpgradeData;
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, panic_with_error, Address, Env,
-    MuxedAddress, String,
+    contract, contractimpl, panic_with_error, Address, Env, MuxedAddress, String,
 };
 
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
@@ -15,62 +15,9 @@ use crate::events as vault_events;
 use crate::logic as vault_logic;
 use crate::storage as vault_storage;
 
-#[contracttype]
-pub struct UpgradeData {
-    pub version: u32,
-}
-
 #[derive(UpgradeableMigratable)]
 #[contract]
 pub struct VaultContract;
-
-// ---------------------------------------------------------------------------
-// Cross-contract client trait
-// ---------------------------------------------------------------------------
-
-#[contractclient(name = "VaultClient")]
-pub trait VaultInterface {
-    fn initialize(
-        env: Env,
-        admin: Address,
-        asset: Address,
-        config_manager: Address,
-        position_manager: Address,
-    );
-
-    fn settle_pnl(
-        env: Env,
-        caller: Address,
-        trader: Address,
-        amount: i128,
-        reserved_delta: i128,
-        is_profit: bool,
-    );
-
-    fn reserve_liquidity(env: Env, caller: Address, amount: i128);
-
-    fn release_liquidity(env: Env, caller: Address, amount: i128);
-
-    fn update_net_pnl(env: Env, caller: Address, pnl: i128);
-
-    fn accrue_fees(env: Env, caller: Address, amount: i128);
-
-    fn claim_fees(env: Env, caller: Address, recipient: Address);
-
-    fn claim_fees_to(env: Env, caller: Address, recipient: Address, amount: i128);
-
-    fn pause(env: Env, caller: Address);
-
-    fn unpause(env: Env, caller: Address);
-
-    fn free_liquidity(env: Env) -> i128;
-
-    fn query_asset(env: Env) -> Address;
-
-    fn total_assets(env: Env) -> i128;
-
-    fn bump_vault_state(env: Env);
-}
 
 // ---------------------------------------------------------------------------
 // SEP-41 token interface — auto-implemented by OZ Vault (which extends Base)

@@ -11,6 +11,7 @@ mod types;
 #[cfg(test)]
 pub mod tests;
 
-pub use contract::{OracleRouterClient, OracleRouterContract, UpgradeData};
+pub use contract::OracleRouterContract;
 pub use errors::OracleRouterError;
+pub use interfaces::{OracleRouterClient, UpgradeData};
 pub use types::{CachedPrice, OracleConfig};

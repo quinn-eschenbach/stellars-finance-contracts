@@ -1,6 +1,5 @@
-use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, panic_with_error, Address, Env, Symbol,
-};
+use interfaces::{MarketInfo, Position, PositionManager, UpgradeData};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol};
 
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
@@ -9,83 +8,10 @@ use crate::errors::PositionManagerError;
 use crate::events;
 use crate::logic;
 use crate::storage;
-use crate::types::{MarketInfo, Position};
-
-#[contracttype]
-pub struct UpgradeData {
-    pub version: u32,
-}
 
 #[derive(UpgradeableMigratable)]
 #[contract]
 pub struct PositionManagerContract;
-
-// ---------------------------------------------------------------------------
-// Cross-contract client trait
-// ---------------------------------------------------------------------------
-
-#[contractclient(name = "PositionManagerClient")]
-pub trait PositionManager {
-    /// Initialize the position manager. Can only be called once.
-    /// `admin` must authorize the call to prevent front-running.
-    fn initialize(
-        env: Env,
-        admin: Address,
-        vault_address: Address,
-        config_manager: Address,
-        oracle_router: Address,
-    );
-
-    /// Open or add to a leveraged position.
-    fn increase_position(
-        env: Env,
-        trader: Address,
-        symbol: Symbol,
-        size: i128,
-        collateral: i128,
-        is_long: bool,
-        take_profit: i128,
-        stop_loss: i128,
-    );
-
-    /// Close or reduce a position and realize PnL.
-    /// Intentionally bypasses pause check.
-    fn decrease_position(env: Env, trader: Address, symbol: Symbol, size_delta: i128);
-
-    /// Force-close an undercollateralized position. KEEPER only.
-    fn liquidate_position(env: Env, caller: Address, trader: Address, symbol: Symbol);
-
-    /// Sync global borrow and funding accumulators. KEEPER only.
-    fn update_indices(env: Env, caller: Address, symbol: Symbol);
-
-    /// Execute a TP/SL order. KEEPER only.
-    fn execute_order(env: Env, caller: Address, trader: Address, symbol: Symbol);
-
-    /// Set take-profit and stop-loss prices on an existing position.
-    fn set_tp_sl(env: Env, trader: Address, symbol: Symbol, take_profit: i128, stop_loss: i128);
-
-    /// Auto-Deleveraging: force-close highest-RoE position. KEEPER only.
-    fn deleverage_position(env: Env, caller: Address, trader: Address, symbol: Symbol);
-
-    /// Extend Soroban TTL for an active position.
-    fn bump_position(env: Env, user_address: Address, symbol: Symbol);
-
-    /// Emergency pause — PAUSER role only.
-    fn pause(env: Env, caller: Address);
-
-    /// Unpause — PAUSER role only.
-    fn unpause(env: Env, caller: Address);
-
-    /// Set the maximum leverage for a market. ADMIN only.
-    fn set_max_leverage(env: Env, caller: Address, symbol: Symbol, max_leverage: i128);
-
-    /// Get the maximum leverage for a market.
-    fn get_max_leverage(env: Env, symbol: Symbol) -> i128;
-
-    // Read-only views
-    fn get_position(env: Env, trader: Address, symbol: Symbol) -> Position;
-    fn get_market(env: Env, symbol: Symbol) -> MarketInfo;
-}
 
 // ---------------------------------------------------------------------------
 // Implementation — thin routing layer

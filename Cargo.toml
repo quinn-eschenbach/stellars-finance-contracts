@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "shared",
+    "contracts/interfaces",
     "contracts/vault",
     "contracts/position-manager",
     "contracts/config-manager",
@@ -15,6 +16,7 @@ members = [
 [workspace.dependencies]
 soroban-sdk = { version = "=23.5.2" }
 shared = { path = "shared" }
+interfaces = { path = "contracts/interfaces" }
 stellar-tokens = { version = "=0.6.0" }
 stellar-access = { version = "=0.6.0" }
 stellar-contract-utils = { version = "=0.6.0" }

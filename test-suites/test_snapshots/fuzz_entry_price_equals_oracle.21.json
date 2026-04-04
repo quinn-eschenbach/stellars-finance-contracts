@@ -532,7 +532,7 @@
                   "i128": "1900000000"
                 },
                 {
-                  "bool": true
+                  "bool": false
                 },
                 {
                   "i128": "0"
@@ -2185,7 +2185,7 @@
                         "symbol": "global_long_avg_price"
                       },
                       "val": {
-                        "i128": "500000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -2193,7 +2193,7 @@
                         "symbol": "global_short_avg_price"
                       },
                       "val": {
-                        "i128": "0"
+                        "i128": "500000000000"
                       }
                     },
                     {
@@ -2209,7 +2209,7 @@
                         "symbol": "long_open_interest"
                       },
                       "val": {
-                        "i128": "19000000000"
+                        "i128": "0"
                       }
                     },
                     {
@@ -2217,7 +2217,7 @@
                         "symbol": "short_open_interest"
                       },
                       "val": {
-                        "i128": "0"
+                        "i128": "19000000000"
                       }
                     }
                   ]
@@ -2382,7 +2382,7 @@
                         "symbol": "is_long"
                       },
                       "val": {
-                        "bool": true
+                        "bool": false
                       }
                     },
                     {
