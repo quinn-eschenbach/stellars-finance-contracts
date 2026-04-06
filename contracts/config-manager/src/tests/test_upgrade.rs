@@ -11,7 +11,7 @@
 
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal};
 
-use crate::{ConfigManagerContract, ConfigManagerError, UpgradeData};
+use crate::{ConfigManagerContract, ConfigManagerError, MigrationData};
 use crate::storage::StorageKey;
 use stellar_contract_utils::upgradeable::{UpgradeableClient, UpgradeableMigratableInternal};
 
@@ -65,7 +65,7 @@ fn test_upgrade_requires_caller_auth() {
 fn test_migrate_writes_version_to_storage() {
     let env = Env::default();
     let contract_id = env.register(ConfigManagerContract, ());
-    let migration_data = UpgradeData { version: 2 };
+    let migration_data = MigrationData { version: 2 };
 
     env.as_contract(&contract_id, || {
         ConfigManagerContract::_migrate(&env, &migration_data);
@@ -89,7 +89,7 @@ fn test_migrate_without_prior_upgrade_errors() {
 
     config_client.grant_role(&admin, &role_upgrader(&env), &upgrader);
 
-    let migration_data = UpgradeData { version: 2 };
+    let migration_data = MigrationData { version: 2 };
     let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
         &config_client.address,
         &soroban_sdk::Symbol::new(&env, "migrate"),
@@ -118,7 +118,7 @@ fn test_migrate_with_active_migration_flag_writes_version() {
         enable_migration(&env);
     });
 
-    let migration_data = UpgradeData { version: 7 };
+    let migration_data = MigrationData { version: 7 };
     env.invoke_contract::<()>(
         &config_client.address,
         &soroban_sdk::Symbol::new(&env, "migrate"),
@@ -155,7 +155,7 @@ fn test_migrate_requires_caller_auth() {
     // Clear auth — operator.require_auth() must panic.
     env.mock_auths(&[]);
 
-    let migration_data = UpgradeData { version: 3 };
+    let migration_data = MigrationData { version: 3 };
     env.invoke_contract::<()>(
         &config_client.address,
         &soroban_sdk::Symbol::new(&env, "migrate"),
@@ -177,7 +177,7 @@ fn test_migrate_without_upgrader_role_errors() {
         enable_migration(&env);
     });
 
-    let migration_data = UpgradeData { version: 5 };
+    let migration_data = MigrationData { version: 5 };
     let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
         &config_client.address,
         &soroban_sdk::Symbol::new(&env, "migrate"),

@@ -1,4 +1,4 @@
-use interfaces::UpgradeData;
+
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, MuxedAddress, String,
 };
@@ -343,7 +343,7 @@ impl VaultContract {
 // Upgrade support
 // ---------------------------------------------------------------------------
 impl UpgradeableMigratableInternal for VaultContract {
-    type MigrationData = UpgradeData;
+    type MigrationData = interfaces::MigrationData;
 
     fn _require_auth(e: &Env, operator: &Address) {
         let config_mgr = vault_storage::get_config_manager(e);

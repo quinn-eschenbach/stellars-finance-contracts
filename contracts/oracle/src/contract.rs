@@ -1,4 +1,4 @@
-use interfaces::{Oracle, UpgradeData};
+use interfaces::{Oracle};
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol};
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
@@ -44,7 +44,7 @@ impl Oracle for OracleContract {
 }
 
 impl UpgradeableMigratableInternal for OracleContract {
-    type MigrationData = UpgradeData;
+    type MigrationData = interfaces::MigrationData;
 
     fn _require_auth(e: &Env, operator: &Address) {
         let config_mgr = storage::get_config_manager(e);

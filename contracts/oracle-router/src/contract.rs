@@ -1,4 +1,4 @@
-use interfaces::{OracleConfig, OracleRouter, UpgradeData};
+use interfaces::{OracleConfig, OracleRouter};
 use shared::bump_instance_ttl;
 use soroban_sdk::{contract, contractimpl, Address, Env, Symbol, Vec};
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
@@ -59,7 +59,7 @@ impl OracleRouter for OracleRouterContract {
 }
 
 impl UpgradeableMigratableInternal for OracleRouterContract {
-    type MigrationData = UpgradeData;
+    type MigrationData = interfaces::MigrationData;
 
     fn _require_auth(e: &Env, operator: &Address) {
         logic::require_upgrader(e, operator);

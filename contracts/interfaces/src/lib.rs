@@ -15,7 +15,7 @@ pub use position_manager::{PositionManager, PositionManagerClient};
 pub use vault::{VaultClient, VaultInterface};
 
 // Re-export types used in trait signatures
-pub use types::{MarketInfo, OracleConfig, Position, UpgradeData};
+pub use types::{MarketInfo, MigrationData, OracleConfig, Position};
 
 // Re-export shared types that appear in trait signatures
 pub use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};

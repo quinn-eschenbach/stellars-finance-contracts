@@ -61,6 +61,6 @@ pub struct MarketInfo {
 
 /// Data required during a WASM migration. Single definition for all contracts.
 #[contracttype]
-pub struct UpgradeData {
+pub struct MigrationData {
     pub version: u32,
 }

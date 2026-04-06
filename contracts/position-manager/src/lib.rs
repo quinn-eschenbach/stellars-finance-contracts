@@ -13,4 +13,4 @@ mod tests;
 
 pub use contract::PositionManagerContract;
 pub use errors::PositionManagerError;
-pub use interfaces::{MarketInfo, Position, PositionManagerClient, UpgradeData};
+pub use interfaces::{MarketInfo, Position, PositionManagerClient, MigrationData};

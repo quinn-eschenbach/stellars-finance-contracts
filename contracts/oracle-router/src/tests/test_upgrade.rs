@@ -36,7 +36,7 @@ use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal, Symbol
 use stellar_contract_utils::upgradeable::{enable_migration, UpgradeableMigratableInternal};
 
 use crate::storage::StorageKey;
-use crate::{OracleRouterContract, OracleRouterError, UpgradeData};
+use crate::{OracleRouterContract, OracleRouterError, MigrationData};
 
 use super::helpers::{deploy_with_config_manager, deploy_with_upgrader};
 
@@ -225,7 +225,7 @@ fn test_migrate_non_upgrader_is_unauthorized() {
     let (oracle, _cm, _admin) = deploy_with_config_manager(&env);
     let non_upgrader = Address::generate(&env);
 
-    let migration_data = UpgradeData { version: 1 };
+    let migration_data = MigrationData { version: 1 };
     let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),
@@ -251,7 +251,7 @@ fn test_migrate_admin_without_upgrader_role_is_unauthorized() {
 
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
 
-    let migration_data = UpgradeData { version: 5 };
+    let migration_data = MigrationData { version: 5 };
     let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),
@@ -288,7 +288,7 @@ fn test_migrate_without_prior_upgrade_errors_non_unauthorized() {
 
     let (oracle, _cm, admin) = deploy_with_upgrader(&env);
 
-    let migration_data = UpgradeData { version: 2 };
+    let migration_data = MigrationData { version: 2 };
     let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),
@@ -335,7 +335,7 @@ fn test_migrate_with_active_migration_flag_writes_version() {
         enable_migration(&env);
     });
 
-    let migration_data = UpgradeData { version: 7 };
+    let migration_data = MigrationData { version: 7 };
     env.invoke_contract::<()>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),
@@ -366,7 +366,7 @@ fn test_migrate_with_active_migration_flag_writes_correct_version_value() {
         enable_migration(&env);
     });
 
-    let migration_data = UpgradeData { version: 42 };
+    let migration_data = MigrationData { version: 42 };
     env.invoke_contract::<()>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),
@@ -378,7 +378,7 @@ fn test_migrate_with_active_migration_flag_writes_correct_version_value() {
         assert_eq!(
             stored_version,
             Some(42),
-            "F-2.7-g: _migrate must write the exact version value supplied in UpgradeData"
+            "F-2.7-g: _migrate must write the exact version value supplied in MigrationData"
         );
     });
 }
@@ -406,7 +406,7 @@ fn test_migrate_requires_caller_auth() {
     // Clear all mocked auths — require_auth must now panic.
     env.mock_auths(&[]);
 
-    let migration_data = UpgradeData { version: 3 };
+    let migration_data = MigrationData { version: 3 };
     env.invoke_contract::<()>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),
@@ -430,7 +430,7 @@ fn test_migrate_internal_writes_version_to_storage() {
     let env = Env::default();
     // Register the oracle router contract fresh (no initialization needed for _migrate).
     let oracle_id = env.register(OracleRouterContract, ());
-    let migration_data = UpgradeData { version: 2 };
+    let migration_data = MigrationData { version: 2 };
 
     env.as_contract(&oracle_id, || {
         OracleRouterContract::_migrate(&env, &migration_data);
@@ -449,7 +449,7 @@ fn test_migrate_internal_writes_version_to_storage() {
 fn test_migrate_internal_writes_version_zero() {
     let env = Env::default();
     let oracle_id = env.register(OracleRouterContract, ());
-    let migration_data = UpgradeData { version: 0 };
+    let migration_data = MigrationData { version: 0 };
 
     env.as_contract(&oracle_id, || {
         OracleRouterContract::_migrate(&env, &migration_data);
@@ -468,7 +468,7 @@ fn test_migrate_internal_writes_version_zero() {
 fn test_migrate_internal_writes_max_version_without_overflow() {
     let env = Env::default();
     let oracle_id = env.register(OracleRouterContract, ());
-    let migration_data = UpgradeData { version: u32::MAX };
+    let migration_data = MigrationData { version: u32::MAX };
 
     env.as_contract(&oracle_id, || {
         OracleRouterContract::_migrate(&env, &migration_data);
@@ -496,8 +496,8 @@ fn test_migrate_internal_second_call_overwrites_first_version() {
     let oracle_id = env.register(OracleRouterContract, ());
 
     env.as_contract(&oracle_id, || {
-        OracleRouterContract::_migrate(&env, &UpgradeData { version: 1 });
-        OracleRouterContract::_migrate(&env, &UpgradeData { version: 2 });
+        OracleRouterContract::_migrate(&env, &MigrationData { version: 1 });
+        OracleRouterContract::_migrate(&env, &MigrationData { version: 2 });
 
         let stored_version: Option<u32> = env.storage().instance().get(&StorageKey::Version);
         assert_eq!(
@@ -568,7 +568,7 @@ fn test_migrate_unknown_address_is_unauthorized() {
     let (oracle, _cm, _admin) = deploy_with_config_manager(&env);
     let attacker = Address::generate(&env);
 
-    let migration_data = UpgradeData { version: 999 };
+    let migration_data = MigrationData { version: 999 };
     let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),
@@ -605,7 +605,7 @@ fn test_migrate_upgrader_in_wrong_config_manager_is_unauthorized() {
     // They then try to call migrate on the oracle router — must fail.
     let attacker = Address::generate(&env);
 
-    let migration_data = UpgradeData { version: 1 };
+    let migration_data = MigrationData { version: 1 };
     let result = env.try_invoke_contract::<(), soroban_sdk::Error>(
         &oracle.address,
         &Symbol::new(&env, "migrate"),

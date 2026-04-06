@@ -1,4 +1,4 @@
-use interfaces::{ConfigManager, UpgradeData};
+use interfaces::ConfigManager;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol};
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
@@ -203,7 +203,7 @@ impl ConfigManager for ConfigManagerContract {
 }
 
 impl UpgradeableMigratableInternal for ConfigManagerContract {
-    type MigrationData = UpgradeData;
+    type MigrationData = interfaces::MigrationData;
 
     fn _require_auth(e: &Env, operator: &Address) {
         operator.require_auth();

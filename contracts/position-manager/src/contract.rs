@@ -1,4 +1,4 @@
-use interfaces::{MarketInfo, Position, PositionManager, UpgradeData};
+use interfaces::{MarketInfo, Position, PositionManager};
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol};
 
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
@@ -167,7 +167,7 @@ impl PositionManager for PositionManagerContract {
 }
 
 impl UpgradeableMigratableInternal for PositionManagerContract {
-    type MigrationData = UpgradeData;
+    type MigrationData = interfaces::MigrationData;
 
     fn _require_auth(e: &Env, operator: &Address) {
         let config_mgr = storage::get_config_manager(e);
