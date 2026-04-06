@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
 import { type Db, protocolConfig } from "@stellars/db";
 import type { ParsedEvent } from "../parser.js";
+import { toNumericString } from "../parser.js";
 
 const SINGLETON_ID = 1;
 
@@ -13,7 +13,6 @@ export async function handleConfigManagerEvent(db: Db, event: ParsedEvent) {
     case "rates":
       return handleBorrowRates(db, event);
     case "role":
-      // Role changes don't need DB state — they're auth-layer only
       break;
     default:
       break;
@@ -21,23 +20,23 @@ export async function handleConfigManagerEvent(db: Db, event: ParsedEvent) {
 }
 
 async function handleFeeSplits(db: Db, event: ParsedEvent) {
-  const [keeperBps, devBps, lpBps] = event.data as [number, number, number];
+  const d = event.data as { keeper_bps: number; dev_bps: number; lp_bps: number };
 
   await db
     .insert(protocolConfig)
     .values({
       id: SINGLETON_ID,
-      keeper_bps: keeperBps,
-      dev_bps: devBps,
-      lp_bps: lpBps,
+      keeper_bps: d.keeper_bps,
+      dev_bps: d.dev_bps,
+      lp_bps: d.lp_bps,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: protocolConfig.id,
       set: {
-        keeper_bps: keeperBps,
-        dev_bps: devBps,
-        lp_bps: lpBps,
+        keeper_bps: d.keeper_bps,
+        dev_bps: d.dev_bps,
+        lp_bps: d.lp_bps,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -45,32 +44,34 @@ async function handleFeeSplits(db: Db, event: ParsedEvent) {
 }
 
 async function handleLimits(db: Db, event: ParsedEvent) {
-  const [minCollateral, cooldownDuration, minPositionLifetime, maxUtilizationRatio, fundingCutBps, adlPnlBps, adlUtilizationBps] =
-    event.data as [bigint, bigint, bigint, bigint, number, number, number];
+  const d = event.data as {
+    min_collateral: unknown; cooldown_duration: unknown; min_position_lifetime: unknown;
+    max_utilization_ratio: unknown; funding_cut_bps: number; adl_pnl_bps: number; adl_utilization_bps: number;
+  };
 
   await db
     .insert(protocolConfig)
     .values({
       id: SINGLETON_ID,
-      min_collateral: String(minCollateral),
-      cooldown_duration: BigInt(cooldownDuration),
-      min_position_lifetime: BigInt(minPositionLifetime),
-      max_utilization_ratio: String(maxUtilizationRatio),
-      funding_cut_bps: fundingCutBps,
-      adl_pnl_bps: adlPnlBps,
-      adl_utilization_bps: adlUtilizationBps,
+      min_collateral: toNumericString(d.min_collateral),
+      cooldown_duration: BigInt(toNumericString(d.cooldown_duration)),
+      min_position_lifetime: BigInt(toNumericString(d.min_position_lifetime)),
+      max_utilization_ratio: toNumericString(d.max_utilization_ratio),
+      funding_cut_bps: d.funding_cut_bps,
+      adl_pnl_bps: d.adl_pnl_bps,
+      adl_utilization_bps: d.adl_utilization_bps,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: protocolConfig.id,
       set: {
-        min_collateral: String(minCollateral),
-        cooldown_duration: BigInt(cooldownDuration),
-        min_position_lifetime: BigInt(minPositionLifetime),
-        max_utilization_ratio: String(maxUtilizationRatio),
-        funding_cut_bps: fundingCutBps,
-        adl_pnl_bps: adlPnlBps,
-        adl_utilization_bps: adlUtilizationBps,
+        min_collateral: toNumericString(d.min_collateral),
+        cooldown_duration: BigInt(toNumericString(d.cooldown_duration)),
+        min_position_lifetime: BigInt(toNumericString(d.min_position_lifetime)),
+        max_utilization_ratio: toNumericString(d.max_utilization_ratio),
+        funding_cut_bps: d.funding_cut_bps,
+        adl_pnl_bps: d.adl_pnl_bps,
+        adl_utilization_bps: d.adl_utilization_bps,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -78,28 +79,30 @@ async function handleLimits(db: Db, event: ParsedEvent) {
 }
 
 async function handleBorrowRates(db: Db, event: ParsedEvent) {
-  const [baseBorrowRateBps, slope1Bps, slope2Bps, optimalUtilizationBps, baseFundingRateBps] =
-    event.data as [bigint, bigint, bigint, bigint, bigint];
+  const d = event.data as {
+    base_borrow_rate_bps: unknown; slope1_bps: unknown; slope2_bps: unknown;
+    optimal_utilization_bps: unknown; base_funding_rate_bps: unknown;
+  };
 
   await db
     .insert(protocolConfig)
     .values({
       id: SINGLETON_ID,
-      base_borrow_rate_bps: String(baseBorrowRateBps),
-      slope1_bps: String(slope1Bps),
-      slope2_bps: String(slope2Bps),
-      optimal_utilization_bps: String(optimalUtilizationBps),
-      base_funding_rate_bps: String(baseFundingRateBps),
+      base_borrow_rate_bps: toNumericString(d.base_borrow_rate_bps),
+      slope1_bps: toNumericString(d.slope1_bps),
+      slope2_bps: toNumericString(d.slope2_bps),
+      optimal_utilization_bps: toNumericString(d.optimal_utilization_bps),
+      base_funding_rate_bps: toNumericString(d.base_funding_rate_bps),
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: protocolConfig.id,
       set: {
-        base_borrow_rate_bps: String(baseBorrowRateBps),
-        slope1_bps: String(slope1Bps),
-        slope2_bps: String(slope2Bps),
-        optimal_utilization_bps: String(optimalUtilizationBps),
-        base_funding_rate_bps: String(baseFundingRateBps),
+        base_borrow_rate_bps: toNumericString(d.base_borrow_rate_bps),
+        slope1_bps: toNumericString(d.slope1_bps),
+        slope2_bps: toNumericString(d.slope2_bps),
+        optimal_utilization_bps: toNumericString(d.optimal_utilization_bps),
+        base_funding_rate_bps: toNumericString(d.base_funding_rate_bps),
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },

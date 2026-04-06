@@ -1,12 +1,12 @@
 import { type Db, oraclePrices } from "@stellars/db";
 import type { ParsedEvent } from "../parser.js";
+import { toNumericString } from "../parser.js";
 
 export async function handleOracleRouterEvent(db: Db, event: ParsedEvent) {
   switch (event.topic0) {
     case "price":
       return handlePrice(db, event);
     case "orccfg":
-      // Config changes are informational — protocol_config table doesn't store oracle config
       break;
     default:
       break;
@@ -15,12 +15,12 @@ export async function handleOracleRouterEvent(db: Db, event: ParsedEvent) {
 
 async function handlePrice(db: Db, event: ParsedEvent) {
   const symbol = String(event.topic1);
-  const [price, timestamp] = event.data as [bigint, bigint];
+  const d = event.data as { price: unknown; timestamp: unknown };
 
   await db.insert(oraclePrices).values({
     ledger: event.ledger,
-    timestamp: BigInt(timestamp),
+    timestamp: BigInt(toNumericString(d.timestamp)),
     symbol,
-    price: String(price),
+    price: toNumericString(d.price),
   });
 }

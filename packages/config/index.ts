@@ -1,6 +1,6 @@
-import addresses from "./addresses.json";
+import addresses from "./addresses.json" with { type: "json" };
 
-export type Network = "testnet" | "mainnet";
+export type Network = "local" | "testnet" | "mainnet";
 
 export interface NetworkConfig {
   rpcUrl: string;

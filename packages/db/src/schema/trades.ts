@@ -4,7 +4,7 @@ export const trades = pgTable("trades", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   tx_hash: text().notNull(),
   ledger: integer().notNull(),
-  timestamp: bigint({ mode: "bigint" }).notNull(),
+  timestamp: bigint({ mode: "number" }).notNull(),
   trader: text().notNull(),
   symbol: text().notNull(),
   event_type: text().notNull(), // increase, decrease, liquidation, order, adl

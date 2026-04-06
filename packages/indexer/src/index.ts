@@ -11,7 +11,7 @@ import { startHealthServer, updateHealth } from "./health.js";
 async function main() {
   const config = loadConfig();
   const db = getDb();
-  const server = new rpc.Server(config.rpcUrl);
+  const server = new rpc.Server(config.rpcUrl, { allowHttp: config.rpcUrl.startsWith("http://") });
   const routes = buildRoutes(config.contracts);
   const contractIds = Object.values(config.contracts).filter(Boolean);
 

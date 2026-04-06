@@ -12,7 +12,7 @@ export const positions = pgTable(
     entry_borrow_index: numeric().notNull(),
     entry_funding_index: numeric().notNull(),
     is_long: boolean().notNull(),
-    last_increased_time: bigint({ mode: "bigint" }).notNull(),
+    last_increased_time: bigint({ mode: "number" }).notNull(),
     take_profit: numeric().notNull().default("0"),
     stop_loss: numeric().notNull().default("0"),
     updated_at_ledger: integer().notNull(),

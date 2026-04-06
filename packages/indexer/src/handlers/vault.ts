@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { type Db, vaultState, vaultEvents, feeEvents } from "@stellars/db";
 import type { ParsedEvent } from "../parser.js";
+import { toNumericString } from "../parser.js";
 
 const SINGLETON_ID = 1;
 
@@ -33,7 +34,7 @@ export async function handleVaultEvent(db: Db, event: ParsedEvent) {
 
 async function handleDeposit(db: Db, event: ParsedEvent) {
   const receiver = String(event.topic1);
-  const [assets, shares, from] = event.data as [bigint, bigint, string];
+  const { assets, shares } = event.data as { assets: unknown; shares: unknown };
 
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
@@ -41,14 +42,14 @@ async function handleDeposit(db: Db, event: ParsedEvent) {
     timestamp: BigInt(Date.parse(event.timestamp) / 1000),
     event_type: "deposit",
     user: receiver,
-    assets: String(assets),
-    shares: String(shares),
+    assets: toNumericString(assets),
+    shares: toNumericString(shares),
   });
 }
 
 async function handleWithdraw(db: Db, event: ParsedEvent) {
   const owner = String(event.topic1);
-  const [assets, shares, receiver] = event.data as [bigint, bigint, string];
+  const { assets, shares } = event.data as { assets: unknown; shares: unknown };
 
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
@@ -56,14 +57,14 @@ async function handleWithdraw(db: Db, event: ParsedEvent) {
     timestamp: BigInt(Date.parse(event.timestamp) / 1000),
     event_type: "withdraw",
     user: owner,
-    assets: String(assets),
-    shares: String(shares),
+    assets: toNumericString(assets),
+    shares: toNumericString(shares),
   });
 }
 
 async function handleMint(db: Db, event: ParsedEvent) {
   const receiver = String(event.topic1);
-  const [shares, assets, from] = event.data as [bigint, bigint, string];
+  const { shares, assets } = event.data as { shares: unknown; assets: unknown };
 
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
@@ -71,14 +72,14 @@ async function handleMint(db: Db, event: ParsedEvent) {
     timestamp: BigInt(Date.parse(event.timestamp) / 1000),
     event_type: "mint",
     user: receiver,
-    assets: String(assets),
-    shares: String(shares),
+    assets: toNumericString(assets),
+    shares: toNumericString(shares),
   });
 }
 
 async function handleRedeem(db: Db, event: ParsedEvent) {
   const owner = String(event.topic1);
-  const [shares, assets, receiver] = event.data as [bigint, bigint, string];
+  const { shares, assets } = event.data as { shares: unknown; assets: unknown };
 
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
@@ -86,8 +87,8 @@ async function handleRedeem(db: Db, event: ParsedEvent) {
     timestamp: BigInt(Date.parse(event.timestamp) / 1000),
     event_type: "redeem",
     user: owner,
-    assets: String(assets),
-    shares: String(shares),
+    assets: toNumericString(assets),
+    shares: toNumericString(shares),
   });
 }
 
@@ -97,19 +98,19 @@ async function handleSettle(_db: Db, _event: ParsedEvent) {
 }
 
 async function handleReserve(db: Db, event: ParsedEvent) {
-  const [_amount, newTotal] = event.data as [bigint, bigint];
+  const { new_total } = event.data as { amount: unknown; new_total: unknown };
 
   await db
     .insert(vaultState)
     .values({
       id: SINGLETON_ID,
-      reserved_usdc: String(newTotal),
+      reserved_usdc: toNumericString(new_total),
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        reserved_usdc: String(newTotal),
+        reserved_usdc: toNumericString(new_total),
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -117,12 +118,12 @@ async function handleReserve(db: Db, event: ParsedEvent) {
 }
 
 async function handleRelease(db: Db, event: ParsedEvent) {
-  const [_amount, newTotal] = event.data as [bigint, bigint];
+  const { new_total } = event.data as { amount: unknown; new_total: unknown };
 
   await db
     .update(vaultState)
     .set({
-      reserved_usdc: String(newTotal),
+      reserved_usdc: toNumericString(new_total),
       updated_at_ledger: event.ledger,
       updated_at: new Date(),
     })
@@ -130,19 +131,19 @@ async function handleRelease(db: Db, event: ParsedEvent) {
 }
 
 async function handleAccrueFees(db: Db, event: ParsedEvent) {
-  const [amount, newTotal] = event.data as [bigint, bigint];
+  const { amount, new_total } = event.data as { amount: unknown; new_total: unknown };
 
   await db
     .insert(vaultState)
     .values({
       id: SINGLETON_ID,
-      unclaimed_fees: String(newTotal),
+      unclaimed_fees: toNumericString(new_total),
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        unclaimed_fees: String(newTotal),
+        unclaimed_fees: toNumericString(new_total),
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -153,12 +154,12 @@ async function handleAccrueFees(db: Db, event: ParsedEvent) {
     ledger: event.ledger,
     timestamp: BigInt(Date.parse(event.timestamp) / 1000),
     event_type: "accrue",
-    amount: String(amount),
+    amount: toNumericString(amount),
   });
 }
 
 async function handleClaimFees(db: Db, event: ParsedEvent) {
-  const [amount, recipient] = event.data as [bigint, string];
+  const { amount, recipient } = event.data as { amount: unknown; recipient: unknown };
 
   await db
     .update(vaultState)
@@ -174,25 +175,25 @@ async function handleClaimFees(db: Db, event: ParsedEvent) {
     ledger: event.ledger,
     timestamp: BigInt(Date.parse(event.timestamp) / 1000),
     event_type: "claim",
-    amount: String(amount),
+    amount: toNumericString(amount),
     recipient: String(recipient),
   });
 }
 
 async function handlePause(db: Db, event: ParsedEvent) {
-  const [isPaused] = event.data as [boolean, string];
+  const { is_paused, caller } = event.data as { is_paused: boolean; caller: unknown };
 
   await db
     .insert(vaultState)
     .values({
       id: SINGLETON_ID,
-      is_paused: isPaused,
+      is_paused,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        is_paused: isPaused,
+        is_paused,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },

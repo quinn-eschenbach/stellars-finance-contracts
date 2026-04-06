@@ -8,8 +8,8 @@ export const protocolConfig = pgTable("protocol_config", {
   lp_bps: integer().notNull().default(0),
   // Protocol limits
   min_collateral: numeric().notNull().default("0"),
-  cooldown_duration: bigint({ mode: "bigint" }).notNull().default(BigInt(0)),
-  min_position_lifetime: bigint({ mode: "bigint" }).notNull().default(BigInt(0)),
+  cooldown_duration: bigint({ mode: "number" }).notNull().default(0),
+  min_position_lifetime: bigint({ mode: "number" }).notNull().default(0),
   max_utilization_ratio: numeric().notNull().default("0"),
   funding_cut_bps: integer().notNull().default(0),
   adl_pnl_bps: integer().notNull().default(0),
