@@ -27,14 +27,13 @@
 // ---------------------------------------------------------------------------
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Env, Symbol,
     symbol_short,
-    vec,
+    testutils::{Address as _, Ledger, LedgerInfo},
+    vec, Address, Env, Symbol,
 };
 
 use crate::contract::PositionManagerContract;
-use crate::math::{self, PRECISION};
+use crate::math::PRECISION;
 use crate::storage;
 use crate::PositionManagerClient;
 
@@ -42,7 +41,7 @@ use config_manager::{ConfigManagerClient, ConfigManagerContract};
 use mock_oracle::{MockOracle, MockOracleClient};
 use mock_token::{MockToken, MockTokenClient};
 use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
-use vault::{VaultContractClient, VaultContract};
+use vault::{VaultContract, VaultContractClient};
 
 // ===========================================================================
 // Constants
@@ -84,15 +83,15 @@ struct TestFixture<'a> {
     pm_client: PositionManagerClient<'a>,
     vault_client: VaultContractClient<'a>,
     oracle_client: MockOracleClient<'a>,
-    oracle_router_client: OracleRouterClient<'a>,
-    config_client: ConfigManagerClient<'a>,
+    _oracle_router_client: OracleRouterClient<'a>,
+    _config_client: ConfigManagerClient<'a>,
     usdc_client: MockTokenClient<'a>,
-    usdc_addr: Address,
+    _usdc_addr: Address,
     admin: Address,
     trader: Address,
     keeper: Address,
     pm_addr: Address,
-    vault_addr: Address,
+    _vault_addr: Address,
 }
 
 /// Deploy and wire up ALL protocol contracts needed for TP/SL tests.
@@ -125,33 +124,42 @@ fn setup_full<'a>() -> TestFixture<'a> {
     // Grant roles needed by other contracts
     let pauser_role = Symbol::new(&env, "PAUSER");
     let keeper_role = Symbol::new(&env, "KEEPER");
-    let admin_role = Symbol::new(&env, "ADMIN");
+    let _admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1_000_000,
-        cooldown_duration: 60,
-        min_position_lifetime: 60,
-        max_utilization_ratio: 8_500,
-        funding_cut_bps: 500,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1_000_000,
+            cooldown_duration: 60,
+            min_position_lifetime: 60,
+            max_utilization_ratio: 8_500,
+            funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
-    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
-        lp_bps: 9000,
-    });
+    config_client.update_fee_splits(
+        &admin,
+        &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        },
+    );
 
     // --- 2. MockToken (USDC) ---
     let usdc_id = env.register(MockToken, ());
@@ -219,8 +227,8 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let pm_client = unsafe { core::mem::transmute(pm_client) };
     let vault_client = unsafe { core::mem::transmute(vault_client) };
     let oracle_client = unsafe { core::mem::transmute(oracle_client) };
-    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
+    let _oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let _config_client = unsafe { core::mem::transmute(config_client) };
     let usdc_client = unsafe { core::mem::transmute(usdc_client) };
 
     TestFixture {
@@ -228,15 +236,15 @@ fn setup_full<'a>() -> TestFixture<'a> {
         pm_client,
         vault_client,
         oracle_client,
-        oracle_router_client,
-        config_client,
+        _oracle_router_client,
+        _config_client,
         usdc_client,
-        usdc_addr: usdc_id,
+        _usdc_addr: usdc_id,
         admin,
         trader,
         keeper,
         pm_addr: pm_id,
-        vault_addr: vault_id,
+        _vault_addr: vault_id,
     }
 }
 
@@ -473,7 +481,12 @@ fn test_set_tp_sl_no_position_reverts() {
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
-    f.pm_client.set_tp_sl(&f.trader, &symbol, &(55_000 * PRECISION), &(45_000 * PRECISION));
+    f.pm_client.set_tp_sl(
+        &f.trader,
+        &symbol,
+        &(55_000 * PRECISION),
+        &(45_000 * PRECISION),
+    );
 }
 
 // ===========================================================================
@@ -559,7 +572,8 @@ fn test_set_tp_sl_negative_sl_long_reverts() {
 
     open_btc_position(&f, true);
 
-    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &(-100 * PRECISION));
+    f.pm_client
+        .set_tp_sl(&f.trader, &symbol, &0, &(-100 * PRECISION));
 }
 
 #[test]
@@ -700,7 +714,10 @@ fn test_execute_order_tp_short_success() {
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted after short TP execution");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted after short TP execution"
+        );
     });
 }
 
@@ -739,7 +756,10 @@ fn test_execute_order_sl_short_success() {
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted after short SL execution");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted after short SL execution"
+        );
     });
 }
 
@@ -767,7 +787,10 @@ fn test_execute_order_tp_long_exact_price() {
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted when TP hit exactly");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted when TP hit exactly"
+        );
     });
 }
 
@@ -791,7 +814,10 @@ fn test_execute_order_sl_long_exact_price() {
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted when SL hit exactly");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted when SL hit exactly"
+        );
     });
 }
 
@@ -889,7 +915,10 @@ fn test_execute_order_succeeds_when_paused() {
     // Verify position is gone
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted after execute_order");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted after execute_order"
+        );
     });
 }
 
@@ -928,7 +957,10 @@ fn test_execute_order_position_deleted_after() {
     // Verify position is gone via storage
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted after execute_order");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted after execute_order"
+        );
     });
 }
 
@@ -1009,7 +1041,8 @@ fn test_execute_order_vault_liquidity_released() {
     assert!(
         free_liq_after > free_liq_before,
         "Vault free liquidity must increase after execute_order. Before: {}, After: {}",
-        free_liq_before, free_liq_after
+        free_liq_before,
+        free_liq_after
     );
 }
 

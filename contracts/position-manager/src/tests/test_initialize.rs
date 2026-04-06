@@ -6,10 +6,9 @@
 // but are expected to FAIL until logic.rs and contract.rs are implemented.
 // ---------------------------------------------------------------------------
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Symbol, symbol_short};
+use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env};
 
 use crate::contract::PositionManagerContract;
-use crate::errors::PositionManagerError;
 use crate::logic;
 use crate::storage;
 use crate::PositionManagerClient;
@@ -143,7 +142,10 @@ fn test_initialize_stores_addresses() {
 
     // Verify by reading storage directly inside the contract context.
     env.as_contract(&client.address, || {
-        assert!(storage::is_initialized(&env), "Initialized flag must be true");
+        assert!(
+            storage::is_initialized(&env),
+            "Initialized flag must be true"
+        );
         assert_eq!(
             storage::get_vault_address(&env),
             vault,

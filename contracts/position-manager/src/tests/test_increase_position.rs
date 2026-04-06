@@ -12,10 +12,9 @@
 // ---------------------------------------------------------------------------
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Env, Symbol,
     symbol_short,
-    vec,
+    testutils::{Address as _, Ledger, LedgerInfo},
+    vec, Address, Env, Symbol,
 };
 
 use crate::contract::PositionManagerContract;
@@ -27,7 +26,7 @@ use config_manager::{ConfigManagerClient, ConfigManagerContract};
 use mock_oracle::{MockOracle, MockOracleClient};
 use mock_token::{MockToken, MockTokenClient};
 use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
-use vault::{VaultContractClient, VaultContract};
+use vault::{VaultContract, VaultContractClient};
 
 // ===========================================================================
 // Constants
@@ -49,7 +48,7 @@ const TRADER_BALANCE: i128 = 100_000 * USDC_UNIT;
 const VAULT_DEPOSIT: i128 = 1_000_000 * USDC_UNIT;
 
 /// Max utilization ratio: 85% = 8500 bps
-const MAX_UTIL_RATIO: i128 = 8_500;
+const _MAX_UTIL_RATIO: i128 = 8_500;
 
 /// Default position size: 10,000 USDC notional
 const DEFAULT_SIZE: i128 = 10_000 * USDC_UNIT;
@@ -69,14 +68,14 @@ struct TestFixture<'a> {
     pm_client: PositionManagerClient<'a>,
     vault_client: VaultContractClient<'a>,
     oracle_client: MockOracleClient<'a>,
-    oracle_router_client: OracleRouterClient<'a>,
-    config_client: ConfigManagerClient<'a>,
+    _oracle_router_client: OracleRouterClient<'a>,
+    _config_client: ConfigManagerClient<'a>,
     usdc_client: MockTokenClient<'a>,
-    usdc_addr: Address,
+    _usdc_addr: Address,
     admin: Address,
     trader: Address,
     pm_addr: Address,
-    vault_addr: Address,
+    _vault_addr: Address,
 }
 
 /// Deploy and wire up ALL protocol contracts needed for increase_position tests.
@@ -117,33 +116,42 @@ fn setup_full<'a>() -> TestFixture<'a> {
     // Grant roles needed by other contracts
     let pauser_role = Symbol::new(&env, "PAUSER");
     let keeper_role = Symbol::new(&env, "KEEPER");
-    let admin_role = Symbol::new(&env, "ADMIN");
+    let _admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
 
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1_000_000,
-        cooldown_duration: 60,
-        min_position_lifetime: 60,
-        max_utilization_ratio: 8_500,
-        funding_cut_bps: 500,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1_000_000,
+            cooldown_duration: 60,
+            min_position_lifetime: 60,
+            max_utilization_ratio: 8_500,
+            funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
-    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
-        lp_bps: 9000,
-    });
+    config_client.update_fee_splits(
+        &admin,
+        &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        },
+    );
 
     // --- 2. MockToken (USDC) ---
     let usdc_id = env.register(MockToken, ());
@@ -171,9 +179,9 @@ fn setup_full<'a>() -> TestFixture<'a> {
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
-            max_deviation_bps: 500,       // 5%
-            staleness_threshold: 3600,    // 1 hour
-            cache_duration: 10,           // 10 seconds
+            max_deviation_bps: 500,    // 5%
+            staleness_threshold: 3600, // 1 hour
+            cache_duration: 10,        // 10 seconds
         },
     );
     oracle_router_client.set_oracle_sources(
@@ -217,8 +225,8 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let pm_client = unsafe { core::mem::transmute(pm_client) };
     let vault_client = unsafe { core::mem::transmute(vault_client) };
     let oracle_client = unsafe { core::mem::transmute(oracle_client) };
-    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
+    let _oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let _config_client = unsafe { core::mem::transmute(config_client) };
     let usdc_client = unsafe { core::mem::transmute(usdc_client) };
 
     TestFixture {
@@ -226,14 +234,14 @@ fn setup_full<'a>() -> TestFixture<'a> {
         pm_client,
         vault_client,
         oracle_client,
-        oracle_router_client,
-        config_client,
+        _oracle_router_client,
+        _config_client,
         usdc_client,
-        usdc_addr: usdc_id,
+        _usdc_addr: usdc_id,
         admin,
         trader,
         pm_addr: pm_id,
-        vault_addr: vault_id,
+        _vault_addr: vault_id,
     }
 }
 
@@ -253,7 +261,9 @@ fn test_increase_position_reverts_when_paused() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -268,7 +278,9 @@ fn test_increase_position_reverts_on_zero_size() {
         &symbol_short!("BTC"),
         &0_i128,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -283,7 +295,9 @@ fn test_increase_position_reverts_on_zero_collateral() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &0_i128,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -298,7 +312,9 @@ fn test_increase_position_reverts_on_negative_size() {
         &symbol_short!("BTC"),
         &(-1_000_i128),
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -313,7 +329,9 @@ fn test_increase_position_reverts_on_negative_collateral() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &(-500_i128),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -334,14 +352,22 @@ fn test_open_new_long_position_stores_correct_fields() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
 
-    assert_eq!(pos.collateral, DEFAULT_COLLATERAL, "Collateral must match deposited amount");
+    assert_eq!(
+        pos.collateral, DEFAULT_COLLATERAL,
+        "Collateral must match deposited amount"
+    );
     assert_eq!(pos.size, DEFAULT_SIZE, "Size must match requested size");
-    assert_eq!(pos.entry_price, BTC_PRICE, "Entry price must equal oracle mark price");
+    assert_eq!(
+        pos.entry_price, BTC_PRICE,
+        "Entry price must equal oracle mark price"
+    );
     assert!(pos.is_long, "Position must be long");
     assert_eq!(
         pos.last_increased_time, TEST_TIMESTAMP,
@@ -360,16 +386,24 @@ fn test_open_new_short_position_stores_correct_fields() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &false, &0, &0,
+        &false,
+        &0,
+        &0,
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
 
     assert_eq!(pos.collateral, DEFAULT_COLLATERAL, "Collateral must match");
     assert_eq!(pos.size, DEFAULT_SIZE, "Size must match");
-    assert_eq!(pos.entry_price, ETH_PRICE, "Entry price must equal ETH mark price");
+    assert_eq!(
+        pos.entry_price, ETH_PRICE,
+        "Entry price must equal ETH mark price"
+    );
     assert!(!pos.is_long, "Position must be short");
-    assert_eq!(pos.last_increased_time, TEST_TIMESTAMP, "Timestamp must match");
+    assert_eq!(
+        pos.last_increased_time, TEST_TIMESTAMP,
+        "Timestamp must match"
+    );
 }
 
 #[test]
@@ -384,7 +418,9 @@ fn test_open_new_long_updates_market_info_oi() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let market = f.pm_client.get_market(&symbol);
@@ -414,7 +450,9 @@ fn test_open_new_short_updates_market_info_oi() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &false, &0, &0,
+        &false,
+        &0,
+        &0,
     );
 
     let market = f.pm_client.get_market(&symbol);
@@ -454,7 +492,9 @@ fn test_open_position_increases_total_reserved() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     f.env.as_contract(&f.pm_addr, || {
@@ -480,7 +520,9 @@ fn test_open_position_transfers_collateral_from_trader() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let balance_after = f.usdc_client.balance(&f.trader);
@@ -504,7 +546,9 @@ fn test_open_position_entry_borrow_and_funding_indices() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
@@ -539,7 +583,9 @@ fn test_increase_existing_long_adds_size_and_collateral() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let additional_size = 5_000 * USDC_UNIT;
@@ -551,7 +597,9 @@ fn test_increase_existing_long_adds_size_and_collateral() {
         &symbol,
         &additional_size,
         &additional_collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
@@ -578,7 +626,8 @@ fn test_increase_existing_position_averages_entry_price() {
     // Open initial position at BTC_PRICE ($50,000)
     let size1 = 10_000 * USDC_UNIT;
     let col1 = 1_000 * USDC_UNIT;
-    f.pm_client.increase_position(&f.trader, &symbol, &size1, &col1, &true, &0, &0);
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size1, &col1, &true, &0, &0);
 
     // Change oracle price to $60,000 before second increase.
     // Advance time past the oracle router cache_duration (10s) so the new price is fetched.
@@ -597,7 +646,8 @@ fn test_increase_existing_position_averages_entry_price() {
 
     let size2 = 10_000 * USDC_UNIT;
     let col2 = 1_000 * USDC_UNIT;
-    f.pm_client.increase_position(&f.trader, &symbol, &size2, &col2, &true, &0, &0);
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size2, &col2, &true, &0, &0);
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
 
@@ -623,14 +673,18 @@ fn test_increase_existing_position_updates_oi_correctly() {
         &symbol,
         &size1,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     f.pm_client.increase_position(
         &f.trader,
         &symbol,
         &size2,
         &(500 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let market = f.pm_client.get_market(&symbol);
@@ -655,14 +709,18 @@ fn test_increase_existing_position_updates_total_reserved() {
         &symbol,
         &size1,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     f.pm_client.increase_position(
         &f.trader,
         &symbol,
         &size2,
         &(500 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     f.env.as_contract(&f.pm_addr, || {
@@ -687,7 +745,9 @@ fn test_increase_position_updates_last_increased_time() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos1 = f.pm_client.get_position(&f.trader, &symbol);
@@ -714,7 +774,9 @@ fn test_increase_position_updates_last_increased_time() {
         &symbol,
         &(1_000 * USDC_UNIT),
         &(100 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos2 = f.pm_client.get_position(&f.trader, &symbol);
@@ -741,7 +803,9 @@ fn test_increase_position_succeeds_under_utilization_cap() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // If we get here without panic, the test passes
@@ -771,7 +835,9 @@ fn test_increase_position_reverts_when_utilization_cap_breached() {
         &symbol,
         &huge_size,
         &huge_collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -799,11 +865,16 @@ fn test_increase_position_at_exactly_max_utilization_succeeds() {
         &symbol,
         &exact_cap_size,
         &collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
-    assert_eq!(pos.size, exact_cap_size, "Position at exact utilization cap must succeed");
+    assert_eq!(
+        pos.size, exact_cap_size,
+        "Position at exact utilization cap must succeed"
+    );
 }
 
 #[test]
@@ -827,7 +898,9 @@ fn test_increase_position_just_over_utilization_cap_reverts() {
         &symbol,
         &over_cap_size,
         &collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -854,21 +927,31 @@ fn test_two_traders_open_positions_same_symbol() {
         &symbol,
         &size1,
         &(1_000 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     f.pm_client.increase_position(
         &trader2,
         &symbol,
         &size2,
         &(2_000 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos1 = f.pm_client.get_position(&f.trader, &symbol);
     let pos2 = f.pm_client.get_position(&trader2, &symbol);
 
-    assert_eq!(pos1.size, size1, "Trader1 position size must be independent");
-    assert_eq!(pos2.size, size2, "Trader2 position size must be independent");
+    assert_eq!(
+        pos1.size, size1,
+        "Trader1 position size must be independent"
+    );
+    assert_eq!(
+        pos2.size, size2,
+        "Trader2 position size must be independent"
+    );
 
     let market = f.pm_client.get_market(&symbol);
     assert_eq!(
@@ -891,14 +974,18 @@ fn test_same_trader_opens_different_symbols() {
         &btc,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     f.pm_client.increase_position(
         &f.trader,
         &eth,
         &(5_000 * USDC_UNIT),
         &(500 * USDC_UNIT),
-        &false, &0, &0,
+        &false,
+        &0,
+        &0,
     );
 
     let btc_pos = f.pm_client.get_position(&f.trader, &btc);
@@ -906,7 +993,11 @@ fn test_same_trader_opens_different_symbols() {
 
     assert_eq!(btc_pos.size, DEFAULT_SIZE, "BTC position must be correct");
     assert!(btc_pos.is_long, "BTC must be long");
-    assert_eq!(eth_pos.size, 5_000 * USDC_UNIT, "ETH position must be correct");
+    assert_eq!(
+        eth_pos.size,
+        5_000 * USDC_UNIT,
+        "ETH position must be correct"
+    );
     assert!(!eth_pos.is_long, "ETH must be short");
 
     let btc_market = f.pm_client.get_market(&btc);
@@ -928,10 +1019,8 @@ fn test_minimum_position_size() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &1_i128,       // 1 unit of size
-        &1_i128,       // 1 unit of collateral — below min_collateral
+        &f.trader, &symbol, &1_i128, // 1 unit of size
+        &1_i128, // 1 unit of collateral — below min_collateral
         &true, &0, &0,
     );
 }
@@ -952,11 +1041,16 @@ fn test_max_leverage_position_at_boundary() {
         &symbol,
         &high_lev_size,
         &high_lev_collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
-    assert_eq!(pos.size, high_lev_size, "100x leverage position must be stored");
+    assert_eq!(
+        pos.size, high_lev_size,
+        "100x leverage position must be stored"
+    );
     assert_eq!(pos.collateral, high_lev_collateral, "Collateral must match");
 }
 
@@ -972,13 +1066,8 @@ fn test_excessive_leverage_reverts() {
     let collateral = 100 * USDC_UNIT;
     let size = 10_100 * USDC_UNIT;
 
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 }
 
 #[test]
@@ -996,7 +1085,9 @@ fn test_vault_reserve_liquidity_called() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let free_after = f.vault_client.free_liquidity();
@@ -1023,7 +1114,9 @@ fn test_open_position_with_both_zero_reverts() {
         &symbol_short!("BTC"),
         &0_i128,
         &0_i128,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -1044,7 +1137,9 @@ fn test_global_avg_price_weighted_correctly_after_multiple_traders() {
         &symbol,
         &size1,
         &(1_000 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // Change price to $60,000.
@@ -1069,7 +1164,9 @@ fn test_global_avg_price_weighted_correctly_after_multiple_traders() {
         &symbol,
         &size2,
         &(2_000 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let market = f.pm_client.get_market(&symbol);
@@ -1093,12 +1190,20 @@ fn test_increase_position_does_not_affect_opposite_side_oi() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let market = f.pm_client.get_market(&symbol);
-    assert_eq!(market.short_open_interest, 0, "Short OI must not be affected by long open");
-    assert_eq!(market.global_short_avg_price, 0, "Short avg price must remain zero");
+    assert_eq!(
+        market.short_open_interest, 0,
+        "Short OI must not be affected by long open"
+    );
+    assert_eq!(
+        market.global_short_avg_price, 0,
+        "Short avg price must remain zero"
+    );
 }
 
 #[test]
@@ -1117,7 +1222,9 @@ fn test_trader_collateral_insufficient_reverts() {
         &symbol,
         &DEFAULT_SIZE,
         &excess_collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -1140,7 +1247,9 @@ fn test_cumulative_utilization_across_multiple_positions() {
         &symbol,
         &(400_000 * USDC_UNIT),
         &(40_000 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // Position 2: 400k (cumulative 80% utilization -- under cap)
@@ -1150,7 +1259,9 @@ fn test_cumulative_utilization_across_multiple_positions() {
         &symbol,
         &(400_000 * USDC_UNIT),
         &(40_000 * USDC_UNIT),
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // Position 3: 100k would push to 90% utilization -- should breach cap.

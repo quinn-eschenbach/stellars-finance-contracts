@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol};
+use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 // ---------------------------------------------------------------------------
 // Helper: deploy all contracts and return clients
@@ -10,10 +10,10 @@ struct TestFixture {
     env: Env,
     admin: Address,
     token_id: Address,
-    token_client: mock_token::MockTokenClient<'static>,
+    // token_client: mock_token::MockTokenClient<'static>,
     config_id: Address,
-    config_client: config_manager::ConfigManagerClient<'static>,
-    vault_id: Address,
+    // config_client: config_manager::ConfigManagerClient<'static>,
+    // vault_id: Address,
     vault_client: crate::VaultContractClient<'static>,
     position_manager: Address,
 }
@@ -46,18 +46,18 @@ fn setup() -> TestFixture {
 
     // SAFETY: env lives in the fixture, clients borrow from it.
     // We transmute lifetimes because the fixture owns the Env.
-    let token_client = unsafe { core::mem::transmute(token_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
+    // let token_client = unsafe { core::mem::transmute(token_client) };
+    // let config_client = unsafe { core::mem::transmute(config_client) };
     let vault_client = unsafe { core::mem::transmute(vault_client) };
 
     TestFixture {
         env,
         admin,
         token_id,
-        token_client,
+        // token_client,
         config_id,
-        config_client,
-        vault_id,
+        // config_client,
+        // vault_id,
         vault_client,
         position_manager,
     }
@@ -72,8 +72,12 @@ fn test_initialize_success() {
     let fix = setup();
 
     // Initialize the vault
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 
     // query_asset should return the USDC token address
     assert_eq!(
@@ -128,12 +132,20 @@ fn test_initialize_double_init_reverts() {
     let fix = setup();
 
     // First init succeeds
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 
     // Second init must panic with VaultError::AlreadyInitialized (= 1)
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 }
 
 // ===========================================================================
@@ -146,7 +158,7 @@ fn test_initialize_requires_admin_auth() {
     // NOTE: do NOT call env.mock_all_auths() -- we want real auth checks
 
     let admin = Address::generate(&env);
-    let position_manager = Address::generate(&env);
+    // let position_manager = Address::generate(&env);
 
     let token_id = env.register(mock_token::MockToken, ());
     let token_client = mock_token::MockTokenClient::new(&env, &token_id);
@@ -542,11 +554,19 @@ fn test_release_liquidity_before_init_panics() {
 fn test_config_manager_stored_after_init() {
     let fix = setup();
 
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 
     // Verify the vault is operational after init by calling a view function.
-    assert_eq!(fix.vault_client.free_liquidity(), 0, "empty vault has zero free liquidity");
+    assert_eq!(
+        fix.vault_client.free_liquidity(),
+        0,
+        "empty vault has zero free liquidity"
+    );
 }
 
 // ===========================================================================
@@ -558,8 +578,12 @@ fn test_config_manager_stored_after_init() {
 fn test_double_init_different_config_manager_reverts() {
     let fix = setup();
 
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 
     // Deploy a second config manager
     let config_id2 = fix.env.register(config_manager::ConfigManagerContract, ());
@@ -567,8 +591,12 @@ fn test_double_init_different_config_manager_reverts() {
     config_client2.initialize(&fix.admin);
 
     // Attempt to re-initialize with a different config manager -- must fail
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &config_id2, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &config_id2,
+        &fix.position_manager,
+    );
 }
 
 // ===========================================================================
@@ -580,8 +608,12 @@ fn test_double_init_different_config_manager_reverts() {
 fn test_double_init_different_asset_reverts() {
     let fix = setup();
 
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 
     // Deploy a second token
     let token_id2 = fix.env.register(mock_token::MockToken, ());
@@ -594,8 +626,12 @@ fn test_double_init_different_asset_reverts() {
     );
 
     // Attempt to re-initialize with a different asset -- must fail
-    fix.vault_client
-        .initialize(&fix.admin, &token_id2, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &token_id2,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 }
 
 // ===========================================================================
@@ -607,12 +643,20 @@ fn test_double_init_different_asset_reverts() {
 fn test_double_init_different_admin_reverts() {
     let fix = setup();
 
-    fix.vault_client
-        .initialize(&fix.admin, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &fix.admin,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 
     let attacker = Address::generate(&fix.env);
 
     // Attacker tries to re-initialize with themselves as admin
-    fix.vault_client
-        .initialize(&attacker, &fix.token_id, &fix.config_id, &fix.position_manager);
+    fix.vault_client.initialize(
+        &attacker,
+        &fix.token_id,
+        &fix.config_id,
+        &fix.position_manager,
+    );
 }

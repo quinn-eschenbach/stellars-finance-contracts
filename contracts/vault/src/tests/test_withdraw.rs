@@ -23,11 +23,11 @@ const ONE_USDC: i128 = 10_000_000; // 1.0000000
 struct TestFixture {
     env: Env,
     admin: Address,
-    token_id: Address,
+    // token_id: Address,
     token_client: mock_token::MockTokenClient<'static>,
-    config_id: Address,
+    // config_id: Address,
     config_client: config_manager::ConfigManagerClient<'static>,
-    vault_id: Address,
+    // vault_id: Address,
     vault_client: crate::VaultContractClient<'static>,
     position_manager: Address,
 }
@@ -56,23 +56,29 @@ fn setup() -> TestFixture {
     config_client.initialize(&admin);
 
     // Set protocol limits with zero cooldown so existing tests pass
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1,
-        cooldown_duration: 0,
-        min_position_lifetime: 0,
-        max_utilization_ratio: 10_000,
-        funding_cut_bps: 0,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1,
+            cooldown_duration: 0,
+            min_position_lifetime: 0,
+            max_utilization_ratio: 10_000,
+            funding_cut_bps: 0,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
     // --- vault ---
     let vault_id = env.register(crate::VaultContract, ());
@@ -87,11 +93,11 @@ fn setup() -> TestFixture {
     TestFixture {
         env,
         admin,
-        token_id,
+        // token_id,
         token_client,
-        config_id,
+        // config_id,
         config_client,
-        vault_id,
+        // vault_id,
         vault_client,
         position_manager,
     }
@@ -129,7 +135,9 @@ fn test_withdraw_success() {
     let user_token_before = fix.token_client.balance(&user);
 
     let withdraw_amount = 50 * ONE_USDC;
-    let shares_burned = fix.vault_client.withdraw(&withdraw_amount, &user, &user, &user);
+    let shares_burned = fix
+        .vault_client
+        .withdraw(&withdraw_amount, &user, &user, &user);
 
     assert!(
         shares_burned > 0,
@@ -175,7 +183,8 @@ fn test_withdraw_full_amount() {
     let _shares = deposit_usdc(&fix, &user, deposit_amount);
 
     // Withdraw the full deposited amount
-    fix.vault_client.withdraw(&deposit_amount, &user, &user, &user);
+    fix.vault_client
+        .withdraw(&deposit_amount, &user, &user, &user);
 
     assert_eq!(
         fix.vault_client.balance(&user),
@@ -215,7 +224,9 @@ fn test_redeem_success() {
     let shares_to_redeem = shares / 2;
     let user_token_before = fix.token_client.balance(&user);
 
-    let assets_returned = fix.vault_client.redeem(&shares_to_redeem, &user, &user, &user);
+    let assets_returned = fix
+        .vault_client
+        .redeem(&shares_to_redeem, &user, &user, &user);
 
     assert!(
         assets_returned > 0,
@@ -259,10 +270,12 @@ fn test_withdraw_exceeds_free_liquidity_reverts() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Reserve 80 USDC -- only 20 remain free
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(80 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(80 * ONE_USDC));
 
     // Attempt to withdraw 50 USDC -- exceeds the 20 USDC free liquidity
-    fix.vault_client.withdraw(&(50 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(50 * ONE_USDC), &user, &user, &user);
 }
 
 // ===========================================================================
@@ -276,7 +289,8 @@ fn test_max_withdraw_respects_free_liquidity() {
     let user = Address::generate(&fix.env);
 
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
 
     let max_w = fix.vault_client.max_withdraw(&user);
     assert_eq!(
@@ -348,7 +362,8 @@ fn test_withdraw_when_paused_reverts() {
     fix.vault_client.pause(&pauser);
 
     // Withdraw while paused -- must panic with VaultError::Paused = 3
-    fix.vault_client.withdraw(&(50 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(50 * ONE_USDC), &user, &user, &user);
 }
 
 // ===========================================================================
@@ -385,10 +400,12 @@ fn test_withdraw_after_release_liquidity() {
 
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(80 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(80 * ONE_USDC));
     // Free = 20
 
-    fix.vault_client.release_liquidity(&fix.position_manager, &(30 * ONE_USDC));
+    fix.vault_client
+        .release_liquidity(&fix.position_manager, &(30 * ONE_USDC));
     // Reserved now 50, free = 50
 
     let free = fix.vault_client.free_liquidity();
@@ -400,7 +417,8 @@ fn test_withdraw_after_release_liquidity() {
 
     // Withdraw exactly the free amount -- must succeed
     let user_token_before = fix.token_client.balance(&user);
-    fix.vault_client.withdraw(&(50 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(50 * ONE_USDC), &user, &user, &user);
     let user_token_after = fix.token_client.balance(&user);
 
     assert_eq!(
@@ -476,7 +494,8 @@ fn test_withdraw_more_than_deposited_reverts() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Attempt to withdraw 200 USDC when only 100 is deposited
-    fix.vault_client.withdraw(&(200 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(200 * ONE_USDC), &user, &user, &user);
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +528,8 @@ fn test_redeem_exceeds_free_liquidity_reverts() {
     let shares = deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Reserve 90 -- only 10 USDC free
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(90 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(90 * ONE_USDC));
 
     // Redeem all shares -- needs 100 USDC but only 10 is free
     fix.vault_client.redeem(&shares, &user, &user, &user);
@@ -590,7 +610,8 @@ fn test_withdraw_succeeds_after_unpause() {
 
     // Withdraw should work again
     let user_token_before = fix.token_client.balance(&user);
-    fix.vault_client.withdraw(&(50 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(50 * ONE_USDC), &user, &user, &user);
     let user_token_after = fix.token_client.balance(&user);
 
     assert_eq!(
@@ -632,11 +653,13 @@ fn test_withdraw_exactly_at_free_liquidity_boundary() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Reserve 60 -- exactly 40 free
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
 
     // Withdraw exactly 40 -- right at the boundary, must succeed
     let user_token_before = fix.token_client.balance(&user);
-    fix.vault_client.withdraw(&(40 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(40 * ONE_USDC), &user, &user, &user);
     let user_token_after = fix.token_client.balance(&user);
 
     assert_eq!(
@@ -658,10 +681,12 @@ fn test_withdraw_one_over_free_liquidity_reverts() {
 
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
 
     // 40 USDC free, try 40 + 1 unit
-    fix.vault_client.withdraw(&(40 * ONE_USDC + 1), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(40 * ONE_USDC + 1), &user, &user, &user);
 }
 
 // ---------------------------------------------------------------------------
@@ -677,7 +702,9 @@ fn test_preview_withdraw_matches_actual_withdraw() {
 
     let withdraw_amount = 50 * ONE_USDC;
     let preview_shares = fix.vault_client.preview_withdraw(&withdraw_amount);
-    let actual_shares = fix.vault_client.withdraw(&withdraw_amount, &user, &user, &user);
+    let actual_shares = fix
+        .vault_client
+        .withdraw(&withdraw_amount, &user, &user, &user);
 
     assert_eq!(
         preview_shares, actual_shares,
@@ -744,7 +771,8 @@ fn test_withdraw_from_empty_vault_reverts() {
     let user = Address::generate(&fix.env);
 
     // No deposits have been made, vault is empty
-    fix.vault_client.withdraw(&(1 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(1 * ONE_USDC), &user, &user, &user);
 }
 
 // ---------------------------------------------------------------------------
@@ -758,7 +786,8 @@ fn test_redeem_from_empty_vault_reverts() {
     let user = Address::generate(&fix.env);
 
     // No deposits, user has no shares
-    fix.vault_client.redeem(&(1 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .redeem(&(1 * ONE_USDC), &user, &user, &user);
 }
 
 // ---------------------------------------------------------------------------
@@ -775,10 +804,12 @@ fn test_multiple_users_withdraw_independently() {
     deposit_usdc(&fix, &bob, 200 * ONE_USDC);
 
     // Alice withdraws 50
-    fix.vault_client.withdraw(&(50 * ONE_USDC), &alice, &alice, &alice);
+    fix.vault_client
+        .withdraw(&(50 * ONE_USDC), &alice, &alice, &alice);
 
     // Bob withdraws 150
-    fix.vault_client.withdraw(&(150 * ONE_USDC), &bob, &bob, &bob);
+    fix.vault_client
+        .withdraw(&(150 * ONE_USDC), &bob, &bob, &bob);
 
     // Alice still has 50 USDC equivalent in shares
     let alice_max = fix.vault_client.max_withdraw(&alice);
@@ -814,7 +845,8 @@ fn test_max_redeem_consistent_with_max_withdraw() {
     let user = Address::generate(&fix.env);
 
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(60 * ONE_USDC));
 
     let max_w = fix.vault_client.max_withdraw(&user);
     let max_r = fix.vault_client.max_redeem(&user);
@@ -840,14 +872,17 @@ fn test_reserve_withdraw_reserve_cycle() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Round 1: reserve 30, withdraw 20
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(30 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(30 * ONE_USDC));
     assert_eq!(fix.vault_client.free_liquidity(), 70 * ONE_USDC);
-    fix.vault_client.withdraw(&(20 * ONE_USDC), &user, &user, &user);
+    fix.vault_client
+        .withdraw(&(20 * ONE_USDC), &user, &user, &user);
     // total_assets = 80, reserved = 30, free = 50
     assert_eq!(fix.vault_client.free_liquidity(), 50 * ONE_USDC);
 
     // Round 2: reserve another 40 (total reserved 70)
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(40 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(40 * ONE_USDC));
     // total_assets = 80, reserved = 70, free = 10
     assert_eq!(fix.vault_client.free_liquidity(), 10 * ONE_USDC);
 
@@ -875,7 +910,8 @@ fn test_withdraw_different_receiver() {
     let receiver_before = fix.token_client.balance(&receiver);
 
     // Owner withdraws but sends USDC to a different receiver
-    fix.vault_client.withdraw(&(50 * ONE_USDC), &receiver, &owner, &owner);
+    fix.vault_client
+        .withdraw(&(50 * ONE_USDC), &receiver, &owner, &owner);
 
     let receiver_after = fix.token_client.balance(&receiver);
     assert_eq!(
@@ -906,7 +942,8 @@ fn test_redeem_different_receiver() {
 
     let receiver_before = fix.token_client.balance(&receiver);
 
-    fix.vault_client.redeem(&(shares / 2), &receiver, &owner, &owner);
+    fix.vault_client
+        .redeem(&(shares / 2), &receiver, &owner, &owner);
 
     let receiver_after = fix.token_client.balance(&receiver);
     assert!(
@@ -927,7 +964,8 @@ fn test_free_liquidity_floor_at_zero() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Reserve the entire amount
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(100 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(100 * ONE_USDC));
 
     let free = fix.vault_client.free_liquidity();
     assert_eq!(
@@ -979,7 +1017,8 @@ fn test_free_liquidity_accounts_for_unclaimed_fees() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Accrue 10 USDC in fees via position manager
-    fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
+    fix.vault_client
+        .accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
     // free_liquidity = 100 - 0 - 10 - 0 = 90
     assert_eq!(
@@ -1009,7 +1048,8 @@ fn test_free_liquidity_accounts_for_positive_net_pnl() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Set net PnL to +20 USDC (traders are in profit overall)
-    fix.vault_client.update_net_pnl(&fix.position_manager, &(20 * ONE_USDC));
+    fix.vault_client
+        .update_net_pnl(&fix.position_manager, &(20 * ONE_USDC));
 
     // free_liquidity = 100 - 0 - 0 - 20 = 80
     assert_eq!(
@@ -1031,7 +1071,8 @@ fn test_free_liquidity_ignores_negative_net_pnl() {
     deposit_usdc(&fix, &user, 100 * ONE_USDC);
 
     // Set net PnL to -30 USDC (traders are in loss overall)
-    fix.vault_client.update_net_pnl(&fix.position_manager, &(-30 * ONE_USDC));
+    fix.vault_client
+        .update_net_pnl(&fix.position_manager, &(-30 * ONE_USDC));
 
     // free_liquidity = 100 - 0 - 0 - max(0, -30) = 100 - 0 = 100
     assert_eq!(
@@ -1053,13 +1094,16 @@ fn test_free_liquidity_full_formula() {
     deposit_usdc(&fix, &user, 200 * ONE_USDC);
 
     // Reserve 50
-    fix.vault_client.reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
+    fix.vault_client
+        .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
 
     // Accrue 10 in fees
-    fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
+    fix.vault_client
+        .accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
     // Set net PnL to +30
-    fix.vault_client.update_net_pnl(&fix.position_manager, &(30 * ONE_USDC));
+    fix.vault_client
+        .update_net_pnl(&fix.position_manager, &(30 * ONE_USDC));
 
     // free_liquidity = max(0, 200 - 50 - 10 - 30) = 110
     assert_eq!(

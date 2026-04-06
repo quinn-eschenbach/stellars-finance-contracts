@@ -12,9 +12,9 @@
 // ---------------------------------------------------------------------------
 
 use soroban_sdk::{
+    symbol_short,
     testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Env, String, Symbol,
-    symbol_short, vec,
+    vec, Address, Env, String, Symbol,
 };
 
 use crate::contract::PositionManagerContract;
@@ -55,11 +55,11 @@ const ONE_HOUR: u64 = 3_600;
 struct UpdateIndicesFixture {
     env: Env,
     pm_client: PositionManagerClient<'static>,
-    vault_id: Address,
+    // vault_id: Address,
     vault_client: vault::VaultContractClient<'static>,
-    config_id: Address,
+    // config_id: Address,
     config_client: config_manager::ConfigManagerClient<'static>,
-    token_id: Address,
+    // token_id: Address,
     token_client: mock_token::MockTokenClient<'static>,
     oracle_client: MockOracleClient<'static>,
     admin: Address,
@@ -110,13 +110,16 @@ fn setup() -> UpdateIndicesFixture {
     config_client.initialize(&admin);
     config_client.grant_role(&admin, &Symbol::new(&env, "KEEPER"), &keeper);
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
     // -- Deploy Vault --
     // We use the PM contract address as position_manager in vault init. We need
@@ -180,11 +183,11 @@ fn setup() -> UpdateIndicesFixture {
     UpdateIndicesFixture {
         env,
         pm_client,
-        vault_id,
+        // vault_id,
         vault_client,
-        config_id,
+        // config_id,
         config_client,
-        token_id,
+        // token_id,
         token_client,
         oracle_client,
         admin,
@@ -210,12 +213,11 @@ fn seed_market(f: &UpdateIndicesFixture, symbol: &Symbol, market: &MarketInfo) {
 }
 
 /// Read MarketInfo from storage for a given symbol.
-fn read_market(f: &UpdateIndicesFixture, symbol: &Symbol) -> MarketInfo {
+fn _read_market(f: &UpdateIndicesFixture, symbol: &Symbol) -> MarketInfo {
     let pm_addr = f.pm_client.address.clone();
     let sym = symbol.clone();
-    f.env.as_contract(&pm_addr, || {
-        storage::get_market(&f.env, &sym)
-    })
+    f.env
+        .as_contract(&pm_addr, || storage::get_market(&f.env, &sym))
 }
 
 /// Advance the ledger timestamp by `delta` seconds from T0.
@@ -266,11 +268,8 @@ fn test_update_indices_reverts_when_paused() {
     let symbol = Symbol::new(&f.env, "BTC");
 
     // Grant PAUSER role to admin so we can pause
-    f.config_client.grant_role(
-        &f.admin,
-        &Symbol::new(&f.env, "PAUSER"),
-        &f.admin,
-    );
+    f.config_client
+        .grant_role(&f.admin, &Symbol::new(&f.env, "PAUSER"), &f.admin);
     f.pm_client.pause(&f.admin);
 
     // Now attempt update_indices while paused
@@ -321,7 +320,7 @@ fn test_update_indices_advances_borrow_and_funding_indices() {
         global_short_avg_price: 50_000 * ONE_USDC,
         long_open_interest: 500_000 * ONE_USDC,
         short_open_interest: 300_000 * ONE_USDC,
-        acc_borrow_index: INDEX_PRECISION, // start at 1.0
+        acc_borrow_index: INDEX_PRECISION,  // start at 1.0
         acc_funding_index: INDEX_PRECISION, // start at 1.0
         last_index_update: T0,
     };
@@ -339,16 +338,14 @@ fn test_update_indices_advances_borrow_and_funding_indices() {
     let total_assets = free_liq + total_reserved;
     let util_bps = calc_utilization_bps(total_reserved, total_assets);
     let borrow_rate = calc_borrow_rate(util_bps, BASE_BORROW_RATE, SLOPE1, SLOPE2, OPTIMAL_UTIL);
-    let expected_borrow_index =
-        accumulate_borrow_index(INDEX_PRECISION, borrow_rate, ONE_HOUR);
+    let expected_borrow_index = accumulate_borrow_index(INDEX_PRECISION, borrow_rate, ONE_HOUR);
 
     let funding_rate = calc_funding_rate(
         initial_market.long_open_interest,
         initial_market.short_open_interest,
         BASE_FUNDING_RATE,
     );
-    let expected_funding_index =
-        accumulate_funding_index(INDEX_PRECISION, funding_rate, ONE_HOUR);
+    let expected_funding_index = accumulate_funding_index(INDEX_PRECISION, funding_rate, ONE_HOUR);
 
     // Read updated market
     let updated = f.pm_client.get_market(&symbol);
@@ -618,7 +615,8 @@ fn test_update_indices_large_time_delta() {
     advance_time(&f, t1);
 
     // Re-set oracle price so it's not stale after the large time advance
-    f.oracle_client.set_price(&symbol, &(50_000 * 10_000_000_i128));
+    f.oracle_client
+        .set_price(&symbol, &(50_000 * 10_000_000_i128));
 
     // This must not panic from overflow
     f.pm_client.update_indices(&f.keeper, &symbol);
@@ -694,7 +692,7 @@ fn test_update_indices_does_not_modify_oi_or_avg_prices() {
         global_short_avg_price: 52_000 * ONE_USDC,
         long_open_interest: 750_000 * ONE_USDC,
         short_open_interest: 250_000 * ONE_USDC,
-        acc_borrow_index: 2 * INDEX_PRECISION,  // previously accumulated
+        acc_borrow_index: 2 * INDEX_PRECISION, // previously accumulated
         acc_funding_index: INDEX_PRECISION + 42, // small offset
         last_index_update: T0,
     };
@@ -763,8 +761,8 @@ fn test_update_indices_short_heavier_oi_negative_funding() {
     let initial_market = MarketInfo {
         global_long_avg_price: 50_000 * ONE_USDC,
         global_short_avg_price: 50_000 * ONE_USDC,
-        long_open_interest: 200_000 * ONE_USDC,   // longs smaller
-        short_open_interest: 800_000 * ONE_USDC,   // shorts larger
+        long_open_interest: 200_000 * ONE_USDC, // longs smaller
+        short_open_interest: 800_000 * ONE_USDC, // shorts larger
         acc_borrow_index: INDEX_PRECISION,
         acc_funding_index: INDEX_PRECISION,
         last_index_update: T0,

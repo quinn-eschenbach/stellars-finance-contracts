@@ -17,7 +17,7 @@
 
 use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, vec, Address, Env, Symbol};
 
-use crate::{OracleConfig, OracleRouterError};
+use crate::OracleRouterError;
 
 use super::helpers::{deploy_initialized, deploy_with_config_manager};
 

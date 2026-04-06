@@ -1,0 +1,32 @@
+services:
+  stellar:
+    image: stellar/quickstart:testing
+    container_name: stellar-local
+    command: --local --enable-soroban-rpc
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: stellars-postgres
+    environment:
+      POSTGRES_USER: stellars
+      POSTGRES_PASSWORD: stellars
+      POSTGRES_DB: stellars
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stellars"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+volumes:
+  pgdata:

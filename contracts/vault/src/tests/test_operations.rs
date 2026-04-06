@@ -91,7 +91,9 @@ fn seed_vault(fix: &TestFixture, amount: i128) -> (Address, i128) {
 
     // Use vault's mint function with the depositor paying and receiving.
     let shares = fix.vault_client.preview_deposit(&amount);
-    let assets_needed = fix.vault_client.mint(&shares, &depositor, &depositor, &depositor);
+    let assets_needed = fix
+        .vault_client
+        .mint(&shares, &depositor, &depositor, &depositor);
     assert!(
         assets_needed <= amount,
         "mint consumed {} assets but depositor only has {}",
@@ -112,10 +114,9 @@ fn grant_pauser(fix: &TestFixture) -> Address {
 }
 
 /// Grant ADMIN role and return the admin address (for claim_fees tests).
-fn grant_admin_role(fix: &TestFixture, addr: &Address) {
+fn _grant_admin_role(fix: &TestFixture, addr: &Address) {
     let admin_role = Symbol::new(&fix.env, shared::ROLE_ADMIN);
-    fix.config_client
-        .grant_role(&fix.admin, &admin_role, addr);
+    fix.config_client.grant_role(&fix.admin, &admin_role, addr);
 }
 
 // ===========================================================================
@@ -135,14 +136,20 @@ mod settle_pnl {
         let trader = Address::generate(&fix.env);
 
         // Give PM some USDC (representing trader's margin held by PM)
-        fix.token_client.mint(&fix.position_manager, &(10 * ONE_USDC));
+        fix.token_client
+            .mint(&fix.position_manager, &(10 * ONE_USDC));
 
         let vault_balance_before = fix.token_client.balance(&fix.vault_id);
         let total_assets_before = fix.vault_client.total_assets();
 
         // Settle loss of 10 USDC (is_profit = false => PM sends margin to vault)
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(10 * ONE_USDC), &0i128, &false);
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(10 * ONE_USDC),
+            &0i128,
+            &false,
+        );
 
         let vault_balance_after = fix.token_client.balance(&fix.vault_id);
         let total_assets_after = fix.vault_client.total_assets();
@@ -176,8 +183,13 @@ mod settle_pnl {
         let vault_balance_before = fix.token_client.balance(&fix.vault_id);
 
         // Settle profit of 10 USDC (is_profit = true => vault pays trader)
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(10 * ONE_USDC), &0i128, &true);
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(10 * ONE_USDC),
+            &0i128,
+            &true,
+        );
 
         let vault_balance_after = fix.token_client.balance(&fix.vault_id);
 
@@ -209,8 +221,13 @@ mod settle_pnl {
 
         // Try to settle profit of 10 USDC, but only 5 free
         // Should panic with InsufficientFreeLiquidity = 4
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(10 * ONE_USDC), &0i128, &true);
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(10 * ONE_USDC),
+            &0i128,
+            &true,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -275,9 +292,15 @@ mod settle_pnl {
         let value_before = fix.vault_client.convert_to_assets(&shares);
 
         // Settle loss of 50 USDC (vault gains 50 USDC from PM's margin)
-        fix.token_client.mint(&fix.position_manager, &(50 * ONE_USDC));
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(50 * ONE_USDC), &0i128, &false);
+        fix.token_client
+            .mint(&fix.position_manager, &(50 * ONE_USDC));
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(50 * ONE_USDC),
+            &0i128,
+            &false,
+        );
 
         let value_after = fix.vault_client.convert_to_assets(&shares);
 
@@ -312,8 +335,13 @@ mod settle_pnl {
         let value_before = fix.vault_client.convert_to_assets(&shares);
 
         // Settle profit of 30 USDC (vault loses 30 USDC)
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(30 * ONE_USDC), &0i128, &true);
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(30 * ONE_USDC),
+            &0i128,
+            &true,
+        );
 
         let value_after = fix.vault_client.convert_to_assets(&shares);
 
@@ -340,8 +368,13 @@ mod settle_pnl {
             .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
 
         // Settle exactly 50 profit -- should succeed at the boundary
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(50 * ONE_USDC), &0i128, &true);
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(50 * ONE_USDC),
+            &0i128,
+            &true,
+        );
 
         assert_eq!(
             fix.vault_client.free_liquidity(),
@@ -365,8 +398,13 @@ mod settle_pnl {
             .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
 
         // Settle 50 * ONE_USDC + 1 = should fail
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(50 * ONE_USDC + 1), &0i128, &true);
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(50 * ONE_USDC + 1),
+            &0i128,
+            &true,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -400,9 +438,15 @@ mod settle_pnl {
         let free_before = fix.vault_client.free_liquidity();
 
         // Settle loss (PM sends margin)
-        fix.token_client.mint(&fix.position_manager, &(10 * ONE_USDC));
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(10 * ONE_USDC), &0i128, &false);
+        fix.token_client
+            .mint(&fix.position_manager, &(10 * ONE_USDC));
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(10 * ONE_USDC),
+            &0i128,
+            &false,
+        );
 
         let free_after = fix.vault_client.free_liquidity();
 
@@ -432,8 +476,13 @@ mod settle_pnl {
         assert_eq!(fix.vault_client.free_liquidity(), 50 * ONE_USDC);
 
         // Settle profit of 10, and release 20 from reserved (position partially closed)
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(10 * ONE_USDC), &(20 * ONE_USDC), &true);
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(10 * ONE_USDC),
+            &(20 * ONE_USDC),
+            &true,
+        );
 
         // After: total_assets = 90, reserved = 30, free = 90 - 30 = 60
         assert_eq!(
@@ -458,9 +507,15 @@ mod settle_pnl {
             .reserve_liquidity(&fix.position_manager, &(10 * ONE_USDC));
 
         // Settle with reserved_delta = 50 (more than 10 reserved) -- must panic
-        fix.token_client.mint(&fix.position_manager, &(5 * ONE_USDC));
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(5 * ONE_USDC), &(50 * ONE_USDC), &false);
+        fix.token_client
+            .mint(&fix.position_manager, &(5 * ONE_USDC));
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(5 * ONE_USDC),
+            &(50 * ONE_USDC),
+            &false,
+        );
     }
 }
 
@@ -480,7 +535,11 @@ mod reserve_liquidity {
         seed_vault(&fix, 100 * ONE_USDC);
 
         let free_before = fix.vault_client.free_liquidity();
-        assert_eq!(free_before, 100 * ONE_USDC, "Free liquidity must equal deposited amount");
+        assert_eq!(
+            free_before,
+            100 * ONE_USDC,
+            "Free liquidity must equal deposited amount"
+        );
 
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
@@ -518,7 +577,8 @@ mod reserve_liquidity {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.reserve_liquidity(&fix.position_manager, &0i128);
+        fix.vault_client
+            .reserve_liquidity(&fix.position_manager, &0i128);
     }
 
     // -----------------------------------------------------------------------
@@ -530,7 +590,8 @@ mod reserve_liquidity {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.reserve_liquidity(&fix.position_manager, &-1i128);
+        fix.vault_client
+            .reserve_liquidity(&fix.position_manager, &-1i128);
     }
 
     // -----------------------------------------------------------------------
@@ -641,7 +702,8 @@ mod release_liquidity {
 
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
-        fix.vault_client.release_liquidity(&fix.position_manager, &0i128);
+        fix.vault_client
+            .release_liquidity(&fix.position_manager, &0i128);
     }
 
     // -----------------------------------------------------------------------
@@ -655,7 +717,8 @@ mod release_liquidity {
 
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
-        fix.vault_client.release_liquidity(&fix.position_manager, &-5i128);
+        fix.vault_client
+            .release_liquidity(&fix.position_manager, &-5i128);
     }
 
     // -----------------------------------------------------------------------
@@ -673,7 +736,8 @@ mod release_liquidity {
 
         let free = fix.vault_client.free_liquidity();
         assert_eq!(
-            free, 100 * ONE_USDC,
+            free,
+            100 * ONE_USDC,
             "Free liquidity must equal total_assets after releasing all reserved"
         );
     }
@@ -727,49 +791,31 @@ mod pause_unpause {
 
         // Before pause, max_deposit should be large (i128::MAX or similar)
         let max_before = fix.vault_client.max_deposit(&user);
-        assert!(
-            max_before > 0,
-            "max_deposit must be > 0 before pause"
-        );
+        assert!(max_before > 0, "max_deposit must be > 0 before pause");
 
         // Pause
         fix.vault_client.pause(&pauser);
 
         let max_during = fix.vault_client.max_deposit(&user);
-        assert_eq!(
-            max_during, 0,
-            "max_deposit must be 0 when paused"
-        );
+        assert_eq!(max_during, 0, "max_deposit must be 0 when paused");
 
         // max_mint should also be 0 when paused
         let max_mint_during = fix.vault_client.max_mint(&user);
-        assert_eq!(
-            max_mint_during, 0,
-            "max_mint must be 0 when paused"
-        );
+        assert_eq!(max_mint_during, 0, "max_mint must be 0 when paused");
 
         // max_withdraw should also be 0 when paused
         let max_withdraw_during = fix.vault_client.max_withdraw(&user);
-        assert_eq!(
-            max_withdraw_during, 0,
-            "max_withdraw must be 0 when paused"
-        );
+        assert_eq!(max_withdraw_during, 0, "max_withdraw must be 0 when paused");
 
         // max_redeem should also be 0 when paused
         let max_redeem_during = fix.vault_client.max_redeem(&user);
-        assert_eq!(
-            max_redeem_during, 0,
-            "max_redeem must be 0 when paused"
-        );
+        assert_eq!(max_redeem_during, 0, "max_redeem must be 0 when paused");
 
         // Unpause
         fix.vault_client.unpause(&pauser);
 
         let max_after = fix.vault_client.max_deposit(&user);
-        assert!(
-            max_after > 0,
-            "max_deposit must be > 0 after unpause"
-        );
+        assert!(max_after > 0, "max_deposit must be > 0 after unpause");
     }
 
     // -----------------------------------------------------------------------
@@ -886,9 +932,15 @@ mod pause_unpause {
         fix.vault_client.pause(&pauser);
 
         // Settle loss should still work even when paused (PM sends margin)
-        fix.token_client.mint(&fix.position_manager, &(10 * ONE_USDC));
-        fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &(10 * ONE_USDC), &0i128, &false);
+        fix.token_client
+            .mint(&fix.position_manager, &(10 * ONE_USDC));
+        fix.vault_client.settle_pnl(
+            &fix.position_manager,
+            &trader,
+            &(10 * ONE_USDC),
+            &0i128,
+            &false,
+        );
 
         // Verify it went through
         assert_eq!(
@@ -1033,7 +1085,8 @@ mod update_net_pnl {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.update_net_pnl(&fix.position_manager, &(20 * ONE_USDC));
+        fix.vault_client
+            .update_net_pnl(&fix.position_manager, &(20 * ONE_USDC));
 
         // free_liquidity = 100 - 0 - 0 - 20 = 80
         assert_eq!(
@@ -1048,7 +1101,8 @@ mod update_net_pnl {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.update_net_pnl(&fix.position_manager, &(-30 * ONE_USDC));
+        fix.vault_client
+            .update_net_pnl(&fix.position_manager, &(-30 * ONE_USDC));
 
         // Negative PnL => max(0, pnl) = 0, so free = 100
         assert_eq!(
@@ -1063,7 +1117,8 @@ mod update_net_pnl {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.update_net_pnl(&fix.position_manager, &0i128);
+        fix.vault_client
+            .update_net_pnl(&fix.position_manager, &0i128);
 
         assert_eq!(
             fix.vault_client.free_liquidity(),
@@ -1077,11 +1132,13 @@ mod update_net_pnl {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.update_net_pnl(&fix.position_manager, &(50 * ONE_USDC));
+        fix.vault_client
+            .update_net_pnl(&fix.position_manager, &(50 * ONE_USDC));
         assert_eq!(fix.vault_client.free_liquidity(), 50 * ONE_USDC);
 
         // Update to 10 -- should overwrite, not accumulate
-        fix.vault_client.update_net_pnl(&fix.position_manager, &(10 * ONE_USDC));
+        fix.vault_client
+            .update_net_pnl(&fix.position_manager, &(10 * ONE_USDC));
         assert_eq!(
             fix.vault_client.free_liquidity(),
             90 * ONE_USDC,
@@ -1112,7 +1169,8 @@ mod accrue_fees {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.accrue_fees(&fix.position_manager, &(5 * ONE_USDC));
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(5 * ONE_USDC));
 
         // free_liquidity = 100 - 0 - 5 - 0 = 95
         assert_eq!(
@@ -1127,8 +1185,10 @@ mod accrue_fees {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.accrue_fees(&fix.position_manager, &(5 * ONE_USDC));
-        fix.vault_client.accrue_fees(&fix.position_manager, &(3 * ONE_USDC));
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(5 * ONE_USDC));
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(3 * ONE_USDC));
 
         // free_liquidity = 100 - 0 - 8 - 0 = 92
         assert_eq!(
@@ -1180,10 +1240,10 @@ mod claim_fees {
         seed_vault(&fix, 100 * ONE_USDC);
 
         // Accrue 10 USDC in fees
-        fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
         // Grant ADMIN role to admin
-
 
         let recipient = Address::generate(&fix.env);
         let recipient_before = fix.token_client.balance(&recipient);
@@ -1212,8 +1272,6 @@ mod claim_fees {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-
-
         let recipient = Address::generate(&fix.env);
 
         // No fees accrued -- should panic with ZeroAmount
@@ -1226,7 +1284,8 @@ mod claim_fees {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
         let attacker = Address::generate(&fix.env);
         let recipient = Address::generate(&fix.env);
@@ -1240,15 +1299,16 @@ mod claim_fees {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
-
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
         let recipient = Address::generate(&fix.env);
 
         fix.vault_client.claim_fees(&fix.admin, &recipient);
 
         // Accrue more fees
-        fix.vault_client.accrue_fees(&fix.position_manager, &(5 * ONE_USDC));
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(5 * ONE_USDC));
 
         // Claim again -- should only get the new 5 USDC
         let recipient2 = Address::generate(&fix.env);
@@ -1267,11 +1327,13 @@ mod claim_fees {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        fix.vault_client.accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(10 * ONE_USDC));
 
         let recipient = Address::generate(&fix.env);
 
         // PM does not have ADMIN role, should fail with SharedError::Unauthorized = 3
-        fix.vault_client.claim_fees(&fix.position_manager, &recipient);
+        fix.vault_client
+            .claim_fees(&fix.position_manager, &recipient);
     }
 }

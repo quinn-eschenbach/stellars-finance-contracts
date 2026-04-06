@@ -26,7 +26,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::PositionManagerContract;
-use crate::math::{self, PRECISION};
+use crate::math::PRECISION;
 use crate::storage;
 use crate::PositionManagerClient;
 
@@ -65,17 +65,17 @@ const BTC_PRICE_UP: i128 = 50_100 * PRECISION;
 struct TestFixture<'a> {
     env: Env,
     pm_client: PositionManagerClient<'a>,
-    vault_client: VaultContractClient<'a>,
+    _vault_client: VaultContractClient<'a>,
     oracle_client: MockOracleClient<'a>,
-    oracle_router_client: OracleRouterClient<'a>,
-    config_client: ConfigManagerClient<'a>,
+    _oracle_router_client: OracleRouterClient<'a>,
+    _config_client: ConfigManagerClient<'a>,
     usdc_client: MockTokenClient<'a>,
-    usdc_addr: Address,
+    _usdc_addr: Address,
     admin: Address,
     keeper: Address,
     trader: Address,
     pm_addr: Address,
-    vault_addr: Address,
+    _vault_addr: Address,
 }
 
 /// Deploy all protocol contracts. The vault receives a SMALL deposit so that
@@ -109,34 +109,43 @@ fn setup_adl<'a>() -> TestFixture<'a> {
 
     let pauser_role = Symbol::new(&env, "PAUSER");
     let keeper_role = Symbol::new(&env, "KEEPER");
-    let admin_role = Symbol::new(&env, "ADMIN");
+    let _admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1_000_000,
-        cooldown_duration: 60,
-        min_position_lifetime: 60,
-        max_utilization_ratio: 8_500,
-        funding_cut_bps: 500,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1_000_000,
+            cooldown_duration: 60,
+            min_position_lifetime: 60,
+            max_utilization_ratio: 8_500,
+            funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
-    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
-        lp_bps: 9000,
-    });
+    config_client.update_fee_splits(
+        &admin,
+        &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        },
+    );
 
     // --- 2. MockToken (USDC) ---
     let usdc_id = env.register(MockToken, ());
@@ -196,26 +205,26 @@ fn setup_adl<'a>() -> TestFixture<'a> {
 
     // SAFETY: env lives in the fixture; clients borrow from it.
     let pm_client = unsafe { core::mem::transmute(pm_client) };
-    let vault_client = unsafe { core::mem::transmute(vault_client) };
+    let _vault_client = unsafe { core::mem::transmute(vault_client) };
     let oracle_client = unsafe { core::mem::transmute(oracle_client) };
-    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
+    let _oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let _config_client = unsafe { core::mem::transmute(config_client) };
     let usdc_client = unsafe { core::mem::transmute(usdc_client) };
 
     TestFixture {
         env,
         pm_client,
-        vault_client,
+        _vault_client,
         oracle_client,
-        oracle_router_client,
-        config_client,
+        _oracle_router_client,
+        _config_client,
         usdc_client,
-        usdc_addr: usdc_id,
+        _usdc_addr: usdc_id,
         admin,
         keeper,
         trader,
         pm_addr: pm_id,
-        vault_addr: vault_id,
+        _vault_addr: vault_id,
     }
 }
 
@@ -247,34 +256,43 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
 
     let pauser_role = Symbol::new(&env, "PAUSER");
     let keeper_role = Symbol::new(&env, "KEEPER");
-    let admin_role = Symbol::new(&env, "ADMIN");
+    let _admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1_000_000,
-        cooldown_duration: 60,
-        min_position_lifetime: 60,
-        max_utilization_ratio: 8_500,
-        funding_cut_bps: 500,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1_000_000,
+            cooldown_duration: 60,
+            min_position_lifetime: 60,
+            max_utilization_ratio: 8_500,
+            funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
-    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
-        lp_bps: 9000,
-    });
+    config_client.update_fee_splits(
+        &admin,
+        &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        },
+    );
 
     let usdc_id = env.register(MockToken, ());
     let usdc_client = MockTokenClient::new(&env, &usdc_id);
@@ -325,26 +343,26 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
     usdc_client.mint(&trader, &TRADER_BALANCE);
 
     let pm_client = unsafe { core::mem::transmute(pm_client) };
-    let vault_client = unsafe { core::mem::transmute(vault_client) };
+    let _vault_client = unsafe { core::mem::transmute(vault_client) };
     let oracle_client = unsafe { core::mem::transmute(oracle_client) };
-    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
+    let _oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let _config_client = unsafe { core::mem::transmute(config_client) };
     let usdc_client = unsafe { core::mem::transmute(usdc_client) };
 
     TestFixture {
         env,
         pm_client,
-        vault_client,
+        _vault_client,
         oracle_client,
-        oracle_router_client,
-        config_client,
+        _oracle_router_client,
+        _config_client,
         usdc_client,
-        usdc_addr: usdc_id,
+        _usdc_addr: usdc_id,
         admin,
         keeper,
         trader,
         pm_addr: pm_id,
-        vault_addr: vault_id,
+        _vault_addr: vault_id,
     }
 }
 
@@ -395,11 +413,8 @@ fn test_adl_reverts_unauthorized_caller() {
     let f = setup_no_adl();
     let random_caller = Address::generate(&f.env);
 
-    f.pm_client.deleverage_position(
-        &random_caller,
-        &f.trader,
-        &symbol_short!("BTC"),
-    );
+    f.pm_client
+        .deleverage_position(&random_caller, &f.trader, &symbol_short!("BTC"));
 }
 
 // ===========================================================================
@@ -417,19 +432,15 @@ fn test_adl_reverts_when_utilization_is_normal() {
 
     let size = 10_000 * USDC_UNIT;
     let collateral = 1_000 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     // Advance time past oracle cache
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
     // Utilization is ~1%, well below ADL thresholds
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 }
 
 #[test]
@@ -445,17 +456,13 @@ fn test_adl_reverts_at_50_percent_utilization() {
     let collateral = 50_000 * USDC_UNIT;
     f.usdc_client.mint(&f.trader, &(collateral * 2));
 
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 }
 
 // ===========================================================================
@@ -474,13 +481,8 @@ fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
     // Open at just under 85% of 100k = 84k reserved
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     // Manually push total_reserved above 95% to simulate ADL condition.
     // In production this could happen if the vault's total_assets decreases
@@ -493,7 +495,8 @@ fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
     // ADL should succeed because utilization (96k/100k = 9600 bps) > 9500 bps
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
@@ -521,13 +524,8 @@ fn test_adl_profitable_long_trader_receives_profits() {
 
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     // Push reserved above 95% threshold (utilization > 9500 bps)
     f.env.as_contract(&f.pm_addr, || {
@@ -541,7 +539,8 @@ fn test_adl_profitable_long_trader_receives_profits() {
     let trader_balance_before = f.usdc_client.balance(&f.trader);
 
     // ADL the position
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 
     let trader_balance_after = f.usdc_client.balance(&f.trader);
 
@@ -569,13 +568,8 @@ fn test_adl_deletes_position_and_decreases_oi() {
 
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     let market_before = f.pm_client.get_market(&symbol);
 
@@ -586,7 +580,8 @@ fn test_adl_deletes_position_and_decreases_oi() {
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 
     // OI must decrease
     let market_after = f.pm_client.get_market(&symbol);
@@ -597,9 +592,9 @@ fn test_adl_deletes_position_and_decreases_oi() {
     );
 
     // Total reserved must decrease
-    let total_reserved_after = f.env.as_contract(&f.pm_addr, || {
-        storage::get_total_reserved(&f.env)
-    });
+    let total_reserved_after = f
+        .env
+        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
     // The new total_reserved should be 96,000 - 84,000 = 12,000 (or thereabouts,
     // depending on exact settlement logic)
     assert!(
@@ -617,13 +612,8 @@ fn test_adl_decreases_total_reserved() {
 
     let size = 80_000 * USDC_UNIT;
     let collateral = 8_000 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     // Push reserved above 95% (utilization > 9500 bps)
     f.env.as_contract(&f.pm_addr, || {
@@ -632,11 +622,12 @@ fn test_adl_decreases_total_reserved() {
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 
-    let total_reserved_after = f.env.as_contract(&f.pm_addr, || {
-        storage::get_total_reserved(&f.env)
-    });
+    let total_reserved_after = f
+        .env
+        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
 
     // After closing an 80k position from 96k reserved, should be ~16k
     assert_eq!(
@@ -659,13 +650,8 @@ fn test_adl_succeeds_when_paused() {
 
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size,
-        &collateral,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     f.env.as_contract(&f.pm_addr, || {
         storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
@@ -677,7 +663,8 @@ fn test_adl_succeeds_when_paused() {
     f.pm_client.pause(&f.admin);
 
     // ADL should succeed even though paused
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 
     // Position should be deleted
     let result = f.pm_client.try_get_position(&f.trader, &symbol);
@@ -701,24 +688,14 @@ fn test_adl_does_not_affect_other_traders_positions() {
     // Trader1: small position
     let size1 = 40_000 * USDC_UNIT;
     let collateral1 = 4_000 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &f.trader,
-        &symbol,
-        &size1,
-        &collateral1,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size1, &collateral1, &true, &0, &0);
 
     // Trader2: small position
     let size2 = 40_000 * USDC_UNIT;
     let collateral2 = 4_000 * USDC_UNIT;
-    f.pm_client.increase_position(
-        &trader2,
-        &symbol,
-        &size2,
-        &collateral2,
-        &true, &0, &0,
-    );
+    f.pm_client
+        .increase_position(&trader2, &symbol, &size2, &collateral2, &true, &0, &0);
 
     // Push reserved above 95% (utilization > 9500 bps)
     f.env.as_contract(&f.pm_addr, || {
@@ -728,7 +705,8 @@ fn test_adl_does_not_affect_other_traders_positions() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
     // ADL trader1 only
-    f.pm_client.deleverage_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
 
     // Trader1 position must be gone
     f.env.as_contract(&f.pm_addr, || {

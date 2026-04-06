@@ -27,9 +27,8 @@ use soroban_sdk::{
 };
 
 use crate::contract::PositionManagerContract;
-use crate::math::{self, INDEX_PRECISION, PRECISION};
+use crate::math::PRECISION;
 use crate::storage;
-use crate::types::MarketInfo;
 use crate::PositionManagerClient;
 
 use config_manager::{ConfigManagerClient, ConfigManagerContract};
@@ -73,17 +72,17 @@ const TIME_ADVANCE: u64 = 75;
 struct TestFixture<'a> {
     env: Env,
     pm_client: PositionManagerClient<'a>,
-    vault_client: VaultContractClient<'a>,
+    _vault_client: VaultContractClient<'a>,
     oracle_client: MockOracleClient<'a>,
-    oracle_router_client: OracleRouterClient<'a>,
-    config_client: ConfigManagerClient<'a>,
+    _oracle_router_client: OracleRouterClient<'a>,
+    _config_client: ConfigManagerClient<'a>,
     usdc_client: MockTokenClient<'a>,
-    usdc_addr: Address,
+    _usdc_addr: Address,
     admin: Address,
     keeper: Address,
     trader: Address,
     pm_addr: Address,
-    vault_addr: Address,
+    _vault_addr: Address,
 }
 
 /// Deploy and wire up ALL protocol contracts needed for liquidation tests.
@@ -116,35 +115,44 @@ fn setup_full<'a>() -> TestFixture<'a> {
 
     let pauser_role = Symbol::new(&env, "PAUSER");
     let keeper_role = Symbol::new(&env, "KEEPER");
-    let admin_role = Symbol::new(&env, "ADMIN");
+    let _admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
     // Grant KEEPER to the dedicated keeper address
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1_000_000,
-        cooldown_duration: 60,
-        min_position_lifetime: 60,
-        max_utilization_ratio: 8_500,
-        funding_cut_bps: 500,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1_000_000,
+            cooldown_duration: 60,
+            min_position_lifetime: 60,
+            max_utilization_ratio: 8_500,
+            funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
-    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
-        lp_bps: 9000,
-    });
+    config_client.update_fee_splits(
+        &admin,
+        &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        },
+    );
 
     // --- 2. MockToken (USDC) ---
     let usdc_id = env.register(MockToken, ());
@@ -201,26 +209,26 @@ fn setup_full<'a>() -> TestFixture<'a> {
 
     // SAFETY: env lives in the fixture; clients borrow from it.
     let pm_client = unsafe { core::mem::transmute(pm_client) };
-    let vault_client = unsafe { core::mem::transmute(vault_client) };
+    let _vault_client = unsafe { core::mem::transmute(vault_client) };
     let oracle_client = unsafe { core::mem::transmute(oracle_client) };
-    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
+    let _oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let _config_client = unsafe { core::mem::transmute(config_client) };
     let usdc_client = unsafe { core::mem::transmute(usdc_client) };
 
     TestFixture {
         env,
         pm_client,
-        vault_client,
+        _vault_client,
         oracle_client,
-        oracle_router_client,
-        config_client,
+        _oracle_router_client,
+        _config_client,
         usdc_client,
-        usdc_addr: usdc_id,
+        _usdc_addr: usdc_id,
         admin,
         keeper,
         trader,
         pm_addr: pm_id,
-        vault_addr: vault_id,
+        _vault_addr: vault_id,
     }
 }
 
@@ -235,7 +243,9 @@ fn open_long_position(f: &TestFixture, size: i128, collateral: i128) {
         &symbol_short!("BTC"),
         &size,
         &collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -246,7 +256,9 @@ fn open_short_position(f: &TestFixture, size: i128, collateral: i128) {
         &symbol_short!("BTC"),
         &size,
         &collateral,
-        &false, &0, &0,
+        &false,
+        &0,
+        &0,
     );
 }
 
@@ -268,7 +280,7 @@ fn advance_time_and_set_price(f: &TestFixture, new_ts: u64, new_price: i128) {
 
 /// Seed the market with non-zero borrow index to simulate accumulated fees.
 /// Must be called BEFORE opening a position so the position snapshots the index.
-fn seed_market_borrow_index(f: &TestFixture, borrow_index: i128) {
+fn _seed_market_borrow_index(f: &TestFixture, borrow_index: i128) {
     let symbol = symbol_short!("BTC");
     f.env.as_contract(&f.pm_addr, || {
         let mut market = storage::get_market(&f.env, &symbol);
@@ -315,11 +327,8 @@ fn test_liquidate_reverts_unauthorized_caller() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
 
     // random_caller does NOT have KEEPER role
-    f.pm_client.liquidate_position(
-        &random_caller,
-        &f.trader,
-        &symbol_short!("BTC"),
-    );
+    f.pm_client
+        .liquidate_position(&random_caller, &f.trader, &symbol_short!("BTC"));
 }
 
 #[test]
@@ -330,11 +339,8 @@ fn test_liquidate_reverts_position_not_found() {
     let f = setup_full();
     let nonexistent_trader = Address::generate(&f.env);
 
-    f.pm_client.liquidate_position(
-        &f.keeper,
-        &nonexistent_trader,
-        &symbol_short!("BTC"),
-    );
+    f.pm_client
+        .liquidate_position(&f.keeper, &nonexistent_trader, &symbol_short!("BTC"));
 }
 
 // ===========================================================================
@@ -352,11 +358,8 @@ fn test_liquidate_reverts_health_factor_ok_price_unchanged() {
     // Advance time but keep the same price
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
-    f.pm_client.liquidate_position(
-        &f.keeper,
-        &f.trader,
-        &symbol_short!("BTC"),
-    );
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
 }
 
 #[test]
@@ -371,11 +374,8 @@ fn test_liquidate_reverts_health_factor_ok_price_up_long() {
     let higher_price: i128 = 55_000 * PRECISION;
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, higher_price);
 
-    f.pm_client.liquidate_position(
-        &f.keeper,
-        &f.trader,
-        &symbol_short!("BTC"),
-    );
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
 }
 
 // ===========================================================================
@@ -400,7 +400,10 @@ fn test_liquidate_long_position_price_drops_significantly() {
 
     // Verify position exists
     let pos_before = f.pm_client.get_position(&f.trader, &symbol);
-    assert_eq!(pos_before.size, DEFAULT_SIZE, "Position must exist before liquidation");
+    assert_eq!(
+        pos_before.size, DEFAULT_SIZE,
+        "Position must exist before liquidation"
+    );
 
     // Crash price
     let crash_price: i128 = 44_000 * PRECISION;
@@ -408,12 +411,13 @@ fn test_liquidate_long_position_price_drops_significantly() {
 
     // Record state before liquidation
     let market_before = f.pm_client.get_market(&symbol);
-    let total_reserved_before = f.env.as_contract(&f.pm_addr, || {
-        storage::get_total_reserved(&f.env)
-    });
+    let total_reserved_before = f
+        .env
+        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
 
     // Execute liquidation
-    f.pm_client.liquidate_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
 
     // Position must be deleted
     // Attempting to get_position should panic with PositionNotFound.
@@ -432,9 +436,9 @@ fn test_liquidate_long_position_price_drops_significantly() {
     );
 
     // Total reserved must decrease
-    let total_reserved_after = f.env.as_contract(&f.pm_addr, || {
-        storage::get_total_reserved(&f.env)
-    });
+    let total_reserved_after = f
+        .env
+        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
     assert_eq!(
         total_reserved_after,
         total_reserved_before - DEFAULT_SIZE,
@@ -459,12 +463,16 @@ fn test_liquidate_short_position_price_rises_significantly() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, spike_price);
 
     // Execute liquidation
-    f.pm_client.liquidate_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
 
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Short position must be deleted after liquidation");
+        assert!(
+            pos.is_none(),
+            "Short position must be deleted after liquidation"
+        );
     });
 
     // Short OI must decrease
@@ -489,7 +497,8 @@ fn test_liquidate_trader_does_not_receive_funds() {
     let crash_price: i128 = 44_000 * PRECISION;
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
 
-    f.pm_client.liquidate_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
 
     let trader_balance_after = f.usdc_client.balance(&f.trader);
 
@@ -530,12 +539,16 @@ fn test_liquidate_barely_underwater_position() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, barely_crash_price);
 
     // Must succeed (position is underwater)
-    f.pm_client.liquidate_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
 
     // Confirm position deleted
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Barely underwater position must be liquidated");
+        assert!(
+            pos.is_none(),
+            "Barely underwater position must be liquidated"
+        );
     });
 }
 
@@ -578,7 +591,8 @@ fn test_liquidate_borrow_fees_push_position_underwater() {
     // The borrow fee should exceed collateral, making health negative
     // borrow_fee = 15_000_000_000_000 * 10_000_000_000 / 100_000_000_000_000 = 1_500_000_000
     // health = 1_000_000_000 + 0 - 1_500_000_000 + 0 = -500_000_000
-    f.pm_client.liquidate_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
 
     // Confirm position deleted
     f.env.as_contract(&f.pm_addr, || {
@@ -609,12 +623,16 @@ fn test_liquidate_succeeds_when_paused() {
     f.pm_client.pause(&f.admin);
 
     // Liquidation must succeed even when paused
-    f.pm_client.liquidate_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
 
     // Position must be deleted
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted after liquidation while paused");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted after liquidation while paused"
+        );
     });
 }
 
@@ -643,7 +661,9 @@ fn test_liquidate_one_position_does_not_affect_other_traders() {
         &symbol,
         &safe_size,
         &safe_collateral,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // Crash price enough to liquidate trader1 but not trader2
@@ -653,7 +673,8 @@ fn test_liquidate_one_position_does_not_affect_other_traders() {
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
 
     // Liquidate trader1
-    f.pm_client.liquidate_position(&f.keeper, &f.trader, &symbol);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
 
     // Trader1 position must be gone
     f.env.as_contract(&f.pm_addr, || {

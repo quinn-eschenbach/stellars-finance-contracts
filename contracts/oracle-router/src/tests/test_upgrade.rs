@@ -35,10 +35,10 @@
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal, Symbol};
 use stellar_contract_utils::upgradeable::{enable_migration, UpgradeableMigratableInternal};
 
-use crate::{OracleRouterContract, OracleRouterError, UpgradeData};
 use crate::storage::StorageKey;
+use crate::{OracleRouterContract, OracleRouterError, UpgradeData};
 
-use super::helpers::{deploy_initialized, deploy_with_config_manager, deploy_with_upgrader};
+use super::helpers::{deploy_with_config_manager, deploy_with_upgrader};
 
 // ---------------------------------------------------------------------------
 // Shared fixture helpers
@@ -75,10 +75,8 @@ fn test_upgrade_non_upgrader_is_unauthorized() {
     let non_upgrader = Address::generate(&env);
     let hash = dummy_wasm_hash(&env);
 
-    let upgradeable = stellar_contract_utils::upgradeable::UpgradeableClient::new(
-        &env,
-        &oracle.address,
-    );
+    let upgradeable =
+        stellar_contract_utils::upgradeable::UpgradeableClient::new(&env, &oracle.address);
 
     let result = upgradeable.try_upgrade(&hash, &non_upgrader);
     assert!(
@@ -102,10 +100,8 @@ fn test_upgrade_admin_without_upgrader_role_is_unauthorized() {
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
     let hash = dummy_wasm_hash(&env);
 
-    let upgradeable = stellar_contract_utils::upgradeable::UpgradeableClient::new(
-        &env,
-        &oracle.address,
-    );
+    let upgradeable =
+        stellar_contract_utils::upgradeable::UpgradeableClient::new(&env, &oracle.address);
 
     // admin has ADMIN but not UPGRADER.
     let result = upgradeable.try_upgrade(&hash, &admin);
@@ -140,10 +136,8 @@ fn test_upgrade_upgrader_passes_require_auth_gets_wasm_error_not_unauthorized() 
     let (oracle, _cm, admin) = deploy_with_upgrader(&env);
     let hash = dummy_wasm_hash(&env);
 
-    let upgradeable = stellar_contract_utils::upgradeable::UpgradeableClient::new(
-        &env,
-        &oracle.address,
-    );
+    let upgradeable =
+        stellar_contract_utils::upgradeable::UpgradeableClient::new(&env, &oracle.address);
 
     let result = upgradeable.try_upgrade(&hash, &admin);
     // The result must be an error (invalid WASM hash), BUT it must not be
@@ -184,10 +178,8 @@ fn test_upgrade_requires_caller_auth() {
     let (oracle, _cm, admin) = deploy_with_upgrader(&env);
     let hash = dummy_wasm_hash(&env);
 
-    let upgradeable = stellar_contract_utils::upgradeable::UpgradeableClient::new(
-        &env,
-        &oracle.address,
-    );
+    let upgradeable =
+        stellar_contract_utils::upgradeable::UpgradeableClient::new(&env, &oracle.address);
 
     // Clear all mocked auths — require_auth must now panic.
     env.mock_auths(&[]);
@@ -551,10 +543,8 @@ fn test_upgrade_admin_role_does_not_confer_upgrader_privilege() {
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
     let hash = dummy_wasm_hash(&env);
 
-    let upgradeable = stellar_contract_utils::upgradeable::UpgradeableClient::new(
-        &env,
-        &oracle.address,
-    );
+    let upgradeable =
+        stellar_contract_utils::upgradeable::UpgradeableClient::new(&env, &oracle.address);
 
     let result = upgradeable.try_upgrade(&hash, &admin);
     assert!(

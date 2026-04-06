@@ -19,10 +19,9 @@
 // ---------------------------------------------------------------------------
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Env, Symbol,
     symbol_short,
-    vec,
+    testutils::{Address as _, Ledger, LedgerInfo},
+    vec, Address, Env, Symbol,
 };
 
 use crate::contract::PositionManagerContract;
@@ -34,7 +33,7 @@ use config_manager::{ConfigManagerClient, ConfigManagerContract};
 use mock_oracle::{MockOracle, MockOracleClient};
 use mock_token::{MockToken, MockTokenClient};
 use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
-use vault::{VaultContractClient, VaultContract};
+use vault::{VaultContract, VaultContractClient};
 
 // ===========================================================================
 // Constants
@@ -76,14 +75,14 @@ struct TestFixture<'a> {
     pm_client: PositionManagerClient<'a>,
     vault_client: VaultContractClient<'a>,
     oracle_client: MockOracleClient<'a>,
-    oracle_router_client: OracleRouterClient<'a>,
-    config_client: ConfigManagerClient<'a>,
+    _oracle_router_client: OracleRouterClient<'a>,
+    _config_client: ConfigManagerClient<'a>,
     usdc_client: MockTokenClient<'a>,
-    usdc_addr: Address,
+    _usdc_addr: Address,
     admin: Address,
     trader: Address,
     pm_addr: Address,
-    vault_addr: Address,
+    _vault_addr: Address,
 }
 
 /// Deploy and wire up ALL protocol contracts needed for decrease_position tests.
@@ -124,33 +123,42 @@ fn setup_full<'a>() -> TestFixture<'a> {
     // Grant roles needed by other contracts
     let pauser_role = Symbol::new(&env, "PAUSER");
     let keeper_role = Symbol::new(&env, "KEEPER");
-    let admin_role = Symbol::new(&env, "ADMIN");
+    let _admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
 
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1_000_000,
-        cooldown_duration: 60,
-        min_position_lifetime: 60,
-        max_utilization_ratio: 8_500,
-        funding_cut_bps: 500,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1_000_000,
+            cooldown_duration: 60,
+            min_position_lifetime: 60,
+            max_utilization_ratio: 8_500,
+            funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
-    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
-        lp_bps: 9000,
-    });
+    config_client.update_fee_splits(
+        &admin,
+        &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        },
+    );
 
     // --- 2. MockToken (USDC) ---
     let usdc_id = env.register(MockToken, ());
@@ -178,9 +186,9 @@ fn setup_full<'a>() -> TestFixture<'a> {
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
-            max_deviation_bps: 500,       // 5%
-            staleness_threshold: 3600,    // 1 hour
-            cache_duration: 10,           // 10 seconds
+            max_deviation_bps: 500,    // 5%
+            staleness_threshold: 3600, // 1 hour
+            cache_duration: 10,        // 10 seconds
         },
     );
     oracle_router_client.set_oracle_sources(
@@ -222,8 +230,8 @@ fn setup_full<'a>() -> TestFixture<'a> {
     let pm_client = unsafe { core::mem::transmute(pm_client) };
     let vault_client = unsafe { core::mem::transmute(vault_client) };
     let oracle_client = unsafe { core::mem::transmute(oracle_client) };
-    let oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
+    let _oracle_router_client = unsafe { core::mem::transmute(oracle_router_client) };
+    let _config_client = unsafe { core::mem::transmute(config_client) };
     let usdc_client = unsafe { core::mem::transmute(usdc_client) };
 
     TestFixture {
@@ -231,14 +239,14 @@ fn setup_full<'a>() -> TestFixture<'a> {
         pm_client,
         vault_client,
         oracle_client,
-        oracle_router_client,
-        config_client,
+        _oracle_router_client,
+        _config_client,
         usdc_client,
-        usdc_addr: usdc_id,
+        _usdc_addr: usdc_id,
         admin,
         trader,
         pm_addr: pm_id,
-        vault_addr: vault_id,
+        _vault_addr: vault_id,
     }
 }
 
@@ -256,7 +264,9 @@ fn open_position_and_advance(f: &TestFixture, is_long: bool) {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &is_long, &0, &0,
+        &is_long,
+        &0,
+        &0,
     );
 
     // Advance time past MinPositionLifetime (60s) + oracle cache (10s)
@@ -297,11 +307,7 @@ fn test_decrease_position_reverts_not_initialized() {
     let pm_client = PositionManagerClient::new(&env, &pm_id);
     let trader = Address::generate(&env);
 
-    pm_client.decrease_position(
-        &trader,
-        &symbol_short!("BTC"),
-        &DEFAULT_SIZE,
-    );
+    pm_client.decrease_position(&trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
 }
 
 #[test]
@@ -322,11 +328,8 @@ fn test_decrease_position_succeeds_when_paused() {
     f.oracle_client.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
     // This must NOT panic -- decrease_position bypasses pause check
-    f.pm_client.decrease_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &DEFAULT_SIZE,
-    );
+    f.pm_client
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
 
     // If we reach here, the test passes -- the contract did not revert
     // even though it is paused. Verify position was closed.
@@ -340,11 +343,8 @@ fn test_decrease_position_reverts_position_not_found() {
     // decrease_position must revert with PositionNotFound (error 6).
     let f = setup_full();
 
-    f.pm_client.decrease_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &DEFAULT_SIZE,
-    );
+    f.pm_client
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
 }
 
 #[test]
@@ -354,11 +354,8 @@ fn test_decrease_position_reverts_zero_size_delta() {
     let f = setup_full();
     open_position_and_advance(&f, true);
 
-    f.pm_client.decrease_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &0_i128,
-    );
+    f.pm_client
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &0_i128);
 }
 
 #[test]
@@ -369,11 +366,8 @@ fn test_decrease_position_reverts_negative_size_delta() {
     let f = setup_full();
     open_position_and_advance(&f, true);
 
-    f.pm_client.decrease_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &(-1_000_i128),
-    );
+    f.pm_client
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(-1_000_i128));
 }
 
 // ===========================================================================
@@ -394,15 +388,14 @@ fn test_decrease_position_reverts_position_not_old_enough() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // Try to decrease immediately (same timestamp) -- should fail
-    f.pm_client.decrease_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &DEFAULT_SIZE,
-    );
+    f.pm_client
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
 }
 
 #[test]
@@ -417,18 +410,17 @@ fn test_decrease_position_reverts_one_second_before_min_lifetime() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // Advance to 59 seconds (one second short of 60s minimum)
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME - 1);
     f.oracle_client.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
-    f.pm_client.decrease_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &DEFAULT_SIZE,
-    );
+    f.pm_client
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
 }
 
 #[test]
@@ -443,7 +435,9 @@ fn test_decrease_position_succeeds_at_exact_min_lifetime() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     // Advance to exactly 60 seconds + enough for oracle cache (11s extra)
@@ -451,11 +445,8 @@ fn test_decrease_position_succeeds_at_exact_min_lifetime() {
     f.oracle_client.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
     // This should succeed -- position is old enough
-    f.pm_client.decrease_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &DEFAULT_SIZE,
-    );
+    f.pm_client
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
 }
 
 // ===========================================================================
@@ -481,7 +472,9 @@ fn test_full_close_long_profit_trader_receives_funds() {
         &symbol,
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 
     let trader_balance_after_open = f.usdc_client.balance(&f.trader);
@@ -495,14 +488,18 @@ fn test_full_close_long_profit_trader_receives_funds() {
     f.oracle_client.set_price(&symbol, &profit_price);
 
     // Close entire position
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let trader_balance_after_close = f.usdc_client.balance(&f.trader);
 
     // Trader should have received collateral + PnL back
     // PnL = 10,000 USDC * (55,000 - 50,000) / 50,000 = 1,000 USDC
     let expected_pnl = math::calc_unrealized_pnl(DEFAULT_SIZE, BTC_PRICE, profit_price, true);
-    assert!(expected_pnl > 0, "PnL should be positive for profitable long");
+    assert!(
+        expected_pnl > 0,
+        "PnL should be positive for profitable long"
+    );
 
     // Trader receives at least collateral + pnl (minus fees)
     let received = trader_balance_after_close - trader_balance_after_open;
@@ -529,14 +526,21 @@ fn test_full_close_long_profit_position_deleted() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     let profit_price: i128 = 55_000 * PRECISION;
     f.oracle_client.set_price(&symbol, &profit_price);
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     // Position should be deleted -- verify via storage directly
     f.env.as_contract(&f.pm_addr, || {
@@ -553,7 +557,13 @@ fn test_full_close_long_profit_market_oi_decreased() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     let market_before = f.pm_client.get_market(&symbol);
@@ -562,7 +572,8 @@ fn test_full_close_long_profit_market_oi_decreased() {
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &(55_000 * PRECISION));
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let market_after = f.pm_client.get_market(&symbol);
     assert_eq!(
@@ -578,7 +589,13 @@ fn test_full_close_long_profit_total_reserved_decreased() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     f.env.as_contract(&f.pm_addr, || {
@@ -588,7 +605,8 @@ fn test_full_close_long_profit_total_reserved_decreased() {
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &(55_000 * PRECISION));
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
@@ -616,7 +634,13 @@ fn test_full_close_long_loss_trader_receives_reduced_collateral() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     let trader_balance_after_open = f.usdc_client.balance(&f.trader);
@@ -625,7 +649,8 @@ fn test_full_close_long_loss_trader_receives_reduced_collateral() {
     let loss_price: i128 = 45_000 * PRECISION;
     f.oracle_client.set_price(&symbol, &loss_price);
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let trader_balance_after_close = f.usdc_client.balance(&f.trader);
 
@@ -650,17 +675,27 @@ fn test_full_close_long_loss_position_deleted() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &(47_000 * PRECISION));
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted after full close even on loss");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted after full close even on loss"
+        );
     });
 }
 
@@ -672,20 +707,31 @@ fn test_full_close_long_loss_market_updated() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &(47_000 * PRECISION));
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let market = f.pm_client.get_market(&symbol);
-    assert_eq!(market.long_open_interest, 0, "Long OI must be zero after full close");
+    assert_eq!(
+        market.long_open_interest, 0,
+        "Long OI must be zero after full close"
+    );
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env), 0,
+            storage::get_total_reserved(&f.env),
+            0,
             "TotalReserved must be zero after full close"
         );
     });
@@ -703,14 +749,21 @@ fn test_partial_close_reduces_size_by_delta() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE); // same price, no PnL
 
     let half_size = DEFAULT_SIZE / 2;
-    f.pm_client.decrease_position(&f.trader, &symbol, &half_size);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &half_size);
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
     assert_eq!(
@@ -728,14 +781,21 @@ fn test_partial_close_reduces_collateral_proportionally() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     let half_size = DEFAULT_SIZE / 2;
-    f.pm_client.decrease_position(&f.trader, &symbol, &half_size);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &half_size);
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
     let expected_collateral = DEFAULT_COLLATERAL - (DEFAULT_COLLATERAL * half_size / DEFAULT_SIZE);
@@ -754,14 +814,21 @@ fn test_partial_close_reduces_market_oi_by_size_delta_not_full_size() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     let half_size = DEFAULT_SIZE / 2;
-    f.pm_client.decrease_position(&f.trader, &symbol, &half_size);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &half_size);
 
     let market = f.pm_client.get_market(&symbol);
     assert_eq!(
@@ -778,14 +845,21 @@ fn test_partial_close_reduces_total_reserved_by_size_delta() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     let half_size = DEFAULT_SIZE / 2;
-    f.pm_client.decrease_position(&f.trader, &symbol, &half_size);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &half_size);
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
@@ -804,20 +878,33 @@ fn test_partial_close_position_still_exists() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     let quarter_size = DEFAULT_SIZE / 4;
-    f.pm_client.decrease_position(&f.trader, &symbol, &quarter_size);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &quarter_size);
 
     // get_position should NOT panic
     let pos = f.pm_client.get_position(&f.trader, &symbol);
     assert_eq!(pos.size, DEFAULT_SIZE - quarter_size);
-    assert!(pos.is_long, "is_long must remain unchanged after partial close");
-    assert_eq!(pos.entry_price, BTC_PRICE, "entry_price must remain unchanged after partial close");
+    assert!(
+        pos.is_long,
+        "is_long must remain unchanged after partial close"
+    );
+    assert_eq!(
+        pos.entry_price, BTC_PRICE,
+        "entry_price must remain unchanged after partial close"
+    );
 }
 
 // ===========================================================================
@@ -832,24 +919,37 @@ fn test_close_with_size_delta_exceeding_position_size_acts_as_full_close() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     let oversized_delta = DEFAULT_SIZE * 2;
-    f.pm_client.decrease_position(&f.trader, &symbol, &oversized_delta);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &oversized_delta);
 
     // Position should be fully closed (deleted)
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
-        assert!(pos.is_none(), "Position must be deleted when size_delta >= position.size");
+        assert!(
+            pos.is_none(),
+            "Position must be deleted when size_delta >= position.size"
+        );
     });
 
     // Market OI should be zero
     let market = f.pm_client.get_market(&symbol);
-    assert_eq!(market.long_open_interest, 0, "OI must be zero after over-sized close");
+    assert_eq!(
+        market.long_open_interest, 0,
+        "OI must be zero after over-sized close"
+    );
 
     // TotalReserved should be zero
     f.env.as_contract(&f.pm_addr, || {
@@ -870,7 +970,13 @@ fn test_short_position_profit_on_price_decrease() {
     let symbol = symbol_short!("ETH");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false, &0, &0, // short
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &false,
+        &0,
+        &0, // short
     );
 
     let balance_after_open = f.usdc_client.balance(&f.trader);
@@ -879,7 +985,8 @@ fn test_short_position_profit_on_price_decrease() {
     let drop_price: i128 = 2_700 * PRECISION;
     f.oracle_client.set_price(&symbol, &drop_price);
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let balance_after_close = f.usdc_client.balance(&f.trader);
 
@@ -890,7 +997,8 @@ fn test_short_position_profit_on_price_decrease() {
     assert!(
         received > DEFAULT_COLLATERAL,
         "Short trader must receive more than collateral on profit. Received: {}, Collateral: {}",
-        received, DEFAULT_COLLATERAL
+        received,
+        DEFAULT_COLLATERAL
     );
 
     // Position must be deleted
@@ -909,7 +1017,13 @@ fn test_short_position_loss_on_price_increase() {
     let symbol = symbol_short!("ETH");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &false,
+        &0,
+        &0,
     );
 
     let balance_after_open = f.usdc_client.balance(&f.trader);
@@ -918,7 +1032,8 @@ fn test_short_position_loss_on_price_increase() {
     let rise_price: i128 = 3_150 * PRECISION;
     f.oracle_client.set_price(&symbol, &rise_price);
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let balance_after_close = f.usdc_client.balance(&f.trader);
     let received = balance_after_close - balance_after_open;
@@ -942,7 +1057,13 @@ fn test_full_close_releases_vault_liquidity() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     let free_liq_before_close = f.vault_client.free_liquidity();
@@ -950,7 +1071,8 @@ fn test_full_close_releases_vault_liquidity() {
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let free_liq_after_close = f.vault_client.free_liquidity();
 
@@ -958,7 +1080,8 @@ fn test_full_close_releases_vault_liquidity() {
     assert!(
         free_liq_after_close > free_liq_before_close,
         "Vault free liquidity must increase after position close. Before: {}, After: {}",
-        free_liq_before_close, free_liq_after_close
+        free_liq_before_close,
+        free_liq_after_close
     );
 }
 
@@ -970,7 +1093,13 @@ fn test_partial_close_releases_proportional_vault_liquidity() {
     let symbol = symbol_short!("BTC");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
 
     let free_liq_before = f.vault_client.free_liquidity();
@@ -979,7 +1108,8 @@ fn test_partial_close_releases_proportional_vault_liquidity() {
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     let half_size = DEFAULT_SIZE / 2;
-    f.pm_client.decrease_position(&f.trader, &symbol, &half_size);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &half_size);
 
     let free_liq_after = f.vault_client.free_liquidity();
 
@@ -1003,22 +1133,43 @@ fn test_decrease_position_with_multiple_traders_independent() {
 
     // Both open positions
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &true, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
     );
     f.pm_client.increase_position(
-        &trader2, &symbol, &(20_000 * USDC_UNIT), &(2_000 * USDC_UNIT), &true, &0, &0,
+        &trader2,
+        &symbol,
+        &(20_000 * USDC_UNIT),
+        &(2_000 * USDC_UNIT),
+        &true,
+        &0,
+        &0,
     );
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     // Close trader1's position
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     // Trader2's position must be unaffected
     let pos2 = f.pm_client.get_position(&trader2, &symbol);
-    assert_eq!(pos2.size, 20_000 * USDC_UNIT, "Trader2 position must be unaffected");
-    assert_eq!(pos2.collateral, 2_000 * USDC_UNIT, "Trader2 collateral must be unaffected");
+    assert_eq!(
+        pos2.size,
+        20_000 * USDC_UNIT,
+        "Trader2 position must be unaffected"
+    );
+    assert_eq!(
+        pos2.collateral,
+        2_000 * USDC_UNIT,
+        "Trader2 collateral must be unaffected"
+    );
 
     // Market OI should only reflect trader2's remaining position
     let market = f.pm_client.get_market(&symbol);
@@ -1046,7 +1197,13 @@ fn test_decrease_short_updates_short_oi_not_long() {
     let symbol = symbol_short!("ETH");
 
     f.pm_client.increase_position(
-        &f.trader, &symbol, &DEFAULT_SIZE, &DEFAULT_COLLATERAL, &false, &0, &0,
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &false,
+        &0,
+        &0,
     );
 
     let market_before = f.pm_client.get_market(&symbol);
@@ -1056,7 +1213,8 @@ fn test_decrease_short_updates_short_oi_not_long() {
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
     f.oracle_client.set_price(&symbol, &ETH_PRICE);
 
-    f.pm_client.decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
 
     let market_after = f.pm_client.get_market(&symbol);
     assert_eq!(

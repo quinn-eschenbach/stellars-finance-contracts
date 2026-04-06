@@ -17,9 +17,7 @@ use soroban_sdk::{testutils::Address as _, Address, Env};
 
 use crate::OracleRouterError;
 
-use super::helpers::{
-    deploy_initialized, deploy_with_config_manager, role_admin, valid_oracle_config,
-};
+use super::helpers::{deploy_initialized, deploy_with_config_manager, valid_oracle_config};
 use crate::OracleConfig;
 
 // ---------------------------------------------------------------------------
@@ -340,18 +338,27 @@ fn test_set_oracle_config_valid_boundary_values_succeed() {
 
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
     let config = OracleConfig {
-        max_deviation_bps: 1, // minimum valid i128 positive
+        max_deviation_bps: 1,   // minimum valid i128 positive
         staleness_threshold: 1, // minimum valid u64 positive
-        cache_duration: 1,    // minimum valid u64 positive
+        cache_duration: 1,      // minimum valid u64 positive
     };
 
     // Must not panic. Minimum boundary values are valid.
     oracle.set_oracle_config(&admin, &config);
 
     let stored = oracle.get_oracle_config();
-    assert_eq!(stored.max_deviation_bps, 1, "max_deviation_bps boundary value 1 must be stored");
-    assert_eq!(stored.staleness_threshold, 1, "staleness_threshold boundary value 1 must be stored");
-    assert_eq!(stored.cache_duration, 1, "cache_duration boundary value 1 must be stored");
+    assert_eq!(
+        stored.max_deviation_bps, 1,
+        "max_deviation_bps boundary value 1 must be stored"
+    );
+    assert_eq!(
+        stored.staleness_threshold, 1,
+        "staleness_threshold boundary value 1 must be stored"
+    );
+    assert_eq!(
+        stored.cache_duration, 1,
+        "cache_duration boundary value 1 must be stored"
+    );
 }
 
 /// Large values (e.g., i128::MAX for deviation, u64::MAX for thresholds) must

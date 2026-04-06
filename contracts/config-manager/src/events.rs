@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, Env, Symbol};
+use soroban_sdk::{contractevent, Address, Symbol};
 
 #[contractevent(topics = ["role"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]

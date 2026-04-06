@@ -111,8 +111,8 @@ fn test_bump_oracle_state_anyone_can_call() {
 fn test_bump_oracle_state_untrusted_caller_no_auth_succeeds() {
     let env = Env::default();
     // No mock_all_auths — raw call with no authorization context.
-    let client = deploy(&env);
-    let cm_addr = Address::generate(&env);
+    let _client = deploy(&env);
+    let _cm_addr = Address::generate(&env);
     // Initialize with mock_all_auths just for setup, then clear.
     {
         let env2 = Env::default();

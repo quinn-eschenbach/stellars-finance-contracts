@@ -11,7 +11,6 @@ use soroban_sdk::{
 
 use crate::contract::PositionManagerContract;
 use crate::math::PRECISION;
-use crate::storage;
 use crate::PositionManagerClient;
 
 use config_manager::{ConfigManagerClient, ConfigManagerContract};
@@ -31,13 +30,13 @@ const TEST_TIMESTAMP: u64 = 1_700_000_000;
 struct TestFixture<'a> {
     env: Env,
     pm_client: PositionManagerClient<'a>,
-    config_client: ConfigManagerClient<'a>,
-    usdc_client: MockTokenClient<'a>,
+    // config_client: ConfigManagerClient<'a>,
+    // usdc_client: MockTokenClient<'a>,
     oracle_client: MockOracleClient<'a>,
     admin: Address,
     keeper: Address,
     trader: Address,
-    pm_addr: Address,
+    // pm_addr: Address,
 }
 
 fn setup_full<'a>() -> TestFixture<'a> {
@@ -66,34 +65,43 @@ fn setup_full<'a>() -> TestFixture<'a> {
 
     let pauser_role = Symbol::new(&env, "PAUSER");
     let keeper_role = Symbol::new(&env, "KEEPER");
-    let admin_role = Symbol::new(&env, "ADMIN");
+    // let admin_role = Symbol::new(&env, "ADMIN");
     config_client.grant_role(&admin, &pauser_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &admin);
     config_client.grant_role(&admin, &keeper_role, &keeper);
 
-    config_client.update_protocol_limits(&admin, &config_manager::ProtocolLimits {
-        min_collateral: 1_000_000,
-        cooldown_duration: 60,
-        min_position_lifetime: 60,
-        max_utilization_ratio: 8_500,
-        funding_cut_bps: 500,
-        adl_pnl_bps: 9_000,
-        adl_utilization_bps: 9_500,
-    });
+    config_client.update_protocol_limits(
+        &admin,
+        &config_manager::ProtocolLimits {
+            min_collateral: 1_000_000,
+            cooldown_duration: 60,
+            min_position_lifetime: 60,
+            max_utilization_ratio: 8_500,
+            funding_cut_bps: 500,
+            adl_pnl_bps: 9_000,
+            adl_utilization_bps: 9_500,
+        },
+    );
 
-    config_client.update_borrow_rate_config(&admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    config_client.update_borrow_rate_config(
+        &admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
-    config_client.update_fee_splits(&admin, &config_manager::FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
-        lp_bps: 9000,
-    });
+    config_client.update_fee_splits(
+        &admin,
+        &config_manager::FeeSplits {
+            keeper_bps: 500,
+            dev_bps: 500,
+            lp_bps: 9000,
+        },
+    );
 
     let usdc_id = env.register(MockToken, ());
     let usdc_client = MockTokenClient::new(&env, &usdc_id);
@@ -142,20 +150,20 @@ fn setup_full<'a>() -> TestFixture<'a> {
     vault_client.deposit(&VAULT_DEPOSIT, &lp, &lp, &lp);
 
     let pm_client = unsafe { core::mem::transmute(pm_client) };
-    let config_client = unsafe { core::mem::transmute(config_client) };
-    let usdc_client = unsafe { core::mem::transmute(usdc_client) };
+    // let config_client = unsafe { core::mem::transmute(config_client) };
+    // let usdc_client = unsafe { core::mem::transmute(usdc_client) };
     let oracle_client = unsafe { core::mem::transmute(oracle_client) };
 
     TestFixture {
         env,
         pm_client,
-        config_client,
-        usdc_client,
+        // config_client,
+        // usdc_client,
         oracle_client,
         admin,
         keeper,
         trader,
-        pm_addr: pm_id,
+        // pm_addr: pm_id,
     }
 }
 
@@ -178,8 +186,7 @@ fn test_bump_position_reverts_not_initialized() {
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_bump_position_reverts_position_not_found() {
     let f = setup_full();
-    f.pm_client
-        .bump_position(&f.trader, &symbol_short!("BTC"));
+    f.pm_client.bump_position(&f.trader, &symbol_short!("BTC"));
 }
 
 #[test]
@@ -190,11 +197,12 @@ fn test_bump_position_succeeds_on_existing_position() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     // Should not panic
-    f.pm_client
-        .bump_position(&f.trader, &symbol_short!("BTC"));
+    f.pm_client.bump_position(&f.trader, &symbol_short!("BTC"));
 }
 
 #[test]
@@ -207,11 +215,12 @@ fn test_bump_position_callable_by_anyone() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     // Calling with the trader's address should work regardless of who submits the tx
-    f.pm_client
-        .bump_position(&f.trader, &symbol_short!("BTC"));
+    f.pm_client.bump_position(&f.trader, &symbol_short!("BTC"));
 }
 
 // ===========================================================================
@@ -231,10 +240,13 @@ fn test_execute_order_allowed_when_paused() {
         &soroban_sdk::symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     let tp = 55_000 * PRECISION;
-    f.pm_client.set_tp_sl(&f.trader, &soroban_sdk::symbol_short!("BTC"), &tp, &0);
+    f.pm_client
+        .set_tp_sl(&f.trader, &soroban_sdk::symbol_short!("BTC"), &tp, &0);
 
     f.pm_client.pause(&f.admin);
 
@@ -250,10 +262,12 @@ fn test_execute_order_allowed_when_paused() {
         min_persistent_entry_ttl: 100,
         max_entry_ttl: 10_000_000,
     });
-    f.oracle_client.set_price(&soroban_sdk::symbol_short!("BTC"), &trigger_price);
+    f.oracle_client
+        .set_price(&soroban_sdk::symbol_short!("BTC"), &trigger_price);
 
     // Should succeed even when paused
-    f.pm_client.execute_order(&f.keeper, &f.trader, &soroban_sdk::symbol_short!("BTC"));
+    f.pm_client
+        .execute_order(&f.keeper, &f.trader, &soroban_sdk::symbol_short!("BTC"));
 }
 
 // ===========================================================================
@@ -268,11 +282,11 @@ fn test_get_position_returns_correct_data() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
-    let pos = f
-        .pm_client
-        .get_position(&f.trader, &symbol_short!("BTC"));
+    let pos = f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
     assert_eq!(pos.size, DEFAULT_SIZE);
     assert_eq!(pos.collateral, DEFAULT_COLLATERAL);
     assert_eq!(pos.entry_price, BTC_PRICE);
@@ -283,8 +297,7 @@ fn test_get_position_returns_correct_data() {
 #[should_panic(expected = "Error(Contract, #6)")]
 fn test_get_position_reverts_not_found() {
     let f = setup_full();
-    f.pm_client
-        .get_position(&f.trader, &symbol_short!("BTC"));
+    f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
 }
 
 // ===========================================================================
@@ -309,7 +322,9 @@ fn test_get_market_returns_correct_oi_after_increase() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
     let market = f.pm_client.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, DEFAULT_SIZE);
@@ -330,7 +345,9 @@ fn test_increase_position_reverts_when_paused() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
 }
 
@@ -345,10 +362,10 @@ fn test_unpause_allows_increase_position_again() {
         &symbol_short!("BTC"),
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
-        &true, &0, &0,
+        &true,
+        &0,
+        &0,
     );
-    let pos = f
-        .pm_client
-        .get_position(&f.trader, &symbol_short!("BTC"));
+    let pos = f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
     assert_eq!(pos.size, DEFAULT_SIZE);
 }
