@@ -3,3 +3,6 @@ node_modules/
 packages/*/dist/
 packages/bindings/
 *.tgz
+.env.local
+.env
+packages/simulation/state/
