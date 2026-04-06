@@ -44,6 +44,53 @@ export interface ParsedEvent {
 }
 
 /**
+ * Field-name schemas for each contractevent (non-topic fields, in declaration order).
+ * These match the Rust struct field order after removing #[topic] fields,
+ * since data_format = "vec" encodes them as a positional ScVec.
+ */
+const EVENT_SCHEMAS: Record<string, string[]> = {
+  // Vault
+  deposit:   ["assets", "shares", "from"],
+  withdraw:  ["assets", "shares", "receiver"],
+  mint:      ["shares", "assets", "from"],
+  redeem:    ["shares", "assets", "receiver"],
+  settle:    ["amount", "reserved_delta", "is_profit"],
+  reserve:   ["amount", "new_total"],
+  release:   ["amount", "new_total"],
+  fees:      ["amount", "new_total"],
+  claim:     ["amount", "recipient"],
+  pause:     ["is_paused", "caller"],
+  // PositionManager
+  increase:  ["symbol", "size_delta", "collateral", "entry_price", "is_long", "tp", "sl", "new_total_size", "new_total_collateral"],
+  decrease:  ["symbol", "size_delta", "pnl", "borrow_fee", "funding_fee", "mark_price", "is_full_close"],
+  liq:       ["symbol", "size", "collateral", "pnl", "borrow_fee", "funding_fee", "mark_price", "keeper"],
+  exec_ord:  ["symbol", "size", "pnl", "mark_price", "is_tp", "keeper"],
+  adl:       ["symbol", "size", "pnl", "mark_price"],
+  indices:   ["acc_borrow_index", "acc_funding_index", "timestamp"],
+  tp_sl:     ["symbol", "take_profit", "stop_loss"],
+  max_lev:   ["max_leverage"],
+  // OracleRouter
+  price:     ["price", "timestamp"],
+  orccfg:    ["staleness", "deviation", "cache_duration"],
+  // ConfigManager
+  role:      ["role", "account", "is_grant"],
+  feecfg:    ["keeper_bps", "dev_bps", "lp_bps"],
+  limits:    ["min_collateral", "cooldown_duration", "min_position_lifetime", "max_utilization_ratio", "funding_cut_bps", "adl_pnl_bps", "adl_utilization_bps"],
+  rates:     ["base_borrow_rate_bps", "slope1_bps", "slope2_bps", "optimal_utilization_bps", "base_funding_rate_bps"],
+};
+
+/** Zip a positional array with field names from the schema. */
+function zipFields(topic0: string, arr: unknown[]): Record<string, unknown> {
+  const fields = EVENT_SCHEMAS[topic0];
+  if (!fields) return { _raw: arr };
+  const obj: Record<string, unknown> = {};
+  for (let i = 0; i < fields.length && i < arr.length; i++) {
+    obj[fields[i]] = arr[i];
+  }
+  return obj;
+}
+
+/**
  * Parse raw event topics + value into a structured ParsedEvent.
  * Topic[0] is always the event name symbol.
  * Topic[1] (if present) is the discriminator (trader address or market symbol).
@@ -61,9 +108,14 @@ export function parseEvent(raw: {
   const topic1 = raw.topic.length > 1 ? decodeTopic(raw.topic[1]) : null;
 
   const rawData = decodeVal(raw.value);
-  const data = (typeof rawData === "object" && rawData !== null && !Array.isArray(rawData)
-    ? rawData
-    : { _raw: rawData }) as Record<string, unknown>;
+  let data: Record<string, unknown>;
+  if (Array.isArray(rawData)) {
+    data = zipFields(topic0, rawData);
+  } else if (typeof rawData === "object" && rawData !== null) {
+    data = rawData as Record<string, unknown>;
+  } else {
+    data = { _raw: rawData };
+  }
 
   return {
     contractId: raw.contractId,

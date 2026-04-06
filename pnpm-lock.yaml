@@ -16,6 +16,10 @@ importers:
       buffer:
         specifier: 6.0.3
         version: 6.0.3
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
 
   packages/config:
     devDependencies:
@@ -55,8 +59,11 @@ importers:
   packages/indexer:
     dependencies:
       '@stellar/stellar-sdk':
-        specifier: ^13.0.0
-        version: 13.3.0
+        specifier: ^14.1.1
+        version: 14.6.1
+      '@stellars/bindings':
+        specifier: workspace:*
+        version: link:../bindings
       '@stellars/config':
         specifier: workspace:*
         version: link:../config
@@ -569,17 +576,9 @@ packages:
   '@stellar/js-xdr@3.1.2':
     resolution: {integrity: sha512-VVolPL5goVEIsvuGqDc5uiKxV03lzfWdvYg1KikvwheDmTBO68CKDji3bAZ/kppZrx5iTA8z3Ld5yuytcvhvOQ==}
 
-  '@stellar/stellar-base@13.1.0':
-    resolution: {integrity: sha512-90EArG+eCCEzDGj3OJNoCtwpWDwxjv+rs/RNPhvg4bulpjN/CSRj+Ys/SalRcfM4/WRC5/qAfjzmJBAuquWhkA==}
-    engines: {node: '>=18.0.0'}
-
   '@stellar/stellar-base@14.1.0':
     resolution: {integrity: sha512-A8kFli6QGy22SRF45IjgPAJfUNGjnI+R7g4DF5NZYVsD1kGf7B4ITyc4OPclLV9tqNI4/lXxafGEw0JEUbHixw==}
     engines: {node: '>=20.0.0'}
-
-  '@stellar/stellar-sdk@13.3.0':
-    resolution: {integrity: sha512-8+GHcZLp+mdin8gSjcgfb/Lb6sSMYRX6Nf/0LcSJxvjLQR0XHpjGzOiRbYb2jSXo51EnA6kAV5j+4Pzh5OUKUg==}
-    engines: {node: '>=18.0.0'}
 
   '@stellar/stellar-sdk@14.6.1':
     resolution: {integrity: sha512-A1rQWDLdUasXkMXnYSuhgep+3ZZzyuXJKdt5/KAIc0gkmSp906HTvUpbT4pu+bVr41tu0+J4Ugz9J4BQAGGytg==}
@@ -601,25 +600,6 @@ packages:
 
   axios@1.13.6:
     resolution: {integrity: sha512-ChTCHMouEe2kn713WHbQGcuYrr6fXTBiu460OTwWrWob16g1bXn4vtz07Ope7ewMozJAnEquLk5lWQWtBig9DQ==}
-
-  bare-addon-resolve@1.10.0:
-    resolution: {integrity: sha512-sSd0jieRJlDaODOzj0oe0RjFVC1QI0ZIjGIdPkbrTXsdVVtENg14c+lHHAhHwmWCZ2nQlMhy8jA3Y5LYPc/isA==}
-    peerDependencies:
-      bare-url: '*'
-    peerDependenciesMeta:
-      bare-url:
-        optional: true
-
-  bare-module-resolve@1.12.1:
-    resolution: {integrity: sha512-hbmAPyFpEq8FoZMd5sFO3u6MC5feluWoGE8YKlA8fCrl6mNtx68Wjg4DTiDJcqRJaovTvOYKfYngoBUnbaT7eg==}
-    peerDependencies:
-      bare-url: '*'
-    peerDependenciesMeta:
-      bare-url:
-        optional: true
-
-  bare-semver@1.0.2:
-    resolution: {integrity: sha512-ESVaN2nzWhcI5tf3Zzcq9aqCZ676VWzqw07eEZ0qxAcEOAFYBa0pWq8sK34OQeHLY3JsfKXZS9mDyzyxGjeLzA==}
 
   base32.js@0.1.0:
     resolution: {integrity: sha512-n3TkB02ixgBOhTvANakDb4xaMXnYUVkNoRFJjQflcqMQhyEKxEHdj3E6N8t8sUQ0mjH/3/JxzlXuz3ul/J90pQ==}
@@ -985,10 +965,6 @@ packages:
   randombytes@2.1.0:
     resolution: {integrity: sha512-vYl3iOX+4CKUWuxGi9Ukhie6fsqXqS9FE2Zaic4tNFD2N2QQaXOMFbuKK4QmDHC0JO6B1Zp41J0LpT0oR68amQ==}
 
-  require-addon@1.2.0:
-    resolution: {integrity: sha512-VNPDZlYgIYQwWp9jMTzljx+k0ZtatKlcvOhktZ/anNPI3dQ9NXk7cq2U4iJ1wd9IrytRnYhyEocFWbkdPb+MYA==}
-    engines: {bare: '>=1.10.0'}
-
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
 
@@ -1013,9 +989,6 @@ packages:
     resolution: {integrity: sha512-ObmnIF4hXNg1BqhnHmgbDETF8dLPCggZWBjkQfhZpbszZnYur5DUljTcCHii5LC3J5E0yeO/1LIMyH+UvHQgyw==}
     engines: {node: '>= 0.4'}
 
-  sodium-native@4.3.3:
-    resolution: {integrity: sha512-OnxSlN3uyY8D0EsLHpmm2HOFmKddQVvEMmsakCrXUzSd8kjjbzL413t4ZNF3n0UxSwNgwTyUvkmZHTfuCeiYSw==}
-
   source-map-support@0.5.21:
     resolution: {integrity: sha512-uBHU3L3czsIyYXKX88fdrGovxdSCoTGDRZ6SYXtSRxLZUzHg5P/66Ht6uoUlHu9EZod+inXhKo3qQgwXUT/y1w==}
 
@@ -1038,9 +1011,6 @@ packages:
     resolution: {integrity: sha512-5C1sg4USs1lfG0GFb2RLXsdpXqBSEhAaA/0kPL01wxzpMqLILNxIxIOKiILz+cdg/pLnOUxFYOR5yhHU666wbw==}
     engines: {node: '>=18.0.0'}
     hasBin: true
-
-  tweetnacl@1.0.3:
-    resolution: {integrity: sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==}
 
   typed-array-buffer@1.0.3:
     resolution: {integrity: sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw==}
@@ -1307,19 +1277,6 @@ snapshots:
 
   '@stellar/js-xdr@3.1.2': {}
 
-  '@stellar/stellar-base@13.1.0':
-    dependencies:
-      '@stellar/js-xdr': 3.1.2
-      base32.js: 0.1.0
-      bignumber.js: 9.3.1
-      buffer: 6.0.3
-      sha.js: 2.4.12
-      tweetnacl: 1.0.3
-    optionalDependencies:
-      sodium-native: 4.3.3
-    transitivePeerDependencies:
-      - bare-url
-
   '@stellar/stellar-base@14.1.0':
     dependencies:
       '@noble/curves': 1.9.7
@@ -1328,20 +1285,6 @@ snapshots:
       bignumber.js: 9.3.1
       buffer: 6.0.3
       sha.js: 2.4.12
-
-  '@stellar/stellar-sdk@13.3.0':
-    dependencies:
-      '@stellar/stellar-base': 13.1.0
-      axios: 1.13.6
-      bignumber.js: 9.3.1
-      eventsource: 2.0.2
-      feaxios: 0.0.23
-      randombytes: 2.1.0
-      toml: 3.0.0
-      urijs: 1.19.11
-    transitivePeerDependencies:
-      - bare-url
-      - debug
 
   '@stellar/stellar-sdk@14.6.1':
     dependencies:
@@ -1380,20 +1323,6 @@ snapshots:
       proxy-from-env: 1.1.0
     transitivePeerDependencies:
       - debug
-
-  bare-addon-resolve@1.10.0:
-    dependencies:
-      bare-module-resolve: 1.12.1
-      bare-semver: 1.0.2
-    optional: true
-
-  bare-module-resolve@1.12.1:
-    dependencies:
-      bare-semver: 1.0.2
-    optional: true
-
-  bare-semver@1.0.2:
-    optional: true
 
   base32.js@0.1.0: {}
 
@@ -1723,13 +1652,6 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
-  require-addon@1.2.0:
-    dependencies:
-      bare-addon-resolve: 1.10.0
-    transitivePeerDependencies:
-      - bare-url
-    optional: true
-
   resolve-pkg-maps@1.0.0: {}
 
   safe-buffer@5.2.1: {}
@@ -1752,13 +1674,6 @@ snapshots:
       to-buffer: 1.2.2
 
   shell-quote@1.8.3: {}
-
-  sodium-native@4.3.3:
-    dependencies:
-      require-addon: 1.2.0
-    transitivePeerDependencies:
-      - bare-url
-    optional: true
 
   source-map-support@0.5.21:
     dependencies:
@@ -1783,8 +1698,6 @@ snapshots:
       get-tsconfig: 4.13.6
     optionalDependencies:
       fsevents: 2.3.3
-
-  tweetnacl@1.0.3: {}
 
   typed-array-buffer@1.0.3:
     dependencies:

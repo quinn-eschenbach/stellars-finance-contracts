@@ -27,22 +27,8 @@ optimize: build
 		stellar contract optimize --wasm "$$wasm"; \
 	done
 
-BIND_CONTRACTS = vault position-manager config-manager oracle-router mock-oracle mock-token
-BIND_OUT       = packages/bindings
-
 bind: optimize
-	@rm -rf $(BIND_OUT)
-	@mkdir -p $(BIND_OUT)
-	@for contract in $(BIND_CONTRACTS); do \
-		wasm="$(WASM_DIR)/$$(echo $$contract | tr '-' '_').optimized.wasm"; \
-		echo "Generating bindings for $$contract..."; \
-		stellar contract bindings typescript \
-			--wasm "$$wasm" \
-			--output-dir "$(BIND_OUT)/$$contract" \
-			--overwrite; \
-	done
-	@echo '{ "name": "@stellars/bindings", "version": "0.0.1", "private": true, "type": "module", "dependencies": { "@stellar/stellar-sdk": "^14.1.1", "buffer": "6.0.3" } }' > $(BIND_OUT)/package.json
-	@pnpm install --filter @stellars/bindings
+	bash scripts/gen-bindings.sh
 
 test:
 	cargo test

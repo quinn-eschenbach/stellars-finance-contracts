@@ -4,7 +4,7 @@ use shared::{SHARED_THRESHOLD, SHARED_BUMP};
 use crate::errors::VaultError;
 
 #[contracttype]
-pub enum StorageKey {
+pub enum VaultDataKey {
     Initialized,
     ConfigManager,
     PositionManager,
@@ -22,11 +22,11 @@ pub enum StorageKey {
 // ---------------------------------------------------------------------------
 
 pub fn is_initialized(env: &Env) -> bool {
-    env.storage().instance().has(&StorageKey::Initialized)
+    env.storage().instance().has(&VaultDataKey::Initialized)
 }
 
 pub fn set_initialized(env: &Env) {
-    env.storage().instance().set(&StorageKey::Initialized, &true);
+    env.storage().instance().set(&VaultDataKey::Initialized, &true);
 }
 
 // ---------------------------------------------------------------------------
@@ -36,14 +36,14 @@ pub fn set_initialized(env: &Env) {
 pub fn get_config_manager(env: &Env) -> Address {
     env.storage()
         .instance()
-        .get(&StorageKey::ConfigManager)
+        .get(&VaultDataKey::ConfigManager)
         .unwrap_or_else(|| panic_with_error!(env, VaultError::NotInitialized))
 }
 
 pub fn set_config_manager(env: &Env, addr: &Address) {
     env.storage()
         .instance()
-        .set(&StorageKey::ConfigManager, addr);
+        .set(&VaultDataKey::ConfigManager, addr);
 }
 
 // ---------------------------------------------------------------------------
@@ -53,14 +53,14 @@ pub fn set_config_manager(env: &Env, addr: &Address) {
 pub fn get_position_manager(env: &Env) -> Address {
     env.storage()
         .instance()
-        .get(&StorageKey::PositionManager)
+        .get(&VaultDataKey::PositionManager)
         .unwrap_or_else(|| panic_with_error!(env, VaultError::NotInitialized))
 }
 
 pub fn set_position_manager(env: &Env, addr: &Address) {
     env.storage()
         .instance()
-        .set(&StorageKey::PositionManager, addr);
+        .set(&VaultDataKey::PositionManager, addr);
 }
 
 // ---------------------------------------------------------------------------
@@ -70,14 +70,14 @@ pub fn set_position_manager(env: &Env, addr: &Address) {
 pub fn get_reserved_usdc(env: &Env) -> i128 {
     env.storage()
         .instance()
-        .get(&StorageKey::ReservedUsdc)
+        .get(&VaultDataKey::ReservedUsdc)
         .unwrap_or(0)
 }
 
 pub fn set_reserved_usdc(env: &Env, amount: i128) {
     env.storage()
         .instance()
-        .set(&StorageKey::ReservedUsdc, &amount);
+        .set(&VaultDataKey::ReservedUsdc, &amount);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,14 +87,14 @@ pub fn set_reserved_usdc(env: &Env, amount: i128) {
 pub fn get_unclaimed_fees(env: &Env) -> i128 {
     env.storage()
         .instance()
-        .get(&StorageKey::UnclaimedFees)
+        .get(&VaultDataKey::UnclaimedFees)
         .unwrap_or(0)
 }
 
 pub fn set_unclaimed_fees(env: &Env, amount: i128) {
     env.storage()
         .instance()
-        .set(&StorageKey::UnclaimedFees, &amount);
+        .set(&VaultDataKey::UnclaimedFees, &amount);
 }
 
 // ---------------------------------------------------------------------------
@@ -104,14 +104,14 @@ pub fn set_unclaimed_fees(env: &Env, amount: i128) {
 pub fn get_net_global_trader_pnl(env: &Env) -> i128 {
     env.storage()
         .instance()
-        .get(&StorageKey::NetGlobalTraderPnl)
+        .get(&VaultDataKey::NetGlobalTraderPnl)
         .unwrap_or(0)
 }
 
 pub fn set_net_global_trader_pnl(env: &Env, pnl: i128) {
     env.storage()
         .instance()
-        .set(&StorageKey::NetGlobalTraderPnl, &pnl);
+        .set(&VaultDataKey::NetGlobalTraderPnl, &pnl);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,14 +121,14 @@ pub fn set_net_global_trader_pnl(env: &Env, pnl: i128) {
 pub fn get_paused(env: &Env) -> bool {
     env.storage()
         .instance()
-        .get(&StorageKey::IsPaused)
+        .get(&VaultDataKey::IsPaused)
         .unwrap_or(false)
 }
 
 pub fn set_paused(env: &Env, paused: bool) {
     env.storage()
         .instance()
-        .set(&StorageKey::IsPaused, &paused);
+        .set(&VaultDataKey::IsPaused, &paused);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ pub fn set_paused(env: &Env, paused: bool) {
 pub fn save_version(env: &Env, version: u32) {
     env.storage()
         .instance()
-        .set(&StorageKey::Version, &version);
+        .set(&VaultDataKey::Version, &version);
 }
 
 // ---------------------------------------------------------------------------
@@ -146,12 +146,12 @@ pub fn save_version(env: &Env, version: u32) {
 // ---------------------------------------------------------------------------
 
 pub fn get_last_deposit_time(env: &Env, user: &Address) -> Option<u64> {
-    let key = StorageKey::LastDepositTime(user.clone());
+    let key = VaultDataKey::LastDepositTime(user.clone());
     env.storage().persistent().get(&key)
 }
 
 pub fn set_last_deposit_time(env: &Env, user: &Address, timestamp: u64) {
-    let key = StorageKey::LastDepositTime(user.clone());
+    let key = VaultDataKey::LastDepositTime(user.clone());
     env.storage().persistent().set(&key, &timestamp);
     env.storage()
         .persistent()
