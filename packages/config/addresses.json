@@ -3,33 +3,78 @@
     "rpcUrl": "http://localhost:8000/soroban/rpc",
     "networkPassphrase": "Standalone Network ; February 2017",
     "contracts": {
-      "vault": "",
-      "positionManager": "",
-      "configManager": "",
-      "oracleRouter": "",
-      "oracle": ""
+      "vault": {
+        "address": "CCH6J5GZDTJS2QCFESF52QA4XHPA5R4YL67LHIUY6DEHEOGNLQ7CIISA",
+        "startLedger": 122
+      },
+      "positionManager": {
+        "address": "CDAODRVZVKT5YANUW65SLBWWOF4MUNDKBKKHOCOSBSQBTBEQSCIPNTTP",
+        "startLedger": 124
+      },
+      "configManager": {
+        "address": "CDJAOVUNTH5ZOIYCF3GDFLMAKPNG7GFGLQ2R4QDMRANUSC6WUDCP43ND",
+        "startLedger": 110
+      },
+      "oracleRouter": {
+        "address": "CBM3ZDOH4NJCQ3E2CXZ24A7WDLJ5NMP7BSRYC5RTPFKWQ4FGHTAS2JBU",
+        "startLedger": 112
+      },
+      "oracle": {
+        "address": "CBIVDOYKRIHTAVJP4OSJQE2ZJOPVBF4GSY67DYXXBYYVOZ5O57NXODZN",
+        "startLedger": 116
+      }
     }
   },
   "testnet": {
     "rpcUrl": "https://soroban-testnet.stellar.org",
     "networkPassphrase": "Test SDF Network ; September 2015",
     "contracts": {
-      "vault": "",
-      "positionManager": "",
-      "configManager": "",
-      "oracleRouter": "",
-      "oracle": ""
+      "vault": {
+        "address": "",
+        "startLedger": 0
+      },
+      "positionManager": {
+        "address": "",
+        "startLedger": 0
+      },
+      "configManager": {
+        "address": "",
+        "startLedger": 0
+      },
+      "oracleRouter": {
+        "address": "",
+        "startLedger": 0
+      },
+      "oracle": {
+        "address": "",
+        "startLedger": 0
+      }
     }
   },
   "mainnet": {
     "rpcUrl": "https://soroban.stellar.org",
     "networkPassphrase": "Public Global Stellar Network ; September 2015",
     "contracts": {
-      "vault": "",
-      "positionManager": "",
-      "configManager": "",
-      "oracleRouter": "",
-      "oracle": ""
+      "vault": {
+        "address": "",
+        "startLedger": 0
+      },
+      "positionManager": {
+        "address": "",
+        "startLedger": 0
+      },
+      "configManager": {
+        "address": "",
+        "startLedger": 0
+      },
+      "oracleRouter": {
+        "address": "",
+        "startLedger": 0
+      },
+      "oracle": {
+        "address": "",
+        "startLedger": 0
+      }
     }
   }
 }

@@ -1,4 +1,4 @@
-import { getNetworkConfig, type Network } from "@stellars/config";
+import { getNetworkConfig, type ContractInfo, type Network } from "@stellars/config";
 
 export interface IndexerConfig {
   databaseUrl: string;
@@ -6,13 +6,12 @@ export interface IndexerConfig {
   rpcUrl: string;
   networkPassphrase: string;
   pollIntervalMs: number;
-  startLedger: number;
   healthPort: number;
   contracts: {
-    vault: string;
-    positionManager: string;
-    configManager: string;
-    oracleRouter: string;
+    vault: ContractInfo;
+    positionManager: ContractInfo;
+    configManager: ContractInfo;
+    oracleRouter: ContractInfo;
   };
 }
 
@@ -23,16 +22,15 @@ export function loadConfig(): IndexerConfig {
   return {
     databaseUrl: process.env.DATABASE_URL ?? "",
     network,
-    rpcUrl: process.env.RPC_URL ?? networkConfig.rpcUrl,
+    rpcUrl: networkConfig.rpcUrl,
     networkPassphrase: networkConfig.networkPassphrase,
     pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 3000),
-    startLedger: Number(process.env.START_LEDGER ?? 0),
     healthPort: Number(process.env.HEALTH_PORT ?? 3001),
     contracts: {
-      vault: process.env.VAULT_CONTRACT ?? networkConfig.contracts.vault,
-      positionManager: process.env.PM_CONTRACT ?? networkConfig.contracts.positionManager,
-      configManager: process.env.CM_CONTRACT ?? networkConfig.contracts.configManager,
-      oracleRouter: process.env.OR_CONTRACT ?? networkConfig.contracts.oracleRouter,
+      vault: networkConfig.contracts.vault,
+      positionManager: networkConfig.contracts.positionManager,
+      configManager: networkConfig.contracts.configManager,
+      oracleRouter: networkConfig.contracts.oracleRouter,
     },
   };
 }

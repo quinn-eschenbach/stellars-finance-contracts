@@ -1,4 +1,5 @@
 import type { Db } from "@stellars/db";
+import type { ContractInfo } from "@stellars/config";
 import type { ParsedEvent } from "../spec-parser.js";
 import { handlePositionManagerEvent } from "./position-manager.js";
 import { handleVaultEvent } from "./vault.js";
@@ -10,15 +11,15 @@ export interface ContractRoutes {
 }
 
 export function buildRoutes(contracts: {
-  vault: string;
-  positionManager: string;
-  configManager: string;
-  oracleRouter: string;
+  vault: ContractInfo;
+  positionManager: ContractInfo;
+  configManager: ContractInfo;
+  oracleRouter: ContractInfo;
 }): ContractRoutes {
   const routes: ContractRoutes = {};
-  if (contracts.positionManager) routes[contracts.positionManager] = handlePositionManagerEvent;
-  if (contracts.vault) routes[contracts.vault] = handleVaultEvent;
-  if (contracts.configManager) routes[contracts.configManager] = handleConfigManagerEvent;
-  if (contracts.oracleRouter) routes[contracts.oracleRouter] = handleOracleRouterEvent;
+  if (contracts.positionManager.address) routes[contracts.positionManager.address] = handlePositionManagerEvent;
+  if (contracts.vault.address) routes[contracts.vault.address] = handleVaultEvent;
+  if (contracts.configManager.address) routes[contracts.configManager.address] = handleConfigManagerEvent;
+  if (contracts.oracleRouter.address) routes[contracts.oracleRouter.address] = handleOracleRouterEvent;
   return routes;
 }

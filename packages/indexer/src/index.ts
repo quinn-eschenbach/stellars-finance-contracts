@@ -35,29 +35,33 @@ async function main() {
   const db = getDb();
   const server = new rpc.Server(config.rpcUrl, { allowHttp: config.rpcUrl.startsWith("http://") });
   const routes = buildRoutes(config.contracts);
-  const contractIds = Object.values(config.contracts).filter(Boolean);
+
+  const deployedContracts = Object.values(config.contracts).filter((c) => c.address);
+  const contractIds = deployedContracts.map((c) => c.address);
 
   if (contractIds.length === 0) {
-    console.error("No contract IDs configured. Set them in env or @stellars/config addresses.json.");
+    console.error(
+      `No contract addresses configured for network "${config.network}". Run 'make deploy' to populate packages/config/addresses.json.`,
+    );
     process.exit(1);
   }
-
-  VaultClient
 
   // Build spec maps from binding clients for spec-driven event parsing
   const { networkPassphrase, rpcUrl } = config;
   const specMaps = buildContractSpecMaps([
-    { contractId: config.contracts.vault, spec: makeClient(VaultClient, config.contracts.vault, networkPassphrase, rpcUrl).spec },
-    { contractId: config.contracts.positionManager, spec: makeClient(PMClient, config.contracts.positionManager, networkPassphrase, rpcUrl).spec },
-    { contractId: config.contracts.configManager, spec: makeClient(CMClient, config.contracts.configManager, networkPassphrase, rpcUrl).spec },
-    { contractId: config.contracts.oracleRouter, spec: makeClient(ORClient, config.contracts.oracleRouter, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.vault.address, spec: makeClient(VaultClient, config.contracts.vault.address, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.positionManager.address, spec: makeClient(PMClient, config.contracts.positionManager.address, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.configManager.address, spec: makeClient(CMClient, config.contracts.configManager.address, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.oracleRouter.address, spec: makeClient(ORClient, config.contracts.oracleRouter.address, networkPassphrase, rpcUrl).spec },
   ]);
 
   startHealthServer(config.healthPort);
 
-  // Load cursor from DB or use START_LEDGER
+  // Initial start ledger = earliest deployed contract (so we don't miss the first events).
+  // Overridden by DB cursor if present.
   let cursor: string | undefined;
-  let startLedger = config.startLedger;
+  let startLedger = Math.min(...deployedContracts.map((c) => c.startLedger).filter((l) => l > 0));
+  if (!Number.isFinite(startLedger)) startLedger = 0;
 
   const cursorRows = await db.select().from(indexerCursor).where(eq(indexerCursor.id, 1)).limit(1);
   if (cursorRows.length > 0 && cursorRows[0].last_cursor) {
@@ -80,7 +84,7 @@ async function main() {
   // Main polling loop
   while (running) {
     try {
-      const { events, latestLedger } = await fetchEvents(server, startLedger, contractIds, cursor);
+      const { events, latestLedger, nextCursor } = await fetchEvents(server, startLedger, contractIds, cursor);
 
       for (const rawEvent of events) {
         const handler = routes[rawEvent.contractId];
@@ -92,26 +96,27 @@ async function main() {
         } catch (err) {
           console.error(`Handler error for ${parsed.topic0} in ${rawEvent.contractId}:`, err);
         }
-
-        // Update cursor after each event
-        cursor = rawEvent.id;
-        startLedger = rawEvent.ledger;
       }
 
-      // Persist cursor
-      if (events.length > 0) {
+      // Always advance cursor — even on empty pages — so we don't re-scan
+      // ledgers we've already inspected. The RPC returns a cursor pointing at
+      // the next ledger past the scanned window regardless of event count.
+      if (nextCursor && nextCursor !== cursor) {
+        cursor = nextCursor;
+        startLedger = latestLedger;
+
         await db
           .insert(indexerCursor)
           .values({
             id: 1,
             last_ledger: startLedger,
-            last_cursor: cursor ?? "",
+            last_cursor: cursor,
           })
           .onConflictDoUpdate({
             target: indexerCursor.id,
             set: {
               last_ledger: startLedger,
-              last_cursor: cursor ?? "",
+              last_cursor: cursor,
               updated_at: new Date(),
             },
           });

@@ -16,7 +16,7 @@ export async function fetchEvents(
   startLedger: number,
   contractIds: string[],
   cursor?: string,
-): Promise<{ events: RawEvent[]; latestLedger: number }> {
+): Promise<{ events: RawEvent[]; latestLedger: number; nextCursor: string }> {
   const filters: rpc.Api.EventFilter[] = contractIds.map((id) => ({
     type: "contract" as const,
     contractIds: [id],
@@ -39,5 +39,5 @@ export async function fetchEvents(
     txHash: e.txHash,
   }));
 
-  return { events, latestLedger: response.latestLedger };
+  return { events, latestLedger: response.latestLedger, nextCursor: response.cursor };
 }
