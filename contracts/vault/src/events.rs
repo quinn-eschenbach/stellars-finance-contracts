@@ -1,44 +1,9 @@
 use soroban_sdk::{contractevent, Address};
 
-#[contractevent(topics = ["deposit"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Deposit {
-    #[topic]
-    pub receiver: Address,
-    pub assets: i128,
-    pub shares: i128,
-    pub from: Address,
-}
-
-#[contractevent(topics = ["withdraw"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Withdraw {
-    #[topic]
-    pub owner: Address,
-    pub assets: i128,
-    pub shares: i128,
-    pub receiver: Address,
-}
-
-#[contractevent(topics = ["mint"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Mint {
-    #[topic]
-    pub receiver: Address,
-    pub shares: i128,
-    pub assets: i128,
-    pub from: Address,
-}
-
-#[contractevent(topics = ["redeem"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Redeem {
-    #[topic]
-    pub owner: Address,
-    pub shares: i128,
-    pub assets: i128,
-    pub receiver: Address,
-}
+// NOTE: Deposit/Withdraw/Mint/Redeem events are emitted automatically by OZ's
+// stellar_tokens::vault::Vault — see stellar-tokens/src/vault/storage.rs.
+// Defining duplicates here would cause the indexer's spec map (keyed by topic
+// name) to collide with OZ's specs and mis-parse one of the two events.
 
 #[contractevent(topics = ["settle"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]

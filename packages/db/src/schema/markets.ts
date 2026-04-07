@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, bigint, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, integer, timestamp } from "drizzle-orm/pg-core";
 
 export const markets = pgTable("markets", {
   symbol: text().primaryKey(),
@@ -8,7 +8,7 @@ export const markets = pgTable("markets", {
   short_open_interest: numeric().notNull().default("0"),
   acc_borrow_index: numeric().notNull().default("0"),
   acc_funding_index: numeric().notNull().default("0"),
-  last_index_update: bigint({ mode: "number" }).notNull().default(0),
+  last_index_update: numeric().notNull().default("0"),
   max_leverage: numeric().notNull().default("0"),
   market_unrealized_pnl: numeric().notNull().default("0"),
   updated_at_ledger: integer().notNull().default(0),

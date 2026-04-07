@@ -4,6 +4,7 @@ export interface IndexerConfig {
   databaseUrl: string;
   network: Network;
   rpcUrl: string;
+  networkPassphrase: string;
   pollIntervalMs: number;
   startLedger: number;
   healthPort: number;
@@ -23,6 +24,7 @@ export function loadConfig(): IndexerConfig {
     databaseUrl: process.env.DATABASE_URL ?? "",
     network,
     rpcUrl: process.env.RPC_URL ?? networkConfig.rpcUrl,
+    networkPassphrase: networkConfig.networkPassphrase,
     pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 3000),
     startLedger: Number(process.env.START_LEDGER ?? 0),
     healthPort: Number(process.env.HEALTH_PORT ?? 3001),

@@ -9,9 +9,9 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "push": "drizzle-kit push"
+    "generate": "tsc && drizzle-kit generate",
+    "migrate": "tsc && drizzle-kit migrate",
+    "push": "tsc && drizzle-kit push"
   },
   "dependencies": {
     "drizzle-orm": "^0.38.0",

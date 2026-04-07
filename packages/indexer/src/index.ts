@@ -2,11 +2,33 @@ import "dotenv/config";
 import { rpc } from "@stellar/stellar-sdk";
 import { eq } from "drizzle-orm";
 import { getDb, indexerCursor } from "@stellars/db";
+import { Client as VaultClient } from "@stellars/bindings/vault";
+import { Client as PMClient } from "@stellars/bindings/position-manager";
+import { Client as CMClient } from "@stellars/bindings/config-manager";
+import { Client as ORClient } from "@stellars/bindings/oracle-router";
 import { loadConfig } from "./config.js";
 import { fetchEvents } from "./rpc.js";
-import { parseEvent } from "./parser.js";
+import { buildContractSpecMaps, parseEvent } from "./spec-parser.js";
 import { buildRoutes } from "./handlers/index.js";
 import { startHealthServer, updateHealth } from "./health.js";
+
+/**
+ * Construct a binding Client to access its embedded contract spec.
+ * No network calls — the constructor only stores the spec and options.
+ */
+function makeClient<T extends { spec: import("@stellar/stellar-sdk/contract").Spec }>(
+  ClientClass: new (options: { contractId: string; networkPassphrase: string; rpcUrl: string; allowHttp?: boolean }) => T,
+  contractId: string,
+  networkPassphrase: string,
+  rpcUrl: string,
+): T {
+  return new ClientClass({
+    contractId,
+    networkPassphrase,
+    rpcUrl,
+    allowHttp: rpcUrl.startsWith("http://"),
+  });
+}
 
 async function main() {
   const config = loadConfig();
@@ -19,6 +41,17 @@ async function main() {
     console.error("No contract IDs configured. Set them in env or @stellars/config addresses.json.");
     process.exit(1);
   }
+
+  VaultClient
+
+  // Build spec maps from binding clients for spec-driven event parsing
+  const { networkPassphrase, rpcUrl } = config;
+  const specMaps = buildContractSpecMaps([
+    { contractId: config.contracts.vault, spec: makeClient(VaultClient, config.contracts.vault, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.positionManager, spec: makeClient(PMClient, config.contracts.positionManager, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.configManager, spec: makeClient(CMClient, config.contracts.configManager, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.oracleRouter, spec: makeClient(ORClient, config.contracts.oracleRouter, networkPassphrase, rpcUrl).spec },
+  ]);
 
   startHealthServer(config.healthPort);
 
@@ -53,7 +86,7 @@ async function main() {
         const handler = routes[rawEvent.contractId];
         if (!handler) continue;
 
-        const parsed = parseEvent(rawEvent);
+        const parsed = parseEvent(rawEvent, specMaps);
         try {
           await handler(db, parsed);
         } catch (err) {

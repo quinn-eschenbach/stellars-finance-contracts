@@ -1,10 +1,10 @@
-import { pgTable, text, numeric, boolean, integer, bigint, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, boolean, integer, timestamp } from "drizzle-orm/pg-core";
 
 export const trades = pgTable("trades", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   tx_hash: text().notNull(),
   ledger: integer().notNull(),
-  timestamp: bigint({ mode: "number" }).notNull(),
+  timestamp: numeric().notNull(),
   trader: text().notNull(),
   symbol: text().notNull(),
   event_type: text().notNull(), // increase, decrease, liquidation, order, adl

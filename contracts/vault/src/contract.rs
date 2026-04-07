@@ -67,9 +67,8 @@ impl FungibleVault for VaultContract {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
         vault_logic::record_deposit_time(e, &receiver);
-        let shares = Vault::deposit(e, assets, receiver.clone(), from.clone(), operator);
-        vault_events::Deposit { receiver: receiver.clone(), assets, shares, from }.publish(e);
-        shares
+        // OZ Vault::deposit auto-emits the deposit event.
+        Vault::deposit(e, assets, receiver, from, operator)
     }
 
     fn max_mint(e: &Env, receiver: Address) -> i128 {
@@ -87,9 +86,8 @@ impl FungibleVault for VaultContract {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
         vault_logic::record_deposit_time(e, &receiver);
-        let assets = Vault::mint(e, shares, receiver.clone(), from.clone(), operator);
-        vault_events::Mint { receiver: receiver.clone(), shares, assets, from }.publish(e);
-        assets
+        // OZ Vault::mint auto-emits the deposit event (mint and deposit collapse to one event).
+        Vault::mint(e, shares, receiver, from, operator)
     }
 
     fn max_withdraw(e: &Env, owner: Address) -> i128 {
@@ -116,9 +114,8 @@ impl FungibleVault for VaultContract {
         vault_logic::require_initialized(e);
         vault_logic::require_cooldown_elapsed(e, &owner);
         vault_logic::require_free_liquidity(e, assets);
-        let shares = Vault::withdraw(e, assets, receiver.clone(), owner.clone(), operator);
-        vault_events::Withdraw { owner: owner.clone(), assets, shares, receiver }.publish(e);
-        shares
+        // OZ Vault::withdraw auto-emits the withdraw event.
+        Vault::withdraw(e, assets, receiver, owner, operator)
     }
 
     fn max_redeem(e: &Env, owner: Address) -> i128 {
@@ -139,9 +136,8 @@ impl FungibleVault for VaultContract {
         vault_logic::require_cooldown_elapsed(e, &owner);
         let assets = Vault::preview_redeem(e, shares);
         vault_logic::require_free_liquidity(e, assets);
-        let result = Vault::redeem(e, shares, receiver.clone(), owner.clone(), operator);
-        vault_events::Redeem { owner: owner.clone(), shares, assets: result, receiver }.publish(e);
-        result
+        // OZ Vault::redeem auto-emits the withdraw event (redeem and withdraw collapse to one event).
+        Vault::redeem(e, shares, receiver, owner, operator)
     }
 }
 

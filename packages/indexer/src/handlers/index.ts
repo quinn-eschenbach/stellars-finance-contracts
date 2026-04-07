@@ -1,5 +1,5 @@
 import type { Db } from "@stellars/db";
-import type { ParsedEvent } from "../parser.js";
+import type { ParsedEvent } from "../spec-parser.js";
 import { handlePositionManagerEvent } from "./position-manager.js";
 import { handleVaultEvent } from "./vault.js";
 import { handleConfigManagerEvent } from "./config-manager.js";
