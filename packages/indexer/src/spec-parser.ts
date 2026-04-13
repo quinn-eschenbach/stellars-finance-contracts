@@ -99,7 +99,7 @@ export function parseEvent(
     ledgerClosedAt: string;
   },
   specMaps: ContractSpecMaps,
-): ParsedEvent {
+): ParsedEvent | null {
   if (raw.topic.length === 0) {
     throw new Error(`[spec-parser] event has no topics: contract=${raw.contractId}`);
   }
@@ -107,9 +107,7 @@ export function parseEvent(
   const topic0 = decodeScVal(raw.topic[0]) as string;
   const eventSpec = specMaps.get(raw.contractId)?.get(topic0);
   if (!eventSpec) {
-    throw new Error(
-      `[spec-parser] no spec entry for contract=${raw.contractId} topic=${topic0}`,
-    );
+    return null;
   }
 
   const data: Record<string, any> = {};

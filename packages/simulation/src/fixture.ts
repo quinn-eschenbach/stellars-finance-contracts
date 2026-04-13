@@ -8,7 +8,7 @@ import { Client as VaultClient } from "../../bindings/vault/src/index.js";
 import { Client as PositionManagerClient } from "../../bindings/position-manager/src/index.js";
 import { Client as ConfigManagerClient } from "../../bindings/config-manager/src/index.js";
 import { Client as OracleRouterClient } from "../../bindings/oracle-router/src/index.js";
-import { Client as MockOracleClient } from "../../bindings/mock-oracle/src/index.js";
+import { Client as OracleClient } from "../../bindings/oracle/src/index.js";
 import { Client as MockTokenClient } from "../../bindings/mock-token/src/index.js";
 
 import {
@@ -32,9 +32,22 @@ interface EnvConfig {
   adminAddress: string;
 }
 
-function loadEnvLocal(): EnvConfig {
-  const envPath = resolve(import.meta.dirname, "..", "..", "..", ".env.local");
-  const content = readFileSync(envPath, "utf-8");
+interface AddressesFile {
+  [network: string]: {
+    rpcUrl: string;
+    networkPassphrase: string;
+    contracts: {
+      vault: { address: string };
+      positionManager: { address: string };
+      configManager: { address: string };
+      oracleRouter: { address: string };
+      oracle: { address: string };
+    };
+  };
+}
+
+function parseDotEnv(path: string): Record<string, string> {
+  const content = readFileSync(path, "utf-8");
   const vars: Record<string, string> = {};
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
@@ -43,16 +56,51 @@ function loadEnvLocal(): EnvConfig {
     if (eqIdx === -1) continue;
     vars[trimmed.slice(0, eqIdx)] = trimmed.slice(eqIdx + 1);
   }
+  return vars;
+}
+
+function loadEnvLocal(): EnvConfig {
+  const root = resolve(import.meta.dirname, "..", "..", "..");
+  const envVars = parseDotEnv(resolve(root, ".env.local"));
+  const network = envVars["NETWORK"] ?? "local";
+
+  const addressesPath = resolve(root, "packages", "config", "addresses.json");
+  const addresses = JSON.parse(readFileSync(addressesPath, "utf-8")) as AddressesFile;
+  const net = addresses[network];
+  if (!net) {
+    throw new Error(`addresses.json: network "${network}" not found`);
+  }
+  const c = net.contracts;
+
+  const missing = (Object.entries({
+    vault: c.vault.address,
+    positionManager: c.positionManager.address,
+    configManager: c.configManager.address,
+    oracleRouter: c.oracleRouter.address,
+    oracle: c.oracle.address,
+  }) as [string, string][])
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+  if (missing.length > 0) {
+    throw new Error(
+      `addresses.json[${network}] missing contract addresses: ${missing.join(", ")}. Run 'make deploy' first.`,
+    );
+  }
+
+  const mockTokenContract = envVars["MOCK_TOKEN_CONTRACT"] ?? "";
+  if (!mockTokenContract) {
+    throw new Error(`.env.local missing MOCK_TOKEN_CONTRACT. Run 'make deploy' first.`);
+  }
 
   return {
-    rpcUrl: vars["RPC_URL"] ?? DEFAULT_RPC_URL,
-    vaultContract: vars["VAULT_CONTRACT"] ?? "",
-    pmContract: vars["PM_CONTRACT"] ?? "",
-    cmContract: vars["CM_CONTRACT"] ?? "",
-    orContract: vars["OR_CONTRACT"] ?? "",
-    oracleContract: vars["ORACLE_CONTRACT"] ?? "",
-    mockTokenContract: vars["MOCK_TOKEN_CONTRACT"] ?? "",
-    adminAddress: vars["ADMIN_ADDRESS"] ?? "",
+    rpcUrl: net.rpcUrl ?? envVars["RPC_URL"] ?? DEFAULT_RPC_URL,
+    vaultContract: c.vault.address,
+    pmContract: c.positionManager.address,
+    cmContract: c.configManager.address,
+    orContract: c.oracleRouter.address,
+    oracleContract: c.oracle.address,
+    mockTokenContract,
+    adminAddress: envVars["ADMIN_ADDRESS"] ?? "",
   };
 }
 
@@ -69,7 +117,7 @@ export class Fixture {
   readonly positionManager: PositionManagerClient;
   readonly configManager: ConfigManagerClient;
   readonly oracleRouter: OracleRouterClient;
-  readonly mockOracle: MockOracleClient;
+  readonly oracle: OracleClient;
   readonly mockToken: MockTokenClient;
 
   private constructor(env: EnvConfig, adminKp: Keypair) {
@@ -81,7 +129,7 @@ export class Fixture {
     this.positionManager = new PositionManagerClient({ ...adminOpts, contractId: env.pmContract });
     this.configManager = new ConfigManagerClient({ ...adminOpts, contractId: env.cmContract });
     this.oracleRouter = new OracleRouterClient({ ...adminOpts, contractId: env.orContract });
-    this.mockOracle = new MockOracleClient({ ...adminOpts, contractId: env.oracleContract });
+    this.oracle = new OracleClient({ ...adminOpts, contractId: env.oracleContract });
     this.mockToken = new MockTokenClient({ ...adminOpts, contractId: env.mockTokenContract });
   }
 
@@ -264,7 +312,7 @@ export class Fixture {
   /** Set mock oracle price. `priceUsd` is in whole dollars (e.g. 50_000). */
   async setPrice(symbol: string, priceUsd: bigint): Promise<void> {
     const scaled = priceUsd * PRECISION;
-    const tx = await this.mockOracle.set_price({
+    const tx = await this.oracle.set_price({
       caller: this.adminKp.publicKey(),
       symbol,
       price: scaled,

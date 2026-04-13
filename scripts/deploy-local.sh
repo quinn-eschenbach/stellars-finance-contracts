@@ -160,6 +160,13 @@ invoke --id "$CM_ID" -- grant_role \
   --role PAUSER \
   --account "$ADMIN_ADDR"
 
+# ---------- Relax protocol limits for local dev ----------
+echo ""
+echo "=== Setting local protocol limits (zero cooldowns) ==="
+invoke --id "$CM_ID" -- update_protocol_limits \
+  --caller "$ADMIN_ADDR" \
+  --limits '{"min_collateral":"10000000","cooldown_duration":0,"min_position_lifetime":0,"max_utilization_ratio":"8500","funding_cut_bps":500,"adl_pnl_bps":9000,"adl_utilization_bps":9500}'
+
 # ---------- Wire oracle ----------
 echo ""
 echo "=== Configuring oracle ==="
@@ -198,6 +205,22 @@ invoke --id "$ORACLE_ID" -- set_price \
   --caller "$ADMIN_ADDR" \
   --symbol ETHUSD \
   --price 35000000000
+
+# ---------- Configure markets in PositionManager ----------
+echo ""
+echo "=== Configuring PositionManager markets ==="
+
+echo "  set_max_leverage(BTCUSD, 50)"
+invoke --id "$PM_ID" -- set_max_leverage \
+  --caller "$ADMIN_ADDR" \
+  --symbol BTCUSD \
+  --max_leverage 50
+
+echo "  set_max_leverage(ETHUSD, 50)"
+invoke --id "$PM_ID" -- set_max_leverage \
+  --caller "$ADMIN_ADDR" \
+  --symbol ETHUSD \
+  --max_leverage 50
 
 # ---------- Write addresses.json ----------
 echo ""

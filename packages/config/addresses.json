@@ -4,24 +4,24 @@
     "networkPassphrase": "Standalone Network ; February 2017",
     "contracts": {
       "vault": {
-        "address": "CCH6J5GZDTJS2QCFESF52QA4XHPA5R4YL67LHIUY6DEHEOGNLQ7CIISA",
-        "startLedger": 122
+        "address": "CCIP27U577SG24WR3MMSMYA4SICXATESPUTSK52A7TBJEBXD5MI5HL76",
+        "startLedger": 148
       },
       "positionManager": {
-        "address": "CDAODRVZVKT5YANUW65SLBWWOF4MUNDKBKKHOCOSBSQBTBEQSCIPNTTP",
-        "startLedger": 124
+        "address": "CDBGD6E6ECBLWGGDUJU2G4E2UHMTPLTFRI6BOPBVUXB73IRSDIGHIVGD",
+        "startLedger": 151
       },
       "configManager": {
-        "address": "CDJAOVUNTH5ZOIYCF3GDFLMAKPNG7GFGLQ2R4QDMRANUSC6WUDCP43ND",
-        "startLedger": 110
+        "address": "CAAZV44F5EBIJXHSPFDYEIUPGWYMIYIHNW4VOHAY5YWTSLFOHS4ILTRU",
+        "startLedger": 127
       },
       "oracleRouter": {
-        "address": "CBM3ZDOH4NJCQ3E2CXZ24A7WDLJ5NMP7BSRYC5RTPFKWQ4FGHTAS2JBU",
-        "startLedger": 112
+        "address": "CCVFVM6XKOGNMKL6XRSX3CYNNXMCPB4UPVO4EBHJLNGM5WB5PTAJYOGW",
+        "startLedger": 133
       },
       "oracle": {
-        "address": "CBIVDOYKRIHTAVJP4OSJQE2ZJOPVBF4GSY67DYXXBYYVOZ5O57NXODZN",
-        "startLedger": 116
+        "address": "CAIINAA3S2ZOJZYIPKF3YHNEQINYHCC7MKKUAEPGTEVYZQG5NRSIR5UN",
+        "startLedger": 137
       }
     }
   },

@@ -91,6 +91,7 @@ async function main() {
         if (!handler) continue;
 
         const parsed = parseEvent(rawEvent, specMaps);
+        if (!parsed) continue;
         try {
           await handler(db, parsed);
         } catch (err) {

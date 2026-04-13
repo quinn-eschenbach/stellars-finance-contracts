@@ -254,6 +254,7 @@ impl VaultContract {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
         vault_storage::set_net_global_trader_pnl(&env, pnl);
+        vault_events::UpdateNetPnl { pnl }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -306,6 +307,7 @@ impl VaultContract {
         let vault_addr = env.current_contract_address();
         vault_logic::transfer_asset(&env, &asset, &vault_addr, &recipient, amount);
         vault_storage::set_unclaimed_fees(&env, fees - amount);
+        vault_events::ClaimFeesTo { amount, new_total: fees - amount, recipient: recipient.clone() }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 

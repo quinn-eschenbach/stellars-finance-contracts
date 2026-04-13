@@ -10,7 +10,7 @@ CONTRACTS=(
   position-manager
   config-manager
   oracle-router
-  mock-oracle
+  oracle
   mock-token
 )
 
@@ -46,7 +46,7 @@ cat > "$BIND_OUT/package.json" <<'EOF'
     "./position-manager": "./position-manager/dist/index.js",
     "./config-manager": "./config-manager/dist/index.js",
     "./oracle-router": "./oracle-router/dist/index.js",
-    "./mock-oracle": "./mock-oracle/dist/index.js",
+    "./oracle": "./oracle/dist/index.js",
     "./mock-token": "./mock-token/dist/index.js"
   },
   "dependencies": {

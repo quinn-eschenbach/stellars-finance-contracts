@@ -14,6 +14,9 @@ pub struct IncreasePosition {
     pub sl: i128,
     pub new_total_size: i128,
     pub new_total_collateral: i128,
+    pub entry_borrow_index: i128,
+    pub entry_funding_index: i128,
+    pub last_increased_time: u64,
 }
 
 #[contractevent(topics = ["decrease"], data_format = "vec")]
@@ -95,6 +98,14 @@ pub struct SetMaxLeverage {
     #[topic]
     pub symbol: Symbol,
     pub max_leverage: i128,
+}
+
+#[contractevent(topics = ["mkt_pnl"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketPnlUpdate {
+    #[topic]
+    pub symbol: Symbol,
+    pub unrealized_pnl: i128,
 }
 
 #[contractevent(topics = ["pause"], data_format = "vec")]

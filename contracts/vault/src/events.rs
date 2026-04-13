@@ -43,6 +43,20 @@ pub struct ClaimFees {
     pub recipient: Address,
 }
 
+#[contractevent(topics = ["net_pnl"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateNetPnl {
+    pub pnl: i128,
+}
+
+#[contractevent(topics = ["claim_to"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimFeesTo {
+    pub amount: i128,
+    pub new_total: i128,
+    pub recipient: Address,
+}
+
 #[contractevent(topics = ["pause"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pause {

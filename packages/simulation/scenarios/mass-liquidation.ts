@@ -5,7 +5,7 @@ import { USDC_UNIT } from "../src/constants.js";
 const NUM_TRADERS = 100;
 const USDC_PER_TRADER = 10_000n * USDC_UNIT;
 const COLLATERAL_PER_TRADE = 5_000n * USDC_UNIT;
-const SYMBOL = "BTC";
+const SYMBOL = "BTCUSD";
 
 /**
  * Mass liquidation scenario:

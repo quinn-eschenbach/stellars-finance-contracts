@@ -250,6 +250,11 @@ pub fn refresh_market_unrealized_pnl(env: &Env, symbol: &Symbol, mark_price: i12
     let delta = new_market_pnl - old_market_pnl;
 
     storage::set_market_unrealized_pnl(env, symbol, new_market_pnl);
+    events::MarketPnlUpdate {
+        symbol: symbol.clone(),
+        unrealized_pnl: new_market_pnl,
+    }
+    .publish(env);
     let new_total = storage::get_total_unrealized_pnl(env) + delta;
     storage::set_total_unrealized_pnl(env, new_total);
 
@@ -411,6 +416,9 @@ pub fn do_increase_position(
         sl: position.stop_loss,
         new_total_size: position.size,
         new_total_collateral: position.collateral,
+        entry_borrow_index: position.entry_borrow_index,
+        entry_funding_index: position.entry_funding_index,
+        last_increased_time: position.last_increased_time,
     }
     .publish(env);
 
