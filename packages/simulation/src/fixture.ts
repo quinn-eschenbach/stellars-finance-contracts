@@ -3,6 +3,13 @@ import type { ContractClientOptions } from "@stellar/stellar-sdk/contract";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { eq, sql } from "drizzle-orm";
+import {
+  getDb,
+  indexerCursor,
+  trades,
+  type Db,
+} from "@stellars/db";
 
 import { Client as VaultClient } from "../../bindings/vault/src/index.js";
 import { Client as PositionManagerClient } from "../../bindings/position-manager/src/index.js";
@@ -344,5 +351,85 @@ export class Fixture {
       count,
       usdcPerUser,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Indexer DB helpers (sim assertions)
+  // ---------------------------------------------------------------------------
+
+  private _db: Db | null = null;
+
+  /** Lazy-init drizzle Db. Used by scenarios for on-disk state assertions. */
+  db(): Db {
+    if (!this._db) this._db = getDb();
+    return this._db;
+  }
+
+  /**
+   * Wait for the indexer to catch up. Polls indexer_cursor.last_ledger_close_time
+   * and returns once lag (now - close_time) is below maxLagSec. Throws on timeout.
+   */
+  async waitForIndexer({ maxLagSec = 5, timeoutMs = 30_000 } = {}): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const rows = await this.db()
+        .select()
+        .from(indexerCursor)
+        .where(eq(indexerCursor.id, 1))
+        .limit(1);
+      const cursor = rows[0];
+      if (cursor) {
+        const closeTime = Number(cursor.last_ledger_close_time);
+        const lagSec = Math.floor(Date.now() / 1000) - closeTime;
+        if (closeTime > 0 && lagSec <= maxLagSec) return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error(`waitForIndexer: indexer did not catch up within ${timeoutMs}ms`);
+  }
+
+  /**
+   * Wait until no new keeper-emitted trades have appeared for `stableMs`.
+   * Counts rows in `trades` where event_type ∈ {liquidation, order, adl} —
+   * any keeper-driven action. Returns when the count plateaus.
+   *
+   * Tuned for the ledger-close ceiling of ~12 keeper actions/min — set
+   * timeoutMs generously when expecting many liquidations.
+   */
+  async waitForKeeperToSettle({
+    timeoutMs = 180_000,
+    stableMs = 8_000,
+  } = {}): Promise<void> {
+    const start = Date.now();
+    let lastCount = await this.countKeeperEvents();
+    let lastChange = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const now = await this.countKeeperEvents();
+      if (now > lastCount) {
+        lastCount = now;
+        lastChange = Date.now();
+      }
+      if (Date.now() - lastChange >= stableMs) return;
+    }
+    throw new Error(`waitForKeeperToSettle: still seeing activity after ${timeoutMs}ms`);
+  }
+
+  /** Count of keeper-driven trade rows in the indexer DB. */
+  async countKeeperEvents(): Promise<number> {
+    const result = await this.db()
+      .select({ count: sql<number>`count(*)::int` })
+      .from(trades)
+      .where(sql`${trades.event_type} IN ('liquidation', 'order', 'adl')`);
+    return Number(result[0]?.count ?? 0);
+  }
+
+  async countTradesByType(eventType: string): Promise<number> {
+    const result = await this.db()
+      .select({ count: sql<number>`count(*)::int` })
+      .from(trades)
+      .where(eq(trades.event_type, eventType));
+    return Number(result[0]?.count ?? 0);
   }
 }

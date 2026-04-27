@@ -136,9 +136,15 @@ importers:
       '@stellar/stellar-sdk':
         specifier: ^14.1.1
         version: 14.6.1
+      '@stellars/db':
+        specifier: workspace:*
+        version: link:../db
       buffer:
         specifier: 6.0.3
         version: 6.0.3
+      drizzle-orm:
+        specifier: ^0.38.0
+        version: 0.38.4(@types/pg@8.18.0)(pg@8.20.0)
     devDependencies:
       tsx:
         specifier: ^4.19.0
