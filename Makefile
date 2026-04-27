@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy db-push sim sim-one sim-cleanup
+.PHONY: build optimize test clean up down deploy db-push sim sim-one sim-cleanup grant-keepers indexer keeper
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -57,6 +57,9 @@ reset:
 
 deploy: build
 	bash scripts/deploy-local.sh
+
+grant-keepers:
+	bash scripts/grant-keepers.sh
 
 db-push:
 	pnpm --filter @stellars/db push
