@@ -1,6 +1,7 @@
 import type { Db } from "@stellars/db";
 import type { Executor } from "./executor.js";
 import type { KeeperConfig } from "./config.js";
+import { TtlDedup } from "./dedup.js";
 import {
   toBigInt,
   calcUnrealizedPnl,
@@ -21,25 +22,14 @@ import {
   type MarketRow,
 } from "./scanner.js";
 
-const recentlySubmitted = new Set<string>();
-let lastClearTime = Date.now();
-const DEDUP_TTL_MS = 30_000;
+const dedup = new TtlDedup();
+const DEDUP_TTL_MS = 60_000;
 
 function posKey(trader: string, symbol: string): string {
   return `${trader}:${symbol}`;
 }
 
-function clearStaleDedup(): void {
-  const now = Date.now();
-  if (now - lastClearTime > DEDUP_TTL_MS) {
-    recentlySubmitted.clear();
-    lastClearTime = now;
-  }
-}
-
 export async function runTick(db: Db, executor: Executor, config: KeeperConfig): Promise<void> {
-  clearStaleDedup();
-
   const nowUnix = BigInt(Math.floor(Date.now() / 1000));
 
   // Load shared data once
@@ -73,7 +63,6 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
   const safetyMarginBps = BigInt(config.liquidationSafetyMarginBps);
   for (const pos of allPositions) {
     const key = posKey(pos.trader, pos.symbol);
-    if (recentlySubmitted.has(key)) continue;
 
     const market = marketBySymbol.get(pos.symbol);
     const markPriceStr = prices.get(pos.symbol);
@@ -82,17 +71,17 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
     const collateral = toBigInt(pos.collateral);
     const safetyMargin = (collateral * safetyMarginBps) / BPS;
     const health = computeHealth(pos, market, markPriceStr);
-    if (health < safetyMargin) {
-      const ok = await executor.liquidatePosition(pos.trader, pos.symbol);
-      if (ok) recentlySubmitted.add(key);
-    }
+    if (health >= safetyMargin) continue;
+
+    if (!dedup.claim(key, DEDUP_TTL_MS)) continue;
+    const ok = await executor.liquidatePosition(pos.trader, pos.symbol);
+    if (!ok) dedup.release(key);
   }
 
   // Step 3: TP/SL order execution
   const minLifetime = toBigInt(protoCfg?.min_position_lifetime);
   for (const pos of allPositions) {
     const key = posKey(pos.trader, pos.symbol);
-    if (recentlySubmitted.has(key)) continue;
 
     const tp = toBigInt(pos.take_profit);
     const sl = toBigInt(pos.stop_loss);
@@ -108,11 +97,11 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
     const triggered =
       isTpTriggered(tp, markPrice, pos.is_long) ||
       isSlTriggered(sl, markPrice, pos.is_long);
+    if (!triggered) continue;
 
-    if (triggered) {
-      const ok = await executor.executeOrder(pos.trader, pos.symbol);
-      if (ok) recentlySubmitted.add(key);
-    }
+    if (!dedup.claim(key, DEDUP_TTL_MS)) continue;
+    const ok = await executor.executeOrder(pos.trader, pos.symbol);
+    if (!ok) dedup.release(key);
   }
 
   // Step 4: ADL check
@@ -129,9 +118,12 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
 
       if (pnlTrigger || utilTrigger) {
         const target = findAdlTarget(allPositions, marketBySymbol, prices);
-        if (target && !recentlySubmitted.has(posKey(target.trader, target.symbol))) {
-          const ok = await executor.deleveragePosition(target.trader, target.symbol);
-          if (ok) recentlySubmitted.add(posKey(target.trader, target.symbol));
+        if (target) {
+          const key = posKey(target.trader, target.symbol);
+          if (dedup.claim(key, DEDUP_TTL_MS)) {
+            const ok = await executor.deleveragePosition(target.trader, target.symbol);
+            if (!ok) dedup.release(key);
+          }
         }
       }
     }
