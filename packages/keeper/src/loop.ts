@@ -67,6 +67,10 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
   }
 
   // Step 2: Liquidations
+  // Over-permissive filter — flag any position whose health falls below a
+  // small safety margin (2% of collateral by default). The simulation gate
+  // rejects false positives cheaply; false negatives cause bad debt.
+  const safetyMarginBps = BigInt(config.liquidationSafetyMarginBps);
   for (const pos of allPositions) {
     const key = posKey(pos.trader, pos.symbol);
     if (recentlySubmitted.has(key)) continue;
@@ -75,8 +79,10 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
     const markPriceStr = prices.get(pos.symbol);
     if (!market || !markPriceStr) continue;
 
+    const collateral = toBigInt(pos.collateral);
+    const safetyMargin = (collateral * safetyMarginBps) / BPS;
     const health = computeHealth(pos, market, markPriceStr);
-    if (health < 0n) {
+    if (health < safetyMargin) {
       const ok = await executor.liquidatePosition(pos.trader, pos.symbol);
       if (ok) recentlySubmitted.add(key);
     }
@@ -150,13 +156,20 @@ function findAdlTarget(
   marketBySymbol: Map<string, MarketRow>,
   prices: Map<string, string>,
 ): PositionRow | null {
+  // Mirrors the BitMEX/Bybit/dYdX ADL ranking: profitable positions are
+  // ordered by `unrealizedPnl × leverage`, where leverage = size / collateral.
+  // High-leverage winners deleverage before low-leverage whales who happen
+  // to be up.
   let best: PositionRow | null = null;
-  let bestPnl = 0n;
+  let bestScore = 0n;
 
   for (const pos of positions) {
     const market = marketBySymbol.get(pos.symbol);
     const markPriceStr = prices.get(pos.symbol);
     if (!market || !markPriceStr) continue;
+
+    const collateral = toBigInt(pos.collateral);
+    if (collateral === 0n) continue;
 
     const pnl = calcUnrealizedPnl(
       toBigInt(pos.size),
@@ -164,9 +177,11 @@ function findAdlTarget(
       toBigInt(markPriceStr),
       pos.is_long,
     );
+    if (pnl <= 0n) continue;
 
-    if (pnl > bestPnl) {
-      bestPnl = pnl;
+    const score = (pnl * toBigInt(pos.size)) / collateral;
+    if (score > bestScore) {
+      bestScore = score;
       best = pos;
     }
   }

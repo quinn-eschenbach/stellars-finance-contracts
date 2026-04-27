@@ -1,3 +1,13 @@
+// These are an over-permissive pre-filter for candidate enumeration: every
+// keeper action is gated by simulateTransaction against the live RPC, so
+// false positives (this file flags a healthy position) cost only a sim
+// roundtrip. False negatives (this file misses a liquidatable position)
+// cause bad debt — that's the defect class to design against.
+//
+// TODO(parity-tests): property-test these against the Rust contract's math
+// module. Invariant: for every (collateral, size, indices, prices) input
+// where the contract reports liquidatable, this filter must also flag it
+// after applying LIQUIDATION_SAFETY_MARGIN_BPS.
 export const PRECISION = 10_000_000n;
 export const INDEX_PRECISION = 100_000_000_000_000n;
 export const BPS = 10_000n;

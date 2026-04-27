@@ -8,6 +8,7 @@ export interface KeeperConfig {
   keeperSecret: string;
   pollIntervalMs: number;
   indexUpdateThresholdSec: number;
+  liquidationSafetyMarginBps: number;
   contracts: {
     positionManager: ContractInfo;
   };
@@ -35,6 +36,7 @@ export function loadConfig(): KeeperConfig {
     keeperSecret,
     pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 5000),
     indexUpdateThresholdSec: Number(process.env.INDEX_UPDATE_THRESHOLD_SEC ?? 60),
+    liquidationSafetyMarginBps: Number(process.env.LIQUIDATION_SAFETY_MARGIN_BPS ?? 200),
     contracts: {
       positionManager: networkConfig.contracts.positionManager,
     },
