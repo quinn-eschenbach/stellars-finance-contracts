@@ -92,10 +92,31 @@ importers:
 
   packages/keeper:
     dependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^14.1.1
+        version: 14.6.1
+      '@stellars/bindings':
+        specifier: workspace:*
+        version: link:../bindings
       '@stellars/config':
         specifier: workspace:*
         version: link:../config
+      '@stellars/db':
+        specifier: workspace:*
+        version: link:../db
+      dotenv:
+        specifier: ^16.4.0
+        version: 16.6.1
+      drizzle-orm:
+        specifier: ^0.38.0
+        version: 0.38.4(@types/pg@8.18.0)(pg@8.20.0)
+      pg:
+        specifier: ^8.13.0
+        version: 8.20.0
     devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

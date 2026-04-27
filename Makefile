@@ -64,6 +64,9 @@ db-push:
 indexer:
 	pnpm --filter @stellars/indexer dev
 
+keeper:
+	pnpm --filter @stellars/keeper dev
+
 sim:
 	pnpm --filter @stellars/simulation sim
 
