@@ -2,39 +2,45 @@ import "dotenv/config";
 import { getDb } from "@stellars/db";
 import { loadConfig } from "./config.js";
 import { createExecutor } from "./executor.js";
-import { runTick } from "./loop.js";
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { TtlDedup } from "./dedup.js";
+import { createSerializer } from "./serializer.js";
+import { runHotLoop, runColdLoop } from "./loop.js";
 
 async function main() {
   const config = loadConfig();
   const db = getDb();
   const executor = createExecutor(config);
+  const dedup = new TtlDedup();
+  const serialize = createSerializer();
 
-  console.log(`[keeper] Network: ${config.network}`);
-  console.log(`[keeper] Address: ${executor.publicKey}`);
-  console.log(`[keeper] PM contract: ${config.contracts.positionManager.address}`);
-  console.log(`[keeper] Poll interval: ${config.pollIntervalMs}ms`);
-  console.log(`[keeper] Index update threshold: ${config.indexUpdateThresholdSec}s`);
+  console.log(`[keeper] Network:        ${config.network}`);
+  console.log(`[keeper] Address:        ${executor.publicKey}`);
+  console.log(`[keeper] PM contract:    ${config.contracts.positionManager.address}`);
+  console.log(`[keeper] Cold cadence:   ${config.pollIntervalMs}ms`);
+  console.log(`[keeper] Hot idle:       ${config.liquidationIdleMs}ms`);
+  console.log(`[keeper] Index threshold: ${config.indexUpdateThresholdSec}s`);
+  console.log(`[keeper] Safety margin:  ${config.liquidationSafetyMarginBps}bps`);
+  console.log(`[keeper] Stale alert:    ${config.staleAlertSec}s`);
+  console.log(`[keeper] Stale skip:     ${config.staleHardSkipSec}s`);
 
   let running = true;
+  const isRunning = () => running;
   const shutdown = () => {
+    if (!running) return;
     console.log("[keeper] Shutting down...");
     running = false;
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  while (running) {
-    try {
-      await runTick(db, executor, config);
-    } catch (err) {
-      console.error("[keeper] Tick error:", err);
-    }
-    await sleep(config.pollIntervalMs);
-  }
+  // Hot loop chases liquidations as fast as the chain will allow.
+  // Cold loop runs indices / TP-SL / ADL on a fixed 5s cadence.
+  // Both submit through one shared serializer that holds the keeper account
+  // sequence-number under a single in-flight submission.
+  await Promise.all([
+    runHotLoop(db, executor, config, dedup, serialize, isRunning),
+    runColdLoop(db, executor, config, dedup, serialize, isRunning),
+  ]);
 
   console.log("[keeper] Stopped.");
   process.exit(0);

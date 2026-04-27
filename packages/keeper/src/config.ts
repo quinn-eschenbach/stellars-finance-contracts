@@ -6,9 +6,16 @@ export interface KeeperConfig {
   rpcUrl: string;
   networkPassphrase: string;
   keeperSecret: string;
+  /** Cold loop cadence (indices, TP/SL, ADL). */
   pollIntervalMs: number;
+  /** Hot loop sleep when no liquidation candidates were found. */
+  liquidationIdleMs: number;
   indexUpdateThresholdSec: number;
   liquidationSafetyMarginBps: number;
+  /** Indexer lag (seconds) at which we log a degraded-mode warning. */
+  staleAlertSec: number;
+  /** Indexer lag (seconds) at which both loops skip the tick entirely. */
+  staleHardSkipSec: number;
   contracts: {
     positionManager: ContractInfo;
   };
@@ -35,8 +42,11 @@ export function loadConfig(): KeeperConfig {
     networkPassphrase: networkConfig.networkPassphrase,
     keeperSecret,
     pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 5000),
+    liquidationIdleMs: Number(process.env.LIQUIDATION_IDLE_MS ?? 500),
     indexUpdateThresholdSec: Number(process.env.INDEX_UPDATE_THRESHOLD_SEC ?? 60),
     liquidationSafetyMarginBps: Number(process.env.LIQUIDATION_SAFETY_MARGIN_BPS ?? 200),
+    staleAlertSec: Number(process.env.STALE_ALERT_SEC ?? 30),
+    staleHardSkipSec: Number(process.env.STALE_HARD_SKIP_SEC ?? 300),
     contracts: {
       positionManager: networkConfig.contracts.positionManager,
     },

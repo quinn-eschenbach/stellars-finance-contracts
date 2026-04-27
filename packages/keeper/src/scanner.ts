@@ -5,6 +5,7 @@ import {
   vaultState,
   protocolConfig,
   oraclePrices,
+  indexerCursor,
   type Db,
 } from "@stellars/db";
 
@@ -12,6 +13,7 @@ export type PositionRow = typeof positions.$inferSelect;
 export type MarketRow = typeof markets.$inferSelect;
 export type VaultStateRow = typeof vaultState.$inferSelect;
 export type ProtocolConfigRow = typeof protocolConfig.$inferSelect;
+export type IndexerCursorRow = typeof indexerCursor.$inferSelect;
 
 export async function getAllPositions(db: Db): Promise<PositionRow[]> {
   return db.select().from(positions);
@@ -55,6 +57,15 @@ export async function getProtocolConfig(db: Db): Promise<ProtocolConfigRow | und
     .select()
     .from(protocolConfig)
     .where(eq(protocolConfig.id, 1))
+    .limit(1);
+  return rows[0];
+}
+
+export async function getIndexerCursor(db: Db): Promise<IndexerCursorRow | undefined> {
+  const rows = await db
+    .select()
+    .from(indexerCursor)
+    .where(eq(indexerCursor.id, 1))
     .limit(1);
   return rows[0];
 }
