@@ -106,18 +106,29 @@ async function main() {
         cursor = nextCursor;
         startLedger = latestLedger;
 
+        // Most-recent observed close time: prefer the last event's
+        // ledgerClosedAt; fall back to wall time when the page is empty
+        // (we just polled successfully, so the chain is at latestLedger
+        // as of approximately now).
+        const lastEvent = events[events.length - 1];
+        const lastLedgerCloseTime = lastEvent
+          ? Math.floor(new Date(lastEvent.ledgerClosedAt).getTime() / 1000)
+          : Math.floor(Date.now() / 1000);
+
         await db
           .insert(indexerCursor)
           .values({
             id: 1,
             last_ledger: startLedger,
             last_cursor: cursor,
+            last_ledger_close_time: lastLedgerCloseTime.toString(),
           })
           .onConflictDoUpdate({
             target: indexerCursor.id,
             set: {
               last_ledger: startLedger,
               last_cursor: cursor,
+              last_ledger_close_time: lastLedgerCloseTime.toString(),
               updated_at: new Date(),
             },
           });
