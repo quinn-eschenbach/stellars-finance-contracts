@@ -53,6 +53,8 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
     if (elapsed > BigInt(config.indexUpdateThresholdSec)) {
       if (vault?.is_paused) continue;
       await executor.updateIndices(market.symbol);
+      // Indices have no per-(trader,symbol) dedup key — safe to re-attempt
+      // every tick; the executor's sim gate will reject if recently updated.
     }
   }
 
@@ -74,8 +76,8 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
     if (health >= safetyMargin) continue;
 
     if (!dedup.claim(key, DEDUP_TTL_MS)) continue;
-    const ok = await executor.liquidatePosition(pos.trader, pos.symbol);
-    if (!ok) dedup.release(key);
+    const liqOutcome = await executor.liquidatePosition(pos.trader, pos.symbol);
+    if (liqOutcome.kind !== "submitted") dedup.release(key);
   }
 
   // Step 3: TP/SL order execution
@@ -100,8 +102,8 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
     if (!triggered) continue;
 
     if (!dedup.claim(key, DEDUP_TTL_MS)) continue;
-    const ok = await executor.executeOrder(pos.trader, pos.symbol);
-    if (!ok) dedup.release(key);
+    const orderOutcome = await executor.executeOrder(pos.trader, pos.symbol);
+    if (orderOutcome.kind !== "submitted") dedup.release(key);
   }
 
   // Step 4: ADL check
@@ -121,8 +123,8 @@ export async function runTick(db: Db, executor: Executor, config: KeeperConfig):
         if (target) {
           const key = posKey(target.trader, target.symbol);
           if (dedup.claim(key, DEDUP_TTL_MS)) {
-            const ok = await executor.deleveragePosition(target.trader, target.symbol);
-            if (!ok) dedup.release(key);
+            const adlOutcome = await executor.deleveragePosition(target.trader, target.symbol);
+            if (adlOutcome.kind !== "submitted") dedup.release(key);
           }
         }
       }
