@@ -76,9 +76,15 @@ api:
 frontend:
 	pnpm --filter @stellars/frontend dev
 
-# Production deploy unit: api + indexer + db + keeper share one server bundle.
+# Local-dev convenience: run everything in the server bundle in parallel.
+# Production deploys ship api + indexer + keeper as services and serve the
+# frontend statically; `make server` is just for one-command local dev.
 server:
-	pnpm --parallel --filter @stellars/indexer --filter @stellars/keeper --filter @stellars/api dev
+	pnpm --parallel \
+	  --filter @stellars/indexer \
+	  --filter @stellars/keeper \
+	  --filter @stellars/api \
+	  --filter @stellars/frontend dev
 
 # Oracles run as a separate service in production. oracle-keeper is currently
 # a stub; this target reserves the slot.
