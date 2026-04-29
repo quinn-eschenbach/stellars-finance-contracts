@@ -104,7 +104,10 @@ export default async function normalUsage(f: Fixture) {
   const liqs = await f.countTradesByType("liquidation");
   const orders = await f.countTradesByType("order");
   const adls = await f.countTradesByType("adl");
+  const increases = await f.countTradesByType("increase");
+  const decreases = await f.countTradesByType("decrease");
   log("DB positions", dbPosCount);
+  log("DB trader events", `increase=${increases} decrease=${decreases}`);
   log("DB keeper events", `liquidation=${liqs} order=${orders} adl=${adls}`);
 
   assertEqual(dbPosCount, EXPECTED.positionCount, "DB positions count");
