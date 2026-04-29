@@ -192,8 +192,36 @@ function describeDiagnostics(b64Events: string[]): string[] {
   return out;
 }
 
+/**
+ * Pad an AssembledTransaction's simulated CPU/memory budget. Compensates for
+ * the drift between simulation and execution that occurs when other txs
+ * (e.g., the keeper's update_indices) write to ledger entries between sim
+ * and inclusion. Without padding, the user's tx fails with
+ * scecExceededLimit even though sim said it would fit.
+ *
+ * Real-world wallets do this same thing at ~1.2-1.5×; we use 1.5× because
+ * standalone local has tighter budgets than mainnet.
+ */
+function padResources(tx: any, factor = 1.5): void {
+  const orig = tx.simulationTransactionData as InstanceType<typeof xdr.SorobanTransactionData>;
+  if (!orig) return;
+  const origRes = orig.resources();
+  const padded = new xdr.SorobanTransactionData({
+    ext: orig.ext(),
+    resources: new xdr.SorobanResources({
+      footprint: origRes.footprint(),
+      instructions: Math.ceil(origRes.instructions() * factor),
+      diskReadBytes: Math.ceil(origRes.diskReadBytes() * factor),
+      writeBytes: Math.ceil(origRes.writeBytes() * factor),
+    }),
+    resourceFee: orig.resourceFee(),
+  });
+  tx.simulationTransactionData = padded;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function sendAndCheck(tx: any, label: string): Promise<unknown> {
+  padResources(tx);
   const sent = await tx.signAndSend();
   const status: string | undefined = sent.getTransactionResponse?.status;
   if (status === "SUCCESS") {
