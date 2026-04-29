@@ -36,7 +36,8 @@ async function runScenario(name: string, fixture: Fixture): Promise<boolean> {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
+  // Strip `--` separators that pnpm forwards through `pnpm <script> -- <args>`.
+  const args = process.argv.slice(2).filter((a) => a !== "--");
 
   // --cleanup mode
   if (args.includes("--cleanup")) {
