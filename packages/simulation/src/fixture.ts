@@ -1,4 +1,4 @@
-import { Keypair } from "@stellar/stellar-sdk";
+import { Keypair, xdr, scValToNative } from "@stellar/stellar-sdk";
 import type { ContractClientOptions } from "@stellar/stellar-sdk/contract";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -125,6 +125,73 @@ function getAdminKeypair(): Keypair {
  * fixture callers see no error from a panicked tx and the sim happily
  * proceeds with state that doesn't reflect on-chain reality.
  */
+/**
+ * Decode a TransactionResult XDR into a short human-readable summary of
+ * why the tx failed. Soroban tx failures sit a few enum levels deep; this
+ * walks them so we don't have to ask the user to run `stellar lab xdr decode`.
+ */
+function describeTxFailure(resultXdrB64: string | undefined): string {
+  if (!resultXdrB64) return "<no resultXdr>";
+  try {
+    const tr = xdr.TransactionResult.fromXDR(resultXdrB64, "base64");
+    const codeName = tr.result().switch().name;
+    const ops = (tr.result().value() as { tr?: () => unknown }[] | undefined) ?? [];
+    if (!ops.length || codeName !== "txFailed") return codeName;
+    // Drill into the first op result.
+    const op = ops[0];
+    const innerTr = (op as { tr?: () => unknown }).tr?.() as
+      | { switch: () => { name: string }; value: () => unknown }
+      | undefined;
+    if (!innerTr) return codeName;
+    const opType = innerTr.switch().name;
+    if (opType === "invokeHostFunction") {
+      const ihf = innerTr.value() as { switch: () => { name: string } };
+      return `${codeName} → ${opType} → ${ihf.switch().name}`;
+    }
+    return `${codeName} → ${opType}`;
+  } catch (err) {
+    return `<unparseable: ${(err as Error).message}>`;
+  }
+}
+
+/**
+ * Pull human-readable strings out of Soroban diagnostic events. Looks for
+ * the budget-exceeded variant (which carries a body describing which
+ * budget — cpu / mem / readBytes / writeBytes / etc) and contract error
+ * symbols ("Error(Contract, #N)").
+ */
+function describeDiagnostics(b64Events: string[]): string[] {
+  const out: string[] = [];
+  for (const b64 of b64Events) {
+    try {
+      const ev = xdr.DiagnosticEvent.fromXDR(b64, "base64");
+      const body = ev.event().body();
+      // body() is a union; v0() gives the V0 case.
+      const v0 = body.v0();
+      const topics = v0
+        .topics()
+        .map((t) => {
+          try {
+            return JSON.stringify(scValToNative(t));
+          } catch {
+            return "?";
+          }
+        })
+        .join(", ");
+      let data = "";
+      try {
+        data = JSON.stringify(scValToNative(v0.data()));
+      } catch {
+        data = "<unrepr>";
+      }
+      out.push(`[${topics}] ${data}`);
+    } catch {
+      out.push(`<unparseable diagnostic>`);
+    }
+  }
+  return out;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function sendAndCheck(tx: any, label: string): Promise<unknown> {
   const sent = await tx.signAndSend();
@@ -139,28 +206,28 @@ async function sendAndCheck(tx: any, label: string): Promise<unknown> {
     }
   }
 
-  // Surface as much detail as we can about the on-chain failure. Soroban
-  // contract panics live in diagnosticEventsXdr — extract the error code
-  // string from there if present.
   const txHash: string = sent.sendTransactionResponse?.hash ?? "unknown";
-  const diags: { toXDR: (fmt?: string) => string | Buffer }[] =
+  const diagsRaw: { toXDR: (fmt?: string) => string | Buffer }[] =
     sent.getTransactionResponse?.diagnosticEventsXdr ?? [];
-  const diagsB64 = diags.map((d) => String(d.toXDR("base64")));
+  const diagsB64 = diagsRaw.map((d) => String(d.toXDR("base64")));
   const resultXdr: string | undefined = sent.getTransactionResponse?.resultXdr?.toXDR(
     "base64",
   );
 
-  const contractErrMatch = diagsB64
-    .map((b) => Buffer.from(b, "base64").toString("binary"))
-    .join(" ")
-    .match(/contract.{0,5}#?(\d+)/i);
+  const failure = describeTxFailure(resultXdr);
+  const diagDescs = describeDiagnostics(diagsB64);
+  // Surface only the diagnostics that look like errors / budget breaches —
+  // most are noise (fn_call/fn_return). Keep up to 5 most relevant.
+  const interesting = diagDescs
+    .filter((d) => /error|budget|exceeded|panic|trap/i.test(d))
+    .slice(0, 5);
 
   throw new Error(
-    `${label} failed on-chain (status=${status ?? "unknown"} tx=${txHash})\n` +
-      `  resultXdr: ${resultXdr ?? "<none>"}\n` +
-      `  diagnostics: ${diagsB64.length} event(s)\n` +
-      (contractErrMatch ? `  parsed contract error code: ${contractErrMatch[1]}\n` : "") +
-      `  Decode resultXdr: stellar lab xdr decode --type TransactionResult --xdr ${resultXdr ?? ""}`,
+    `${label} failed on-chain (status=${status ?? "unknown"}, tx=${txHash})\n` +
+      `  reason: ${failure}\n` +
+      `  diagnostics (${diagDescs.length} total, ${interesting.length} interesting):\n` +
+      interesting.map((d) => `    ${d}`).join("\n") +
+      `\n  full resultXdr: ${resultXdr ?? "<none>"}`,
   );
 }
 
