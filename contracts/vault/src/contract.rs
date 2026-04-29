@@ -258,6 +258,26 @@ impl VaultContract {
         shared::bump_instance_ttl(&env);
     }
 
+    /// Notify the vault that PositionManager has just transferred `amount`
+    /// USDC of seized/loss-settlement collateral directly into the vault's
+    /// wallet. This call does NOT move tokens — it only verifies the caller
+    /// is PM, then emits an Absorb event so off-chain indexers can update
+    /// their tracked total_assets in lockstep with the vault's actual
+    /// on-chain balance.
+    ///
+    /// Pairs with the direct token.transfer pattern in PM's
+    /// do_liquidate_position and settle_close paths, which bypass
+    /// settle_pnl to avoid nested-auth issues during liquidations.
+    pub fn absorb_collateral(env: Env, caller: Address, trader: Address, amount: i128) {
+        vault_logic::require_initialized(&env);
+        vault_logic::require_position_manager(&env, &caller);
+        if amount <= 0 {
+            panic_with_error!(&env, VaultError::ZeroAmount);
+        }
+        vault_events::Absorb { trader, amount }.publish(&env);
+        shared::bump_instance_ttl(&env);
+    }
+
     pub fn accrue_fees(env: Env, caller: Address, amount: i128) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);

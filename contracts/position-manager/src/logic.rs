@@ -618,6 +618,9 @@ pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symb
         let asset = get_vault_asset(env, &vault_addr);
         let token = TokenClient::new(env, &asset);
         token.transfer(&contract_addr, &vault_addr, &pos.collateral);
+        // Notify vault of the inflow so off-chain indexers can keep their
+        // tracked total_assets consistent with the actual on-chain balance.
+        vault.absorb_collateral(&contract_addr, trader, &pos.collateral);
     }
 
     // Compute funding protocol cut (consistent with settle_close)
@@ -1025,6 +1028,8 @@ fn settle_close(
     // PM sends loss portion to vault directly (avoid nested auth issue with settle_pnl)
     if pm_to_vault > 0 {
         token.transfer(&contract_addr, &vault_addr, &pm_to_vault);
+        // Notify vault of the inflow so off-chain indexers stay consistent.
+        vault.absorb_collateral(&contract_addr, trader, &pm_to_vault);
     }
 
     // PM sends remaining collateral to trader

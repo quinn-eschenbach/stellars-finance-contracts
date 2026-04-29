@@ -15,6 +15,18 @@ pub struct SettlePnl {
     pub is_profit: bool,
 }
 
+/// Vault has absorbed collateral that PositionManager transferred directly
+/// (bypassing settle_pnl to avoid nested-auth issues during liquidation /
+/// loss-settlement). Used by off-chain indexers to keep their tracked
+/// total_assets consistent with the vault's on-chain balance.
+#[contractevent(topics = ["absorb"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Absorb {
+    #[topic]
+    pub trader: Address,
+    pub amount: i128,
+}
+
 #[contractevent(topics = ["reserve"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Reserve {

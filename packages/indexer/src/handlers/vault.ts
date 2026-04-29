@@ -35,6 +35,8 @@ export async function handleVaultEvent(db: Db, event: ParsedEvent) {
       return handleTransfer(db, event);
     case "settle":
       return handleSettle(db, event);
+    case "absorb":
+      return handleAbsorb(db, event);
     case "reserve":
       return handleReserve(db, event);
     case "release":
@@ -118,6 +120,35 @@ async function handleTransfer(db: Db, event: ParsedEvent) {
     to_muxed_id: data.to_muxed_id != null ? toNumericString(data.to_muxed_id) : null,
     amount: toNumericString(data.amount),
   });
+}
+
+/**
+ * Direct collateral inflow from PositionManager during liquidation /
+ * loss-settlement paths that bypass settle_pnl. The vault has already
+ * received the tokens; we just bump our tracked total_assets so the DB
+ * stays in lockstep with the on-chain balance.
+ */
+async function handleAbsorb(db: Db, event: ParsedEvent) {
+  const { data } = event;
+  const amount = toNumericString(data.amount);
+  await db.insert(vaultEvents).values({
+    tx_hash: event.txHash,
+    ledger: event.ledger,
+    timestamp: unixSeconds(event.timestamp),
+    event_type: "absorb",
+    user: String(data.trader),
+    assets: amount,
+    shares: "0",
+  });
+  await db
+    .update(vaultState)
+    .set({
+      total_assets: sql`${vaultState.total_assets}::numeric + ${amount}::numeric`,
+      updated_at_ledger: event.ledger,
+      updated_at: new Date(),
+    })
+    .where(eq(vaultState.id, SINGLETON_ID));
+  await recomputeFreeLiquidity(db, event.ledger);
 }
 
 async function handleSettle(db: Db, event: ParsedEvent) {

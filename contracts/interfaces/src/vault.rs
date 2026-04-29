@@ -27,6 +27,8 @@ pub trait VaultInterface {
 
     fn update_net_pnl(env: Env, caller: Address, pnl: i128);
 
+    fn absorb_collateral(env: Env, caller: Address, trader: Address, amount: i128);
+
     fn accrue_fees(env: Env, caller: Address, amount: i128);
 
     fn claim_fees(env: Env, caller: Address, recipient: Address);
