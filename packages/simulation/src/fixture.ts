@@ -219,9 +219,45 @@ function padResources(tx: any, factor = 1.5): void {
   tx.simulationTransactionData = padded;
 }
 
+/**
+ * Build → simulate → pad → sign → send, with automatic retry on transient
+ * resource-budget failures caused by sim/execute drift.
+ *
+ * @param build  Async builder that returns a fresh AssembledTransaction.
+ *               Called once per attempt so each retry re-simulates against
+ *               the current chain state (otherwise we'd just retry with
+ *               the same stale resource budget).
+ */
+async function sendWithRetry(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  build: () => Promise<any>,
+  label: string,
+  maxAttempts = 3,
+): Promise<unknown> {
+  let lastErr: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const tx = await build();
+    padResources(tx);
+    try {
+      return await sendAndCheckOnce(tx, label);
+    } catch (err) {
+      lastErr = err as Error;
+      const msg = lastErr.message ?? "";
+      const isResourceDrift =
+        msg.includes("scecExceededLimit") ||
+        msg.includes("ResourceLimitExceeded") ||
+        msg.includes("invokeHostFunctionResourceLimitExceeded");
+      if (!isResourceDrift || attempt === maxAttempts) throw lastErr;
+      console.warn(
+        `  [retry] ${label} attempt ${attempt}/${maxAttempts} hit resource drift, retrying with fresh sim…`,
+      );
+    }
+  }
+  throw lastErr ?? new Error(`${label}: unknown failure after ${maxAttempts} attempts`);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function sendAndCheck(tx: any, label: string): Promise<unknown> {
-  padResources(tx);
+async function sendAndCheckOnce(tx: any, label: string): Promise<unknown> {
   const sent = await tx.signAndSend();
   const status: string | undefined = sent.getTransactionResponse?.status;
   if (status === "SUCCESS") {
@@ -350,8 +386,10 @@ export class Fixture {
   // ---------------------------------------------------------------------------
 
   async mintUsdc(to: string, amount: bigint): Promise<void> {
-    const tx = await this.mockToken.mint({ to, amount });
-    await sendAndCheck(tx, `mintUsdc(${to.slice(0, 8)}…, ${amount})`);
+    await sendWithRetry(
+      () => this.mockToken.mint({ to, amount }),
+      `mintUsdc(${to.slice(0, 8)}…, ${amount})`,
+    );
   }
 
   async usdcBalance(address: string): Promise<bigint> {
@@ -410,16 +448,19 @@ export class Fixture {
     stopLoss = 0n,
   ): Promise<void> {
     const client = this.pmFor(kp);
-    const tx = await client.increase_position({
-      trader: kp.publicKey(),
-      symbol,
-      size,
-      collateral,
-      is_long: true,
-      take_profit: takeProfit,
-      stop_loss: stopLoss,
-    });
-    await sendAndCheck(tx, `openLong(${kp.publicKey().slice(0, 8)}…, ${symbol})`);
+    await sendWithRetry(
+      () =>
+        client.increase_position({
+          trader: kp.publicKey(),
+          symbol,
+          size,
+          collateral,
+          is_long: true,
+          take_profit: takeProfit,
+          stop_loss: stopLoss,
+        }),
+      `openLong(${kp.publicKey().slice(0, 8)}…, ${symbol})`,
+    );
   }
 
   async openShort(
@@ -431,36 +472,40 @@ export class Fixture {
     stopLoss = 0n,
   ): Promise<void> {
     const client = this.pmFor(kp);
-    const tx = await client.increase_position({
-      trader: kp.publicKey(),
-      symbol,
-      size,
-      collateral,
-      is_long: false,
-      take_profit: takeProfit,
-      stop_loss: stopLoss,
-    });
-    await sendAndCheck(tx, `openShort(${kp.publicKey().slice(0, 8)}…, ${symbol})`);
+    await sendWithRetry(
+      () =>
+        client.increase_position({
+          trader: kp.publicKey(),
+          symbol,
+          size,
+          collateral,
+          is_long: false,
+          take_profit: takeProfit,
+          stop_loss: stopLoss,
+        }),
+      `openShort(${kp.publicKey().slice(0, 8)}…, ${symbol})`,
+    );
   }
 
   async closePosition(kp: Keypair, symbol: string, sizeDelta: bigint): Promise<void> {
     const client = this.pmFor(kp);
-    const tx = await client.decrease_position({
-      trader: kp.publicKey(),
-      symbol,
-      size_delta: sizeDelta,
-    });
-    await sendAndCheck(tx, `closePosition(${kp.publicKey().slice(0, 8)}…, ${symbol})`);
+    await sendWithRetry(
+      () => client.decrease_position({ trader: kp.publicKey(), symbol, size_delta: sizeDelta }),
+      `closePosition(${kp.publicKey().slice(0, 8)}…, ${symbol})`,
+    );
   }
 
   async liquidate(callerKp: Keypair, traderAddress: string, symbol: string): Promise<void> {
     const client = this.pmFor(callerKp);
-    const tx = await client.liquidate_position({
-      caller: callerKp.publicKey(),
-      trader: traderAddress,
-      symbol,
-    });
-    await sendAndCheck(tx, `liquidate(${traderAddress.slice(0, 8)}…, ${symbol})`);
+    await sendWithRetry(
+      () =>
+        client.liquidate_position({
+          caller: callerKp.publicKey(),
+          trader: traderAddress,
+          symbol,
+        }),
+      `liquidate(${traderAddress.slice(0, 8)}…, ${symbol})`,
+    );
   }
 
   async getPosition(trader: string, symbol: string) {
@@ -484,12 +529,10 @@ export class Fixture {
   /** Set mock oracle price. `priceUsd` is in whole dollars (e.g. 50_000). */
   async setPrice(symbol: string, priceUsd: bigint): Promise<void> {
     const scaled = priceUsd * PRECISION;
-    const tx = await this.oracle.set_price({
-      caller: this.adminKp.publicKey(),
-      symbol,
-      price: scaled,
-    });
-    await sendAndCheck(tx, `setPrice(${symbol}, ${priceUsd})`);
+    await sendWithRetry(
+      () => this.oracle.set_price({ caller: this.adminKp.publicKey(), symbol, price: scaled }),
+      `setPrice(${symbol}, ${priceUsd})`,
+    );
   }
 
   async getPrice(symbol: string): Promise<bigint> {
