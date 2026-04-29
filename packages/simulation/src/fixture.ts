@@ -116,6 +116,52 @@ function getAdminKeypair(): Keypair {
   return Keypair.fromSecret(secret);
 }
 
+/**
+ * Submit an AssembledTransaction and ensure it actually succeeded on-chain.
+ *
+ * SDK gotcha: `await tx.signAndSend()` resolves successfully for transactions
+ * that were INCLUDED in a ledger but FAILED (panicked) — the SentTransaction's
+ * `result` getter throws only when explicitly accessed. Without this check,
+ * fixture callers see no error from a panicked tx and the sim happily
+ * proceeds with state that doesn't reflect on-chain reality.
+ */
+async function sendAndCheck<T>(
+  tx: { signAndSend: () => Promise<{ result?: T; getTransactionResponse?: { status?: string } }> },
+  label: string,
+): Promise<T | undefined> {
+  const sent = await tx.signAndSend();
+  const status = sent.getTransactionResponse?.status;
+  try {
+    // Accessing `result` throws if the tx didn't have a returnValue (i.e.
+    // failed on-chain). For void returns it resolves to undefined.
+    return sent.result;
+  } catch (err) {
+    throw new Error(
+      `${label} failed on-chain (status=${status ?? "unknown"}): ${
+        (err as Error).message ?? String(err)
+      }`,
+    );
+  }
+}
+
+/**
+ * The SDK returns a Rust-style `Err` object for contract panics on read
+ * methods that have errorTypes generated. The object is truthy, so naive
+ * truthiness checks miss it. Detect Err and translate to null.
+ */
+function unwrapOrNull<T>(result: T | { isErr?: () => boolean }): T | null {
+  if (
+    result &&
+    typeof result === "object" &&
+    "isErr" in result &&
+    typeof (result as { isErr: () => boolean }).isErr === "function" &&
+    (result as { isErr: () => boolean }).isErr()
+  ) {
+    return null;
+  }
+  return result as T;
+}
+
 export class Fixture {
   readonly env: EnvConfig;
   readonly adminKp: Keypair;
@@ -190,7 +236,7 @@ export class Fixture {
 
   async mintUsdc(to: string, amount: bigint): Promise<void> {
     const tx = await this.mockToken.mint({ to, amount });
-    await tx.signAndSend();
+    await sendAndCheck(tx, `mintUsdc(${to.slice(0, 8)}…, ${amount})`);
   }
 
   async usdcBalance(address: string): Promise<bigint> {
@@ -258,7 +304,7 @@ export class Fixture {
       take_profit: takeProfit,
       stop_loss: stopLoss,
     });
-    await tx.signAndSend();
+    await sendAndCheck(tx, `openLong(${kp.publicKey().slice(0, 8)}…, ${symbol})`);
   }
 
   async openShort(
@@ -279,7 +325,7 @@ export class Fixture {
       take_profit: takeProfit,
       stop_loss: stopLoss,
     });
-    await tx.signAndSend();
+    await sendAndCheck(tx, `openShort(${kp.publicKey().slice(0, 8)}…, ${symbol})`);
   }
 
   async closePosition(kp: Keypair, symbol: string, sizeDelta: bigint): Promise<void> {
@@ -289,7 +335,7 @@ export class Fixture {
       symbol,
       size_delta: sizeDelta,
     });
-    await tx.signAndSend();
+    await sendAndCheck(tx, `closePosition(${kp.publicKey().slice(0, 8)}…, ${symbol})`);
   }
 
   async liquidate(callerKp: Keypair, traderAddress: string, symbol: string): Promise<void> {
@@ -299,12 +345,16 @@ export class Fixture {
       trader: traderAddress,
       symbol,
     });
-    await tx.signAndSend();
+    await sendAndCheck(tx, `liquidate(${traderAddress.slice(0, 8)}…, ${symbol})`);
   }
 
   async getPosition(trader: string, symbol: string) {
     const tx = await this.positionManager.get_position({ trader, symbol });
-    return tx.result;
+    // tx.result returns the Position on success, but for contract panics
+    // (e.g. PositionNotFound) the SDK wraps the error in a Rust-style Err
+    // object that is *truthy* — naive `if (!pos)` checks miss it. Surface
+    // explicit nulls so callers can do `if (!pos) ...`.
+    return unwrapOrNull(tx.result);
   }
 
   async getMarket(symbol: string) {
@@ -324,7 +374,7 @@ export class Fixture {
       symbol,
       price: scaled,
     });
-    await tx.signAndSend();
+    await sendAndCheck(tx, `setPrice(${symbol}, ${priceUsd})`);
   }
 
   async getPrice(symbol: string): Promise<bigint> {
