@@ -94,22 +94,23 @@ export default async function normalUsage(f: Fixture) {
   }
   log("On-chain positions", `${NUM_TRADERS} all present`);
 
-  // 7. DB assertions.
+  // 7. DB assertions. Log everything first so a failed assert leaves a
+  //    full trace of what the DB actually held.
   const dbPositions = await f
     .db()
     .select({ count: sql<number>`count(*)::int` })
     .from(positions);
   const dbPosCount = Number(dbPositions[0]?.count ?? 0);
-  assertEqual(dbPosCount, EXPECTED.positionCount, `DB positions count`);
-  log("DB positions", dbPosCount);
-
   const liqs = await f.countTradesByType("liquidation");
   const orders = await f.countTradesByType("order");
   const adls = await f.countTradesByType("adl");
+  log("DB positions", dbPosCount);
+  log("DB keeper events", `liquidation=${liqs} order=${orders} adl=${adls}`);
+
+  assertEqual(dbPosCount, EXPECTED.positionCount, "DB positions count");
   assertEqual(liqs, EXPECTED.liquidations, "DB liquidation events");
   assertEqual(orders, EXPECTED.orders, "DB order events");
   assertEqual(adls, EXPECTED.adls, "DB adl events");
-  log("DB keeper events", `liquidation=${liqs} order=${orders} adl=${adls}`);
 
   log("OK", "normal-usage: docs ↔ contract ↔ keeper ↔ math all aligned for happy path");
 }

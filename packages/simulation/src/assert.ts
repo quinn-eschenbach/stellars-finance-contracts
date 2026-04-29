@@ -6,9 +6,8 @@ export function log(label: string, value: unknown): void {
 
 export function assertEqual<T>(actual: T, expected: T, msg?: string): void {
   if (actual !== expected) {
-    throw new Error(
-      msg ?? `assertEqual failed: ${String(actual)} !== ${String(expected)}`,
-    );
+    const detail = `got ${String(actual)}, expected ${String(expected)}`;
+    throw new Error(msg ? `${msg} — ${detail}` : `assertEqual failed: ${detail}`);
   }
 }
 
