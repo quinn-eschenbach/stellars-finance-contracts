@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy db-push sim sim-one sim-cleanup grant-keepers indexer keeper server oracles
+.PHONY: build optimize test clean up down deploy db-push sim sim-one sim-cleanup grant-keepers indexer keeper api server oracles
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -70,10 +70,12 @@ indexer:
 keeper:
 	pnpm --filter @stellars/keeper dev
 
+api:
+	pnpm --filter @stellars/api dev
+
 # Production deploy unit: api + indexer + db + keeper share one server bundle.
-# Locally we just start indexer + keeper in parallel; api is TBD.
 server:
-	pnpm --parallel --filter @stellars/indexer --filter @stellars/keeper dev
+	pnpm --parallel --filter @stellars/indexer --filter @stellars/keeper --filter @stellars/api dev
 
 # Oracles run as a separate service in production. oracle-keeper is currently
 # a stub; this target reserves the slot.
