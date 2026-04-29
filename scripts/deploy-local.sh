@@ -167,6 +167,14 @@ invoke --id "$CM_ID" -- grant_role \
   --role KEEPER \
   --account "$KEEPER_ADDR"
 
+# Admin also keeps KEEPER so it can seed oracle prices here and from the
+# simulation fixture (mock-oracle.set_price requires KEEPER role).
+echo "  grant KEEPER to admin"
+invoke --id "$CM_ID" -- grant_role \
+  --caller "$ADMIN_ADDR" \
+  --role KEEPER \
+  --account "$ADMIN_ADDR"
+
 echo "  grant PAUSER to admin"
 invoke --id "$CM_ID" -- grant_role \
   --caller "$ADMIN_ADDR" \
