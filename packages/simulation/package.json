@@ -4,14 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sim": "tsx run.ts --all",
-    "sim:one": "tsx run.ts --scenario",
-    "cleanup": "tsx run.ts --cleanup"
+    "sim": "DOTENV_CONFIG_PATH=../../.env.local tsx -r dotenv/config run.ts --all",
+    "sim:one": "DOTENV_CONFIG_PATH=../../.env.local tsx -r dotenv/config run.ts --scenario",
+    "cleanup": "DOTENV_CONFIG_PATH=../../.env.local tsx -r dotenv/config run.ts --cleanup"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^14.1.1",
     "@stellars/db": "workspace:*",
     "buffer": "6.0.3",
+    "dotenv": "^16.4.0",
     "drizzle-orm": "^0.38.0"
   },
   "devDependencies": {
