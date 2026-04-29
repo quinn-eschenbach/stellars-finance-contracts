@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { positions, markets, vaultState } from "@stellars/db";
+import { positions, markets } from "@stellars/db";
 import type { Fixture } from "../src/fixture.js";
 import { assertEqual, assertGt, log } from "../src/assert.js";
 import { USDC_UNIT } from "../src/constants.js";
@@ -27,10 +27,16 @@ import { USDC_UNIT } from "../src/constants.js";
  * Predicted outcomes (looser bounds — exact funding math is reserved for
  * a future tighter scenario):
  *   - 20 positions still open (no liquidations, no order triggers)
- *   - markets.BTCUSD.acc_funding_index > 0 (funding has accrued in long-pay direction)
+ *   - markets.BTCUSD.acc_funding_index advances during the window
+ *     (funding has accrued in long-pay direction)
  *   - markets.BTCUSD.last_index_update is recent (keeper actually ran update_indices)
- *   - vaultState.unclaimed_fees > 0 (funding cut accumulated)
  *   - 0 liquidation, order, or adl events
+ *
+ * Note on vault.unclaimed_fees: funding stays *virtual* in the index until
+ * a position is closed/liquidated/ADL'd, at which point the configured cut
+ * (funding_cut_bps in ProtocolLimits) is realized into unclaimed_fees. Since
+ * no positions close in this scenario, unclaimed_fees stays 0 — that's
+ * correct behaviour, not a missed assertion.
  */
 
 const SYMBOL = "BTCUSD";
@@ -122,13 +128,7 @@ export default async function imbalancedOi(f: Fixture) {
     );
   }
 
-  // 7. Vault accrued funding cut.
-  const vaultRow = await f.db().select().from(vaultState).where(eq(vaultState.id, 1)).limit(1);
-  const unclaimedFees = BigInt(vaultRow[0]?.unclaimed_fees ?? "0");
-  log("vault.unclaimed_fees", unclaimedFees.toString());
-  assertGt(unclaimedFees, 0n, "vault must accrue funding cut over the window");
-
-  // 8. No keeper trader-actions fired.
+  // 7. No keeper trader-actions fired.
   const dbPositions = await f
     .db()
     .select({ count: sql<number>`count(*)::int` })
@@ -144,5 +144,5 @@ export default async function imbalancedOi(f: Fixture) {
   assertEqual(orders, EXPECTED.orders, "no orders expected");
   assertEqual(adls, EXPECTED.adls, "no adls expected");
 
-  log("OK", "imbalanced-oi: funding accrued long→short, vault took cut, no keeper trader-actions");
+  log("OK", "imbalanced-oi: funding accrued long→short via acc_funding_index, no keeper trader-actions");
 }
