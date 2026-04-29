@@ -3,7 +3,7 @@ import { useAddress } from "@/wallet/WalletProvider";
 import { usePositions, usePrices } from "@/api/hooks";
 import { useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatPrice, formatUsdc } from "@/lib/utils";
+import { PositionRow } from "@/components/trade/PositionRow";
 
 export const Route = createFileRoute("/portfolio")({
   component: PortfolioPage,
@@ -35,25 +35,10 @@ function PortfolioPage() {
           {positions.data?.length === 0 && (
             <div className="text-sm text-muted-foreground">No open positions.</div>
           )}
-          <div className="grid gap-2">
-            {(positions.data ?? []).map((p) => {
-              const mark = priceBySymbol.get(p.symbol);
-              return (
-                <div
-                  key={p.id}
-                  className="grid grid-cols-6 gap-3 rounded-md border border-border p-3 font-mono text-sm"
-                >
-                  <span>{p.symbol}</span>
-                  <span className={p.is_long ? "text-bull" : "text-bear"}>
-                    {p.is_long ? "LONG" : "SHORT"}
-                  </span>
-                  <span>${formatUsdc(p.size)}</span>
-                  <span>${formatUsdc(p.collateral)} margin</span>
-                  <span>entry ${formatPrice(p.entry_price)}</span>
-                  <span>mark {mark ? `$${formatPrice(mark)}` : "—"}</span>
-                </div>
-              );
-            })}
+          <div className="space-y-2">
+            {(positions.data ?? []).map((p) => (
+              <PositionRow key={p.id} position={p} markPrice={priceBySymbol.get(p.symbol)} />
+            ))}
           </div>
         </CardContent>
       </Card>

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useVault } from "@/api/hooks";
 import { useStreamVault } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { VaultActions } from "@/components/vault/VaultActions";
 import { formatUsdc } from "@/lib/utils";
 
 export const Route = createFileRoute("/vault")({
@@ -13,14 +14,12 @@ function VaultPage() {
   useStreamVault();
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Vault</h1>
-
+    <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">State</CardTitle>
+          <CardTitle className="text-base">Vault state</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-1 text-sm font-mono">
+        <CardContent className="space-y-1 font-mono text-sm">
           {vault.data && (
             <>
               <Row label="Total assets" value={`$${formatUsdc(vault.data.total_assets)}`} />
@@ -34,9 +33,14 @@ function VaultPage() {
         </CardContent>
       </Card>
 
-      <p className="text-sm text-muted-foreground">
-        Deposit / withdraw flows wire up in the next pass.
-      </p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Provide liquidity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VaultActions />
+        </CardContent>
+      </Card>
     </div>
   );
 }
