@@ -103,9 +103,15 @@ export default async function extremeVolatility(f: Fixture) {
 
   // 5. Wait for the keeper to clear all liquidatable positions. At the
   //    Stellar ledger-close ceiling of ~12 actions/min, 18 liquidations
-  //    take ~90s end-to-end. 3min timeout gives generous headroom.
+  //    take ~90s end-to-end. Pipeline: indexer ingests price (~5s) →
+  //    keeper detects (~1s) → submits liquidations (~5s/each × 18 = 90s).
+  //    Total budget ~100-120s + safety margin.
   log("Settling", `waiting for keeper to liquidate ${EXPECTED.liquidations} positions`);
-  await f.waitForKeeperToSettle({ timeoutMs: 180_000, stableMs: 10_000 });
+  await f.waitForKeeperToSettle({
+    expectAtLeast: EXPECTED.liquidations,
+    timeoutMs: 240_000,
+    stableMs: 10_000,
+  });
   await f.waitForIndexer({ maxLagSec: 5, timeoutMs: 30_000 });
 
   // 6. On-chain — count surviving positions by trying to fetch each.

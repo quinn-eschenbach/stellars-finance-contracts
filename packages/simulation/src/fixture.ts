@@ -597,31 +597,42 @@ export class Fixture {
   }
 
   /**
-   * Wait until no new keeper-emitted trades have appeared for `stableMs`.
-   * Counts rows in `trades` where event_type ∈ {liquidation, order, adl} —
-   * any keeper-driven action. Returns when the count plateaus.
+   * Wait until the keeper has done at least `expectAtLeast` actions
+   * (liquidations / orders / ADLs) AND the count has been stable for
+   * `stableMs`. Throws on timeout.
    *
-   * Tuned for the ledger-close ceiling of ~12 keeper actions/min — set
-   * timeoutMs generously when expecting many liquidations.
+   * Why both conditions: a naive "stable for N seconds" returns prematurely
+   * when the keeper hasn't started yet — a count of 0 that stays at 0 for
+   * 10s isn't "settled", it's "hasn't woken up". Requiring a minimum count
+   * ensures we wait through the indexer-lag → keeper-detect → submit
+   * pipeline before considering the wait complete.
+   *
+   * For scenarios that expect ZERO keeper events (e.g. normal-usage) leave
+   * expectAtLeast=0; the function then degrades to the old behavior and
+   * returns once stableMs of inactivity has been observed from the start.
    */
   async waitForKeeperToSettle({
+    expectAtLeast = 0,
     timeoutMs = 180_000,
     stableMs = 8_000,
   } = {}): Promise<void> {
     const start = Date.now();
-    let lastCount = await this.countKeeperEvents();
+    let lastCount = -1;
     let lastChange = Date.now();
 
     while (Date.now() - start < timeoutMs) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
       const now = await this.countKeeperEvents();
-      if (now > lastCount) {
+      if (now !== lastCount) {
         lastCount = now;
         lastChange = Date.now();
       }
-      if (Date.now() - lastChange >= stableMs) return;
+      if (now >= expectAtLeast && Date.now() - lastChange >= stableMs) return;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
-    throw new Error(`waitForKeeperToSettle: still seeing activity after ${timeoutMs}ms`);
+    throw new Error(
+      `waitForKeeperToSettle: did not reach expectAtLeast=${expectAtLeast} within ${timeoutMs}ms ` +
+        `(last count=${lastCount})`,
+    );
   }
 
   /** Count of keeper-driven trade rows in the indexer DB. */
