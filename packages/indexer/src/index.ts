@@ -88,10 +88,16 @@ async function main() {
 
       for (const rawEvent of events) {
         const handler = routes[rawEvent.contractId];
-        if (!handler) continue;
+        if (!handler) {
+          console.warn(`[indexer] no route for contract ${rawEvent.contractId} — event id=${rawEvent.id} ledger=${rawEvent.ledger}`);
+          continue;
+        }
 
         const parsed = parseEvent(rawEvent, specMaps);
-        if (!parsed) continue;
+        if (!parsed) {
+          console.warn(`[indexer] parseEvent returned null — contract=${rawEvent.contractId} ledger=${rawEvent.ledger} id=${rawEvent.id} (unknown topic0 in spec map?)`);
+          continue;
+        }
         try {
           await handler(db, parsed);
         } catch (err) {
