@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy db-push sim sim-one sim-cleanup grant-keepers indexer keeper api server oracles
+.PHONY: build optimize test clean up down deploy db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -72,6 +72,9 @@ keeper:
 
 api:
 	pnpm --filter @stellars/api dev
+
+frontend:
+	pnpm --filter @stellars/frontend dev
 
 # Production deploy unit: api + indexer + db + keeper share one server bundle.
 server:
