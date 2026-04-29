@@ -125,23 +125,10 @@ function getAdminKeypair(): Keypair {
  * fixture callers see no error from a panicked tx and the sim happily
  * proceeds with state that doesn't reflect on-chain reality.
  */
-async function sendAndCheck<T>(
-  tx: {
-    signAndSend: () => Promise<{
-      result?: T;
-      getTransactionResponse?: {
-        status?: string;
-        resultXdr?: { toXDR: (fmt: string) => string };
-        resultMetaXdr?: { toXDR: (fmt: string) => string };
-        diagnosticEventsXdr?: { toXDR: (fmt: string) => string }[];
-      };
-      sendTransactionResponse?: { hash?: string };
-    }>;
-  },
-  label: string,
-): Promise<T | undefined> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function sendAndCheck(tx: any, label: string): Promise<unknown> {
   const sent = await tx.signAndSend();
-  const status = sent.getTransactionResponse?.status;
+  const status: string | undefined = sent.getTransactionResponse?.status;
   if (status === "SUCCESS") {
     try {
       return sent.result;
@@ -155,12 +142,14 @@ async function sendAndCheck<T>(
   // Surface as much detail as we can about the on-chain failure. Soroban
   // contract panics live in diagnosticEventsXdr — extract the error code
   // string from there if present.
-  const txHash = sent.sendTransactionResponse?.hash ?? "unknown";
-  const diags = sent.getTransactionResponse?.diagnosticEventsXdr ?? [];
-  const diagsB64 = diags.map((d) => d.toXDR("base64"));
-  const resultXdr = sent.getTransactionResponse?.resultXdr?.toXDR("base64");
+  const txHash: string = sent.sendTransactionResponse?.hash ?? "unknown";
+  const diags: { toXDR: (fmt?: string) => string | Buffer }[] =
+    sent.getTransactionResponse?.diagnosticEventsXdr ?? [];
+  const diagsB64 = diags.map((d) => String(d.toXDR("base64")));
+  const resultXdr: string | undefined = sent.getTransactionResponse?.resultXdr?.toXDR(
+    "base64",
+  );
 
-  // Best-effort: scan diagnostic events for a contract-error pattern.
   const contractErrMatch = diagsB64
     .map((b) => Buffer.from(b, "base64").toString("binary"))
     .join(" ")
@@ -171,7 +160,7 @@ async function sendAndCheck<T>(
       `  resultXdr: ${resultXdr ?? "<none>"}\n` +
       `  diagnostics: ${diagsB64.length} event(s)\n` +
       (contractErrMatch ? `  parsed contract error code: ${contractErrMatch[1]}\n` : "") +
-      `  Decode the resultXdr with: stellar lab xdr decode --type TransactionResult --xdr ${resultXdr ?? ""}`,
+      `  Decode resultXdr: stellar lab xdr decode --type TransactionResult --xdr ${resultXdr ?? ""}`,
   );
 }
 
