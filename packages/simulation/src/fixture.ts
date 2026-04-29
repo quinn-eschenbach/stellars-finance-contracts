@@ -126,22 +126,53 @@ function getAdminKeypair(): Keypair {
  * proceeds with state that doesn't reflect on-chain reality.
  */
 async function sendAndCheck<T>(
-  tx: { signAndSend: () => Promise<{ result?: T; getTransactionResponse?: { status?: string } }> },
+  tx: {
+    signAndSend: () => Promise<{
+      result?: T;
+      getTransactionResponse?: {
+        status?: string;
+        resultXdr?: { toXDR: (fmt: string) => string };
+        resultMetaXdr?: { toXDR: (fmt: string) => string };
+        diagnosticEventsXdr?: { toXDR: (fmt: string) => string }[];
+      };
+      sendTransactionResponse?: { hash?: string };
+    }>;
+  },
   label: string,
 ): Promise<T | undefined> {
   const sent = await tx.signAndSend();
   const status = sent.getTransactionResponse?.status;
-  try {
-    // Accessing `result` throws if the tx didn't have a returnValue (i.e.
-    // failed on-chain). For void returns it resolves to undefined.
-    return sent.result;
-  } catch (err) {
-    throw new Error(
-      `${label} failed on-chain (status=${status ?? "unknown"}): ${
-        (err as Error).message ?? String(err)
-      }`,
-    );
+  if (status === "SUCCESS") {
+    try {
+      return sent.result;
+    } catch (err) {
+      throw new Error(
+        `${label} succeeded on-chain but result parse failed: ${(err as Error).message}`,
+      );
+    }
   }
+
+  // Surface as much detail as we can about the on-chain failure. Soroban
+  // contract panics live in diagnosticEventsXdr — extract the error code
+  // string from there if present.
+  const txHash = sent.sendTransactionResponse?.hash ?? "unknown";
+  const diags = sent.getTransactionResponse?.diagnosticEventsXdr ?? [];
+  const diagsB64 = diags.map((d) => d.toXDR("base64"));
+  const resultXdr = sent.getTransactionResponse?.resultXdr?.toXDR("base64");
+
+  // Best-effort: scan diagnostic events for a contract-error pattern.
+  const contractErrMatch = diagsB64
+    .map((b) => Buffer.from(b, "base64").toString("binary"))
+    .join(" ")
+    .match(/contract.{0,5}#?(\d+)/i);
+
+  throw new Error(
+    `${label} failed on-chain (status=${status ?? "unknown"} tx=${txHash})\n` +
+      `  resultXdr: ${resultXdr ?? "<none>"}\n` +
+      `  diagnostics: ${diagsB64.length} event(s)\n` +
+      (contractErrMatch ? `  parsed contract error code: ${contractErrMatch[1]}\n` : "") +
+      `  Decode the resultXdr with: stellar lab xdr decode --type TransactionResult --xdr ${resultXdr ?? ""}`,
+  );
 }
 
 /**
