@@ -35,7 +35,7 @@ fi
 # Stellar CLI identity — create an ephemeral 'admin' key if missing
 if ! stellar keys address admin &>/dev/null; then
   echo "Creating 'admin' identity..."
-  stellar keys generate admin --no-fund
+  stellar keys generate admin
 fi
 ADMIN_ADDR=$(stellar keys address admin)
 echo "Admin: $ADMIN_ADDR"
@@ -44,7 +44,7 @@ echo "Admin: $ADMIN_ADDR"
 # between keeper submissions and admin-issued sim/oracle calls.
 if ! stellar keys address keeper &>/dev/null; then
   echo "Creating 'keeper' identity..."
-  stellar keys generate keeper --no-fund
+  stellar keys generate keeper
 fi
 KEEPER_ADDR=$(stellar keys address keeper)
 echo "Keeper: $KEEPER_ADDR"
