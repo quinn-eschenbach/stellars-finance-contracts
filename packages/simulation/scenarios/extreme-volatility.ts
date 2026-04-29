@@ -81,7 +81,14 @@ export default async function extremeVolatility(f: Fixture) {
     const tierIdx = Math.floor(i / TRADERS_PER_TIER);
     const leverage = LEVERAGE_TIERS[tierIdx];
     const size = COLLATERAL * leverage;
-    await f.openLong(traders[i], SYMBOL, size, COLLATERAL);
+    try {
+      await f.openLong(traders[i], SYMBOL, size, COLLATERAL);
+      log(`opened ${i + 1}/${NUM_TRADERS}`, `tier=${leverage}x trader=${traders[i].publicKey().slice(0, 8)}…`);
+    } catch (err) {
+      throw new Error(
+        `extreme-volatility setup failed at iteration ${i + 1}/${NUM_TRADERS} (tier=${leverage}x): ${(err as Error).message}`,
+      );
+    }
   }
   log(
     "Positions opened",
