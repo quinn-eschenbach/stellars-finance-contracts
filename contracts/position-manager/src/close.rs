@@ -139,9 +139,9 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     let mark_price = market_tick.mark_price;
 
     // Check ADL trigger conditions: PnL-based OR utilization-based.
-    let total_reserved = storage::get_total_reserved(env);
     let vault_addr = storage::get_vault_address(env);
     let vault = VaultClient::new(env, &vault_addr);
+    let total_reserved = vault.reserved_usdc();
     let total_assets = vault.total_assets();
 
     let limits = load_limits(env);
@@ -362,9 +362,7 @@ pub(crate) fn execute_close(
         market.short_open_interest -= size_delta;
     }
 
-    // Update total_reserved.
-    let old_reserved = storage::get_total_reserved(env);
-    storage::set_total_reserved(env, old_reserved - size_delta);
+    // Vault's ReservedUsdc was already decremented by release_liquidity above.
 
     // Delete or update the Position.
     let is_full_close = size_delta == pos.size;

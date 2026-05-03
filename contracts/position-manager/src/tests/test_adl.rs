@@ -384,6 +384,17 @@ fn advance_time_and_set_price(f: &TestFixture, new_ts: u64, new_price: i128) {
     f.oracle_client.set_price(&symbol_short!("BTC"), &new_price);
 }
 
+/// Force Vault.reserved_usdc to `target` via reserve/release. Vault is the
+/// single source of truth for reserved liquidity (#8).
+fn force_reserved(f: &TestFixture, target: i128) {
+    let cur = f._vault_client.reserved_usdc();
+    if target > cur {
+        f._vault_client.reserve_liquidity(&f.pm_addr, &(target - cur));
+    } else if cur > target {
+        f._vault_client.release_liquidity(&f.pm_addr, &(cur - target));
+    }
+}
+
 // ===========================================================================
 // 1. Guard tests
 // ===========================================================================
@@ -487,9 +498,7 @@ fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
     // Manually push total_reserved above 95% to simulate ADL condition.
     // In production this could happen if the vault's total_assets decreases
     // (e.g., due to trader profit payouts shrinking free liquidity).
-    f.env.as_contract(&f.pm_addr, || {
-        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
-    });
+    force_reserved(&f, 96_000 * USDC_UNIT);
 
     // Advance time past oracle cache; price up slightly so position is profitable
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
@@ -528,9 +537,7 @@ fn test_adl_profitable_long_trader_receives_profits() {
         .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     // Push reserved above 95% threshold (utilization > 9500 bps)
-    f.env.as_contract(&f.pm_addr, || {
-        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
-    });
+    force_reserved(&f, 96_000 * USDC_UNIT);
 
     // Price increases (trader is profitable)
     let higher_price: i128 = 55_000 * PRECISION;
@@ -574,9 +581,7 @@ fn test_adl_deletes_position_and_decreases_oi() {
     let market_before = f.pm_client.get_market(&symbol);
 
     // Push reserved above 95% (utilization > 9500 bps)
-    f.env.as_contract(&f.pm_addr, || {
-        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
-    });
+    force_reserved(&f, 96_000 * USDC_UNIT);
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
@@ -594,7 +599,7 @@ fn test_adl_deletes_position_and_decreases_oi() {
     // Total reserved must decrease
     let total_reserved_after = f
         .env
-        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
+        .as_contract(&f.pm_addr, || f._vault_client.reserved_usdc());
     // The new total_reserved should be 96,000 - 84,000 = 12,000 (or thereabouts,
     // depending on exact settlement logic)
     assert!(
@@ -616,9 +621,7 @@ fn test_adl_decreases_total_reserved() {
         .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
     // Push reserved above 95% (utilization > 9500 bps)
-    f.env.as_contract(&f.pm_addr, || {
-        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
-    });
+    force_reserved(&f, 96_000 * USDC_UNIT);
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
@@ -627,7 +630,7 @@ fn test_adl_decreases_total_reserved() {
 
     let total_reserved_after = f
         .env
-        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
+        .as_contract(&f.pm_addr, || f._vault_client.reserved_usdc());
 
     // After closing an 80k position from 96k reserved, should be ~16k
     assert_eq!(
@@ -653,9 +656,7 @@ fn test_adl_succeeds_when_paused() {
     f.pm_client
         .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
 
-    f.env.as_contract(&f.pm_addr, || {
-        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
-    });
+    force_reserved(&f, 96_000 * USDC_UNIT);
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 
@@ -698,9 +699,7 @@ fn test_adl_does_not_affect_other_traders_positions() {
         .increase_position(&trader2, &symbol, &size2, &collateral2, &true, &0, &0);
 
     // Push reserved above 95% (utilization > 9500 bps)
-    f.env.as_contract(&f.pm_addr, || {
-        storage::set_total_reserved(&f.env, 96_000 * USDC_UNIT);
-    });
+    force_reserved(&f, 96_000 * USDC_UNIT);
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE_UP);
 

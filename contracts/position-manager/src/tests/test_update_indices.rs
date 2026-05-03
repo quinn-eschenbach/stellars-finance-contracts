@@ -234,11 +234,17 @@ fn advance_time(f: &UpdateIndicesFixture, new_timestamp: u64) {
     });
 }
 
-/// Set TotalReserved in the PositionManager storage.
+/// Force Vault.reserved_usdc to the given target via reserve/release.
+/// Vault is now the single source of truth for reserved liquidity (#8).
 fn set_total_reserved(f: &UpdateIndicesFixture, amount: i128) {
-    f.env.as_contract(&f.pm_client.address, || {
-        storage::set_total_reserved(&f.env, amount);
-    });
+    let cur = f.vault_client.reserved_usdc();
+    if amount > cur {
+        f.vault_client
+            .reserve_liquidity(&f.pm_client.address, &(amount - cur));
+    } else if cur > amount {
+        f.vault_client
+            .release_liquidity(&f.pm_client.address, &(cur - amount));
+    }
 }
 
 // ===========================================================================

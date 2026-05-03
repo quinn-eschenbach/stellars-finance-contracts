@@ -413,7 +413,7 @@ fn test_liquidate_long_position_price_drops_significantly() {
     let market_before = f.pm_client.get_market(&symbol);
     let total_reserved_before = f
         .env
-        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
+        .as_contract(&f.pm_addr, || f._vault_client.reserved_usdc());
 
     // Execute liquidation
     f.pm_client
@@ -438,7 +438,7 @@ fn test_liquidate_long_position_price_drops_significantly() {
     // Total reserved must decrease
     let total_reserved_after = f
         .env
-        .as_contract(&f.pm_addr, || storage::get_total_reserved(&f.env));
+        .as_contract(&f.pm_addr, || f._vault_client.reserved_usdc());
     assert_eq!(
         total_reserved_after,
         total_reserved_before - DEFAULT_SIZE,

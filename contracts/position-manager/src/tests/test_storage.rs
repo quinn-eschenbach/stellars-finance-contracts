@@ -115,34 +115,6 @@ fn test_set_paused_true_then_false() {
 }
 
 // ===========================================================================
-// Instance storage: TotalReserved
-// ===========================================================================
-
-#[test]
-fn test_get_total_reserved_defaults_to_zero() {
-    with_contract(|env, _| {
-        assert_eq!(storage::get_total_reserved(env), 0i128);
-    });
-}
-
-#[test]
-fn test_set_and_get_total_reserved() {
-    with_contract(|env, _| {
-        storage::set_total_reserved(env, 42_000_000i128);
-        assert_eq!(storage::get_total_reserved(env), 42_000_000i128);
-    });
-}
-
-#[test]
-fn test_set_total_reserved_overwrite() {
-    with_contract(|env, _| {
-        storage::set_total_reserved(env, 100i128);
-        storage::set_total_reserved(env, 200i128);
-        assert_eq!(storage::get_total_reserved(env), 200i128);
-    });
-}
-
-// ===========================================================================
 // Instance storage: Address overwrite semantics
 // ===========================================================================
 
@@ -362,22 +334,6 @@ fn test_markets_isolated_per_symbol() {
 // ===========================================================================
 // Adversarial: extreme / boundary values
 // ===========================================================================
-
-#[test]
-fn test_total_reserved_with_i128_max() {
-    with_contract(|env, _| {
-        storage::set_total_reserved(env, i128::MAX);
-        assert_eq!(storage::get_total_reserved(env), i128::MAX);
-    });
-}
-
-#[test]
-fn test_total_reserved_with_negative_value() {
-    with_contract(|env, _| {
-        storage::set_total_reserved(env, -1i128);
-        assert_eq!(storage::get_total_reserved(env), -1i128);
-    });
-}
 
 #[test]
 fn test_position_with_extreme_values() {

@@ -999,7 +999,7 @@ fn test_execute_order_total_reserved_updated() {
     open_btc_position(&f, true);
 
     f.env.as_contract(&f.pm_addr, || {
-        assert_eq!(storage::get_total_reserved(&f.env), DEFAULT_SIZE);
+        assert_eq!(f.vault_client.reserved_usdc(), DEFAULT_SIZE);
     });
 
     let tp = 55_000 * PRECISION;
@@ -1012,7 +1012,7 @@ fn test_execute_order_total_reserved_updated() {
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             0,
             "TotalReserved must be zero after execute_order full close"
         );

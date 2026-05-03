@@ -238,9 +238,9 @@ pub fn do_increase_position(
         market.short_open_interest += size;
     }
 
-    // Check utilization cap BEFORE committing (read from ConfigManager)
+    // Check utilization cap BEFORE committing (read from ConfigManager).
     let limits = load_limits(env);
-    let old_reserved = storage::get_total_reserved(env);
+    let old_reserved = vault.reserved_usdc();
     let new_reserved = old_reserved + size;
     let free_liq = vault.free_liquidity();
     // total_assets ≈ vault's total deposits = free_liq + old_reserved
@@ -251,12 +251,10 @@ pub fn do_increase_position(
         panic_with_error!(env, PositionManagerError::UtilizationCapBreached);
     }
 
-    // Reserve liquidity in vault
+    // Reserve liquidity in vault — Vault's ReservedUsdc is the single source of truth.
     let contract_addr = env.current_contract_address();
     vault.reserve_liquidity(&contract_addr, &size);
 
-    // Persist state
-    storage::set_total_reserved(env, new_reserved);
     storage::set_position(env, trader, symbol, &position);
     storage::set_market(env, symbol, &market);
 

@@ -599,7 +599,7 @@ fn test_full_close_long_profit_total_reserved_decreased() {
     );
 
     f.env.as_contract(&f.pm_addr, || {
-        assert_eq!(storage::get_total_reserved(&f.env), DEFAULT_SIZE);
+        assert_eq!(f.vault_client.reserved_usdc(), DEFAULT_SIZE);
     });
 
     advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
@@ -610,7 +610,7 @@ fn test_full_close_long_profit_total_reserved_decreased() {
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             0,
             "TotalReserved must be zero after full close of only position"
         );
@@ -730,7 +730,7 @@ fn test_full_close_long_loss_market_updated() {
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             0,
             "TotalReserved must be zero after full close"
         );
@@ -863,7 +863,7 @@ fn test_partial_close_reduces_total_reserved_by_size_delta() {
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             DEFAULT_SIZE - half_size,
             "TotalReserved must decrease by size_delta on partial close"
         );
@@ -953,7 +953,7 @@ fn test_close_with_size_delta_exceeding_position_size_acts_as_full_close() {
 
     // TotalReserved should be zero
     f.env.as_contract(&f.pm_addr, || {
-        assert_eq!(storage::get_total_reserved(&f.env), 0);
+        assert_eq!(f.vault_client.reserved_usdc(), 0);
     });
 }
 
@@ -1182,7 +1182,7 @@ fn test_decrease_position_with_multiple_traders_independent() {
     // TotalReserved should reflect only trader2
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             20_000 * USDC_UNIT,
             "TotalReserved must only reflect remaining positions"
         );

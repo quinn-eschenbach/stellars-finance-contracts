@@ -481,7 +481,7 @@ fn test_open_position_increases_total_reserved() {
     // Verify initial total_reserved is zero
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             0,
             "TotalReserved must start at zero"
         );
@@ -499,7 +499,7 @@ fn test_open_position_increases_total_reserved() {
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             DEFAULT_SIZE,
             "TotalReserved must equal position size after first position"
         );
@@ -725,7 +725,7 @@ fn test_increase_existing_position_updates_total_reserved() {
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             size1 + size2,
             "TotalReserved must reflect cumulative reservation"
         );
@@ -1272,7 +1272,7 @@ fn test_cumulative_utilization_across_multiple_positions() {
     // Verify cumulative total_reserved is 800k
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
-            storage::get_total_reserved(&f.env),
+            f.vault_client.reserved_usdc(),
             800_000 * USDC_UNIT,
             "TotalReserved must be 800k after two 400k positions"
         );

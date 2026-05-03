@@ -47,9 +47,9 @@ impl MarketTick {
 
         if time_delta > 0 {
             let rate_config = load_borrow_rate_config(env);
-            let total_reserved = storage::get_total_reserved(env);
             let vault_addr = storage::get_vault_address(env);
             let vault = VaultClient::new(env, &vault_addr);
+            let total_reserved = vault.reserved_usdc();
             let free_liq = vault.free_liquidity();
             let total_assets = free_liq + total_reserved;
             let util_bps = math::calc_utilization_bps(total_reserved, total_assets);

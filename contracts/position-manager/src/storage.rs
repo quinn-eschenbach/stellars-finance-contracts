@@ -21,8 +21,6 @@ pub enum StorageKey {
     OracleRouter,
     // System state
     IsPaused,
-    // Running total of USDC reserved across all positions
-    TotalReserved,
     // Contract version (set by migrations)
     Version,
     // Cumulative economic outcome (PnL minus fees) of all closed positions
@@ -124,23 +122,6 @@ pub fn set_paused(env: &Env, paused: bool) {
     env.storage()
         .instance()
         .set(&StorageKey::IsPaused, &paused);
-}
-
-// ---------------------------------------------------------------------------
-// Instance storage: TotalReserved
-// ---------------------------------------------------------------------------
-
-pub fn get_total_reserved(env: &Env) -> i128 {
-    env.storage()
-        .instance()
-        .get(&StorageKey::TotalReserved)
-        .unwrap_or(0i128)
-}
-
-pub fn set_total_reserved(env: &Env, amount: i128) {
-    env.storage()
-        .instance()
-        .set(&StorageKey::TotalReserved, &amount);
 }
 
 // ---------------------------------------------------------------------------

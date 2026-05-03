@@ -335,6 +335,11 @@ impl VaultContract {
         vault_logic::free_liquidity(&env)
     }
 
+    pub fn reserved_usdc(env: Env) -> i128 {
+        vault_logic::require_initialized(&env);
+        vault_storage::get_reserved_usdc(&env)
+    }
+
     pub fn bump_vault_state(env: Env) {
         shared::bump_instance_ttl(&env);
     }

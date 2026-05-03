@@ -34,6 +34,8 @@ pub trait VaultInterface {
 
     fn free_liquidity(env: Env) -> i128;
 
+    fn reserved_usdc(env: Env) -> i128;
+
     fn query_asset(env: Env) -> Address;
 
     fn total_assets(env: Env) -> i128;
