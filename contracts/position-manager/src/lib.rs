@@ -6,6 +6,7 @@ mod events;
 mod logic;
 mod math;
 pub mod storage;
+mod tick;
 mod types;
 
 #[cfg(test)]

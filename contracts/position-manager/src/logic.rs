@@ -2,14 +2,15 @@
 
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env, Symbol};
 
-use interfaces::{ConfigManagerClient, OracleRouterClient, VaultClient};
+use interfaces::{ConfigManagerClient, VaultClient};
 
-use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
+use shared::{FeeSplits, ProtocolLimits};
 
 use crate::errors::PositionManagerError;
 use crate::events;
 use crate::math;
 use crate::storage;
+use crate::tick::MarketTick;
 use crate::types::Position;
 
 // ---------------------------------------------------------------------------
@@ -91,12 +92,6 @@ fn load_limits(env: &Env) -> ProtocolLimits {
     ConfigManagerClient::new(env, &config_mgr).get_protocol_limits()
 }
 
-/// Load borrow rate config from ConfigManager via cross-contract call.
-fn load_borrow_rate_config(env: &Env) -> BorrowRateConfig {
-    let config_mgr = storage::get_config_manager(env);
-    ConfigManagerClient::new(env, &config_mgr).get_borrow_rate_config()
-}
-
 /// Load fee splits from ConfigManager via cross-contract call.
 fn load_fee_splits(env: &Env) -> FeeSplits {
     let config_mgr = storage::get_config_manager(env);
@@ -158,78 +153,6 @@ pub fn require_positive(env: &Env, value: i128) {
 }
 
 // ---------------------------------------------------------------------------
-// update_indices logic
-// ---------------------------------------------------------------------------
-
-/// Advance the borrow and funding index accumulators for a given market.
-/// No-op if ledger timestamp == last_index_update.
-pub fn do_update_indices(env: &Env, symbol: &Symbol) {
-    let mut market = storage::get_market(env, symbol);
-    let now = env.ledger().timestamp();
-
-    // Clamp effective start to max(last_index_update, last_unpause_time)
-    // so fees don't accumulate during pause periods
-    let last_unpause = storage::get_last_unpause_time(env);
-    let effective_start = if market.last_index_update > last_unpause {
-        market.last_index_update
-    } else {
-        last_unpause
-    };
-    let time_delta = now.saturating_sub(effective_start);
-
-    if time_delta == 0 {
-        return;
-    }
-
-    // Load borrow/funding rate config from ConfigManager
-    let rate_config = load_borrow_rate_config(env);
-
-    // Borrow rate from utilization
-    let total_reserved = storage::get_total_reserved(env);
-    let vault_addr = storage::get_vault_address(env);
-    let vault = VaultClient::new(env, &vault_addr);
-    let free_liq = vault.free_liquidity();
-    let total_assets = free_liq + total_reserved;
-    let util_bps = math::calc_utilization_bps(total_reserved, total_assets);
-    let borrow_rate = math::calc_borrow_rate(
-        util_bps,
-        rate_config.base_borrow_rate_bps,
-        rate_config.slope1_bps,
-        rate_config.slope2_bps,
-        rate_config.optimal_utilization_bps,
-    );
-
-    market.acc_borrow_index =
-        math::accumulate_borrow_index(market.acc_borrow_index, borrow_rate, time_delta);
-
-    // Funding rate from OI imbalance
-    let funding_rate = math::calc_funding_rate(
-        market.long_open_interest,
-        market.short_open_interest,
-        rate_config.base_funding_rate_bps,
-    );
-    market.acc_funding_index =
-        math::accumulate_funding_index(market.acc_funding_index, funding_rate, time_delta);
-
-    market.last_index_update = now;
-    storage::set_market(env, symbol, &market);
-
-    events::UpdateIndices {
-        symbol: symbol.clone(),
-        acc_borrow_index: market.acc_borrow_index,
-        acc_funding_index: market.acc_funding_index,
-        timestamp: now,
-    }
-    .publish(env);
-
-    // Refresh unrealized PnL with current oracle price
-    let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterClient::new(env, &oracle_addr);
-    let mark_price = oracle.get_price(symbol);
-    refresh_market_unrealized_pnl(env, symbol, mark_price);
-}
-
-// ---------------------------------------------------------------------------
 // Unrealized PnL refresh
 // ---------------------------------------------------------------------------
 
@@ -280,25 +203,17 @@ pub fn do_increase_position(
     take_profit: i128,
     stop_loss: i128,
 ) {
-    // Refresh indices so fees are current before any position logic
-    do_update_indices(env, symbol);
+    // Refresh indices and snapshot fresh market state + mark price.
+    let market_tick = MarketTick::refresh(env, symbol);
+    let mark_price = market_tick.mark_price;
+    let mut market = market_tick.market;
 
-    // Transfer USDC collateral from trader to PM
     let vault_addr = storage::get_vault_address(env);
     let vault = VaultClient::new(env, &vault_addr);
 
-    // Get the vault's underlying asset for token transfers
-    let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterClient::new(env, &oracle_addr);
-    let mark_price = oracle.get_price(symbol);
-
-    // Transfer collateral from trader to this contract
-    // We need the USDC token address — get it from vault storage
-    // For now, use a TokenClient on the vault's asset
+    // Transfer USDC collateral from trader to PM.
     transfer_collateral_in(env, trader, collateral);
 
-    // Load or create position
-    let mut market = storage::get_market(env, symbol);
     let existing = storage::get_position(env, trader, symbol);
 
     // Enforce minimum collateral from protocol limits
@@ -449,8 +364,9 @@ fn get_vault_asset(env: &Env, vault_addr: &Address) -> Address {
 // ---------------------------------------------------------------------------
 
 pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_delta: i128) {
-    // Refresh indices so fees are current
-    do_update_indices(env, symbol);
+    // Refresh indices and snapshot fresh market state + mark price.
+    let market_tick = MarketTick::refresh(env, symbol);
+    let mark_price = market_tick.mark_price;
 
     let pos = storage::get_position(env, trader, symbol)
         .unwrap_or_else(|| panic_with_error!(env, PositionManagerError::PositionNotFound));
@@ -470,14 +386,6 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
     };
     let is_full_close = actual_delta == pos.size;
 
-    // Get mark price from oracle
-    let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterClient::new(env, &oracle_addr);
-    let mark_price = oracle.get_price(symbol);
-
-    // Load market
-    let mut market = storage::get_market(env, symbol);
-
     // Proportional collateral
     let collateral_delta = if is_full_close {
         pos.collateral
@@ -485,28 +393,18 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         pos.collateral * actual_delta / pos.size
     };
 
-    // Calculate PnL, fees, health
-    let pnl = math::calc_unrealized_pnl(actual_delta, pos.entry_price, mark_price, pos.is_long);
-    let borrow_fee = math::calc_borrow_fee(
-        actual_delta,
-        pos.entry_borrow_index,
-        market.acc_borrow_index,
-    );
-    let funding_fee = math::calc_funding_fee(
-        actual_delta,
-        pos.entry_funding_index,
-        market.acc_funding_index,
-        pos.is_long,
-    );
+    let eval = market_tick.evaluate(&pos, actual_delta, collateral_delta);
+    let mut market = market_tick.market;
+
     // Settlement (includes PnL tracking + fee distribution + funding cut)
     settle_close(
         env,
         trader,
         actual_delta,
         collateral_delta,
-        pnl,
-        borrow_fee,
-        funding_fee,
+        eval.pnl,
+        eval.borrow_fee,
+        eval.funding_fee,
         &CloseType::UserClose,
         None,
     );
@@ -515,9 +413,9 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         trader: trader.clone(),
         symbol: symbol.clone(),
         size_delta: actual_delta,
-        pnl,
-        borrow_fee,
-        funding_fee,
+        pnl: eval.pnl,
+        borrow_fee: eval.borrow_fee,
+        funding_fee: eval.funding_fee,
         mark_price,
         is_full_close,
     }
@@ -575,33 +473,20 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
 // ---------------------------------------------------------------------------
 
 pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symbol: &Symbol) {
-    // Refresh indices so fees are current
-    do_update_indices(env, symbol);
+    // Refresh indices and snapshot fresh market state + mark price.
+    let market_tick = MarketTick::refresh(env, symbol);
+    let mark_price = market_tick.mark_price;
 
     let pos = storage::get_position(env, trader, symbol)
         .unwrap_or_else(|| panic_with_error!(env, PositionManagerError::PositionNotFound));
 
-    // Get mark price
-    let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterClient::new(env, &oracle_addr);
-    let mark_price = oracle.get_price(symbol);
+    let eval = market_tick.evaluate(&pos, pos.size, pos.collateral);
+    let mut market = market_tick.market;
+    let pnl = eval.pnl;
+    let borrow_fee = eval.borrow_fee;
+    let funding_fee = eval.funding_fee;
 
-    // Load market
-    let mut market = storage::get_market(env, symbol);
-
-    // Compute health
-    let pnl = math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
-    let borrow_fee =
-        math::calc_borrow_fee(pos.size, pos.entry_borrow_index, market.acc_borrow_index);
-    let funding_fee = math::calc_funding_fee(
-        pos.size,
-        pos.entry_funding_index,
-        market.acc_funding_index,
-        pos.is_long,
-    );
-    let health = math::calc_health(pos.collateral, pnl, borrow_fee, funding_fee);
-
-    if health >= 0 {
+    if eval.health >= 0 {
         panic_with_error!(env, PositionManagerError::HealthFactorOk);
     }
 
@@ -698,8 +583,9 @@ pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symb
 // ---------------------------------------------------------------------------
 
 pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
-    // Refresh indices so fees are current
-    do_update_indices(env, symbol);
+    // Refresh indices and snapshot fresh market state + mark price.
+    let market_tick = MarketTick::refresh(env, symbol);
+    let mark_price = market_tick.mark_price;
 
     // Check ADL trigger conditions: PnL-based OR utilization-based
     let total_reserved = storage::get_total_reserved(env);
@@ -727,39 +613,23 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
     let pos = storage::get_position(env, trader, symbol)
         .unwrap_or_else(|| panic_with_error!(env, PositionManagerError::PositionNotFound));
 
-    // Get mark price
-    let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterClient::new(env, &oracle_addr);
-    let mark_price = oracle.get_price(symbol);
-
-    // Load market
-    let mut market = storage::get_market(env, symbol);
-
-    // Calculate PnL, fees, health
-    let pnl = math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
+    let eval = market_tick.evaluate(&pos, pos.size, pos.collateral);
+    let mut market = market_tick.market;
 
     // Guard: only profitable positions can be ADL'd
-    if pnl <= 0 {
+    if eval.pnl <= 0 {
         panic_with_error!(env, PositionManagerError::AdlTargetNotProfitable);
     }
 
-    let borrow_fee =
-        math::calc_borrow_fee(pos.size, pos.entry_borrow_index, market.acc_borrow_index);
-    let funding_fee = math::calc_funding_fee(
-        pos.size,
-        pos.entry_funding_index,
-        market.acc_funding_index,
-        pos.is_long,
-    );
     // Settlement (same as full close, includes PnL tracking + fee distribution + funding cut)
     settle_close(
         env,
         trader,
         pos.size,
         pos.collateral,
-        pnl,
-        borrow_fee,
-        funding_fee,
+        eval.pnl,
+        eval.borrow_fee,
+        eval.funding_fee,
         &CloseType::Deleverage,
         None,
     );
@@ -768,7 +638,7 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
         trader: trader.clone(),
         symbol: symbol.clone(),
         size: pos.size,
-        pnl,
+        pnl: eval.pnl,
         mark_price,
     }
     .publish(env);
@@ -868,8 +738,9 @@ fn validate_tp_sl(env: &Env, pos: &Position, take_profit: i128, stop_loss: i128)
 // ---------------------------------------------------------------------------
 
 pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &Symbol) {
-    // Refresh indices so fees are current
-    do_update_indices(env, symbol);
+    // Refresh indices and snapshot fresh market state + mark price.
+    let market_tick = MarketTick::refresh(env, symbol);
+    let mark_price = market_tick.mark_price;
 
     let pos = storage::get_position(env, trader, symbol)
         .unwrap_or_else(|| panic_with_error!(env, PositionManagerError::PositionNotFound));
@@ -881,39 +752,24 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
         panic_with_error!(env, PositionManagerError::PositionNotOldEnough);
     }
 
-    // Get mark price
-    let oracle_addr = storage::get_oracle_router(env);
-    let oracle = OracleRouterClient::new(env, &oracle_addr);
-    let mark_price = oracle.get_price(symbol);
-
-    // Check if TP or SL is triggered
-    let tp_hit = math::is_tp_triggered(pos.take_profit, mark_price, pos.is_long);
-    let sl_hit = math::is_sl_triggered(pos.stop_loss, mark_price, pos.is_long);
+    let tp_hit = market_tick.is_tp_triggered(pos.take_profit, pos.is_long);
+    let sl_hit = market_tick.is_sl_triggered(pos.stop_loss, pos.is_long);
 
     if !tp_hit && !sl_hit {
         panic_with_error!(env, PositionManagerError::OrderNotTriggered);
     }
 
-    // Full close — reuse the same logic as do_decrease_position with full size
-    let mut market = storage::get_market(env, symbol);
+    let eval = market_tick.evaluate(&pos, pos.size, pos.collateral);
+    let mut market = market_tick.market;
 
-    let pnl = math::calc_unrealized_pnl(pos.size, pos.entry_price, mark_price, pos.is_long);
-    let borrow_fee =
-        math::calc_borrow_fee(pos.size, pos.entry_borrow_index, market.acc_borrow_index);
-    let funding_fee = math::calc_funding_fee(
-        pos.size,
-        pos.entry_funding_index,
-        market.acc_funding_index,
-        pos.is_long,
-    );
     settle_close(
         env,
         trader,
         pos.size,
         pos.collateral,
-        pnl,
-        borrow_fee,
-        funding_fee,
+        eval.pnl,
+        eval.borrow_fee,
+        eval.funding_fee,
         &CloseType::OrderExecution,
         Some(keeper),
     );
@@ -922,7 +778,7 @@ pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &
         trader: trader.clone(),
         symbol: symbol.clone(),
         size: pos.size,
-        pnl,
+        pnl: eval.pnl,
         mark_price,
         is_tp: tp_hit,
         keeper: keeper.clone(),
