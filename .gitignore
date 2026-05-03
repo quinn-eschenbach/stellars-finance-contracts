@@ -6,3 +6,11 @@ packages/bindings/
 .env.local
 .env
 packages/simulation/state/
+
+# Soroban test snapshots — auth/state recordings regenerated on every cargo
+# test run. WASM build non-determinism makes them churn locally even when
+# behavior is unchanged, so they're not useful as tracked artifacts.
+test-suites/test_snapshots/
+contracts/*/test_snapshots/
+
+.DS_Store
