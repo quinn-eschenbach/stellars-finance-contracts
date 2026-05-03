@@ -36,6 +36,9 @@ export function formatPrice(scaled: bigint | string, decimals = 2): string {
   return `${whole.toLocaleString("en-US")}${decimals > 0 ? "." + fracStr : ""}`;
 }
 
+/** Convert a user-typed price string to the scaled bigint. Prices and USDC share 10^7 scaling. */
+export const parsePrice = (input: string): bigint => parseUsdc(input);
+
 /** Convert a user-typed USDC string ("1000.5") to the scaled bigint (10000005000000n). */
 export function parseUsdc(input: string): bigint {
   const trimmed = input.trim();

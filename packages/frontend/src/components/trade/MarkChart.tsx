@@ -4,13 +4,15 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  LineStyle,
   createChart,
   type CandlestickData,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useCandles, queryKeys } from "@/api/hooks";
+import { useCandles } from "@/api/hooks";
 import type { CandleInterval, CandleRow, PriceRow } from "@/api/types";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -26,22 +28,39 @@ const INTERVALS: ReadonlyArray<{ label: string; value: CandleInterval }> = [
   { label: "1d", value: 86400 },
 ];
 
+/**
+ * One horizontal price line keyed by `id` for stable diffing across renders.
+ * The chart adds/updates/removes lines as the array changes — callers don't
+ * have to imperatively manage line lifecycle.
+ */
+export interface ChartPriceLine {
+  id: string;
+  price: number;
+  color: string;
+  title: string;
+}
+
 interface MarkChartProps {
   symbol: string;
   className?: string;
+  priceLines?: ChartPriceLine[];
 }
 
 /**
  * Mark-price candlestick chart. Backfills from `/prices/:symbol/candles` and
  * keeps the latest candle live by reading the React Query prices cache (kept
  * fresh by the global price SSE stream — no extra subscription here).
+ *
+ * Optional `priceLines` renders horizontal price lines, identified by `id`
+ * so updates don't recreate the whole set.
  */
-export function MarkChart({ symbol, className }: MarkChartProps) {
+export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
   const [interval, setInterval] = useState<CandleInterval>(60);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const lastBucketRef = useRef<{ time: number; high: number; low: number; open: number } | null>(null);
+  const linesRef = useRef<Map<string, IPriceLine>>(new Map());
 
   const candles = useCandles(symbol, interval);
   const qc = useQueryClient();
@@ -87,6 +106,7 @@ export function MarkChart({ symbol, className }: MarkChartProps) {
       chartRef.current = null;
       seriesRef.current = null;
       lastBucketRef.current = null;
+      linesRef.current.clear();
     };
   }, []);
 
@@ -126,6 +146,44 @@ export function MarkChart({ symbol, className }: MarkChartProps) {
     });
     return () => unsub();
   }, [qc, symbol, interval]);
+
+  // Reconcile the keyed price-line set against the latest `priceLines` prop.
+  // New ids are added, existing ones updated in place, and missing ids
+  // removed — so the chart never flickers when only one line moves.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) return;
+    const lines = linesRef.current;
+    const desired = new Map<string, ChartPriceLine>();
+    for (const l of priceLines ?? []) {
+      if (!Number.isFinite(l.price) || l.price <= 0) continue;
+      desired.set(l.id, l);
+    }
+    for (const [id, line] of lines) {
+      if (!desired.has(id)) {
+        series.removePriceLine(line);
+        lines.delete(id);
+      }
+    }
+    for (const [id, l] of desired) {
+      const existing = lines.get(id);
+      if (existing) {
+        existing.applyOptions({ price: l.price, color: l.color, title: l.title });
+      } else {
+        lines.set(
+          id,
+          series.createPriceLine({
+            price: l.price,
+            color: l.color,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: l.title,
+          }),
+        );
+      }
+    }
+  }, [priceLines]);
 
   const status = useMemo(() => {
     if (candles.isLoading) return "Loading candles…";
@@ -183,7 +241,7 @@ function toCandlestickData(rows: CandleRow[]): CandlestickData<UTCTimestamp>[] {
  */
 function applyTick(
   series: ISeriesApi<"Candlestick">,
-  lastRef: React.MutableRefObject<{ time: number; high: number; low: number; open: number } | null>,
+  lastRef: React.RefObject<{ time: number; high: number; low: number; open: number } | null>,
   price: PriceRow,
   interval: CandleInterval,
 ) {
@@ -216,3 +274,4 @@ function applyTick(
     close: value,
   });
 }
+

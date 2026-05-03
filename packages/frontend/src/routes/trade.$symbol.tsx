@@ -1,12 +1,16 @@
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMarket, usePositions, usePrices } from "@/api/hooks";
 import { useStreamMarket, useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MarkChart } from "@/components/trade/MarkChart";
+import { MarkChart, type ChartPriceLine } from "@/components/trade/MarkChart";
 import { OrderForm } from "@/components/trade/OrderForm";
 import { PositionRow } from "@/components/trade/PositionRow";
 import { useAddress } from "@/wallet/WalletProvider";
-import { formatPrice, formatUsdc } from "@/lib/utils";
+import { approxLiquidationPrice } from "@/lib/math";
+import { formatPrice, formatUsdc, parseUsdc } from "@/lib/utils";
+
+const PRICE_UNIT = 10_000_000;
 
 export const Route = createFileRoute("/trade/$symbol")({
   component: TradePage,
@@ -27,6 +31,85 @@ function TradePage() {
   const myPositions = (positions.data ?? []).filter((p) => p.symbol === symbol);
   const maxLeverage = market.data?.max_leverage ? Number(market.data.max_leverage) : 20;
 
+  const [side, setSide] = useState<"long" | "short">("long");
+  const [collateralInput, setCollateralInput] = useState("100");
+  const [leverage, setLeverage] = useState(5);
+
+  // Chart price lines:
+  //  - one Entry + one Liq line per open position on this symbol;
+  //  - if there are no open positions, draw a single staged-order Liq preview
+  //    (no Entry — it'd just track mark price and add visual noise).
+  const priceLines = useMemo<ChartPriceLine[]>(() => {
+    const ENTRY_COLOR = "rgba(168, 162, 255, 0.95)";
+    const LIQ_COLOR = "hsl(0, 70%, 60%)";
+    const TP_COLOR = "hsl(142, 70%, 55%)";
+    const SL_COLOR = "hsl(30, 90%, 60%)";
+
+    if (myPositions.length > 0) {
+      const lines: ChartPriceLine[] = [];
+      for (const p of myPositions) {
+        const entry = BigInt(p.entry_price);
+        const collateral = BigInt(p.collateral);
+        const size = BigInt(p.size);
+        const liq = approxLiquidationPrice(entry, collateral, size, p.is_long);
+        const tp = BigInt(p.take_profit);
+        const sl = BigInt(p.stop_loss);
+        const sideLabel = p.is_long ? "Long" : "Short";
+        lines.push({
+          id: `entry-${p.id}`,
+          price: Number(entry) / PRICE_UNIT,
+          color: ENTRY_COLOR,
+          title: `Entry ${sideLabel}`,
+        });
+        if (liq && liq > 0n) {
+          lines.push({
+            id: `liq-${p.id}`,
+            price: Number(liq) / PRICE_UNIT,
+            color: LIQ_COLOR,
+            title: `Liq. ${sideLabel}`,
+          });
+        }
+        if (tp > 0n) {
+          lines.push({
+            id: `tp-${p.id}`,
+            price: Number(tp) / PRICE_UNIT,
+            color: TP_COLOR,
+            title: `TP ${sideLabel}`,
+          });
+        }
+        if (sl > 0n) {
+          lines.push({
+            id: `sl-${p.id}`,
+            price: Number(sl) / PRICE_UNIT,
+            color: SL_COLOR,
+            title: `SL ${sideLabel}`,
+          });
+        }
+      }
+      return lines;
+    }
+
+    if (!markPrice) return [];
+    let collateralScaled = 0n;
+    try {
+      collateralScaled = parseUsdc(collateralInput);
+    } catch {
+      collateralScaled = 0n;
+    }
+    if (collateralScaled <= 0n) return [];
+    const sizeScaled = collateralScaled * BigInt(leverage);
+    const liq = approxLiquidationPrice(BigInt(markPrice), collateralScaled, sizeScaled, side === "long");
+    if (!liq || liq <= 0n) return [];
+    return [
+      {
+        id: "staged-liq",
+        price: Number(liq) / PRICE_UNIT,
+        color: LIQ_COLOR,
+        title: "Liq. (staged)",
+      },
+    ];
+  }, [myPositions, markPrice, collateralInput, leverage, side]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-baseline gap-4">
@@ -42,7 +125,7 @@ function TradePage() {
             </CardHeader>
             <CardContent>
               <div className="h-[420px]">
-                <MarkChart symbol={symbol} />
+                <MarkChart symbol={symbol} priceLines={priceLines} />
               </div>
             </CardContent>
           </Card>
@@ -81,11 +164,22 @@ function TradePage() {
         </div>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="space-y-0.5">
             <CardTitle className="text-sm">Order</CardTitle>
+            <p className="text-xs text-muted-foreground">Market — fills at the next oracle tick.</p>
           </CardHeader>
           <CardContent>
-            <OrderForm symbol={symbol} markPrice={markPrice} maxLeverage={maxLeverage} />
+            <OrderForm
+              symbol={symbol}
+              markPrice={markPrice}
+              maxLeverage={maxLeverage}
+              side={side}
+              setSide={setSide}
+              collateralInput={collateralInput}
+              setCollateralInput={setCollateralInput}
+              leverage={leverage}
+              setLeverage={setLeverage}
+            />
           </CardContent>
         </Card>
       </div>
