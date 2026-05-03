@@ -4,6 +4,7 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol
 use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
 use stellar_macros::UpgradeableMigratable;
 
+use crate::close;
 use crate::errors::PositionManagerError;
 use crate::events;
 use crate::logic;
@@ -70,7 +71,7 @@ impl PositionManager for PositionManagerContract {
         // Intentionally no pause check — traders must always be able to close.
         trader.require_auth();
         logic::require_positive(&env, size_delta);
-        logic::do_decrease_position(&env, &trader, &symbol, size_delta);
+        close::do_decrease_position(&env, &trader, &symbol, size_delta);
         shared::bump_instance_ttl(&env);
     }
 
@@ -78,7 +79,7 @@ impl PositionManager for PositionManagerContract {
         logic::require_initialized(&env);
         // Intentionally no pause check — liquidations must always work to prevent bad debt
         logic::require_keeper(&env, &caller);
-        logic::do_liquidate_position(&env, &caller, &trader, &symbol);
+        close::do_liquidate_position(&env, &caller, &trader, &symbol);
         shared::bump_instance_ttl(&env);
     }
 
@@ -94,7 +95,7 @@ impl PositionManager for PositionManagerContract {
         logic::require_initialized(&env);
         // TP/SL orders protect traders and must execute during emergencies
         logic::require_keeper(&env, &caller);
-        logic::do_execute_order(&env, &caller, &trader, &symbol);
+        close::do_execute_order(&env, &caller, &trader, &symbol);
         shared::bump_instance_ttl(&env);
     }
 
@@ -110,7 +111,7 @@ impl PositionManager for PositionManagerContract {
         logic::require_initialized(&env);
         // No pause check — ADL must work during crises, like liquidations
         logic::require_keeper(&env, &caller);
-        logic::do_deleverage_position(&env, &trader, &symbol);
+        close::do_deleverage_position(&env, &trader, &symbol);
         shared::bump_instance_ttl(&env);
     }
 

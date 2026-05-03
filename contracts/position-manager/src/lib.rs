@@ -1,5 +1,6 @@
 #![no_std]
 
+mod close;
 pub mod contract;
 mod errors;
 mod events;
