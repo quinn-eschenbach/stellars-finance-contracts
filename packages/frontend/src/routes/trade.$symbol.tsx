@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMarket, usePositions, usePrices } from "@/api/hooks";
 import { useStreamMarket, useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MarkChart } from "@/components/trade/MarkChart";
 import { OrderForm } from "@/components/trade/OrderForm";
 import { PositionRow } from "@/components/trade/PositionRow";
 import { useAddress } from "@/wallet/WalletProvider";
@@ -35,13 +36,13 @@ function TradePage() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
-          <Card className="min-h-[400px]">
+          <Card>
             <CardHeader>
               <CardTitle className="text-sm">Chart</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">
-                Chart placeholder — wire lightweight-charts in next pass.
+              <div className="h-[420px]">
+                <MarkChart symbol={symbol} />
               </div>
             </CardContent>
           </Card>

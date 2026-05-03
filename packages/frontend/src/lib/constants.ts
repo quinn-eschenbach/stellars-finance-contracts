@@ -18,8 +18,8 @@ export const RPC_URL = networkConfig.rpcUrl;
 export const NETWORK_PASSPHRASE = networkConfig.networkPassphrase;
 export const NETWORK_NAME = NETWORK;
 
-/** Mock token contract — sourced from .env at build time (Vite injects). */
-export const MOCK_TOKEN_CONTRACT = (import.meta.env.VITE_MOCK_TOKEN_CONTRACT ?? "") as string;
+/** Mock USDC token, populated by `make deploy` for local/testnet. Empty on mainnet. */
+export const MOCK_TOKEN_CONTRACT = networkConfig.contracts.mockToken?.address ?? "";
 
 /** Symbols supported in the UI. Mirrors what the protocol has configured. */
 export const SUPPORTED_SYMBOLS = ["BTCUSD", "ETHUSD"] as const;

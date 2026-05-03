@@ -62,6 +62,21 @@ export interface PriceRow {
   timestamp: string;
 }
 
+/**
+ * OHLC candle synthesized server-side by bucketing oracle ticks.
+ * Time is unix seconds (the bucket start). Prices are protocol-scaled
+ * strings (× 10^7) — the chart converts to numbers for display.
+ */
+export interface CandleRow {
+  time: number;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+}
+
+export type CandleInterval = 60 | 300 | 900 | 3600 | 14400 | 86400;
+
 export interface TradeRow {
   id: number;
   tx_hash: string;

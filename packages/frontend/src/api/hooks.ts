@@ -1,6 +1,8 @@
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { apiGet } from "./client";
 import type {
+  CandleInterval,
+  CandleRow,
   MarketRow,
   PositionRow,
   PriceRow,
@@ -16,6 +18,8 @@ export const queryKeys = {
   trades: (filters: TradesFilters) => ["trades", filters] as const,
   vault: ["vault"] as const,
   prices: ["prices"] as const,
+  candles: (symbol: string, interval: CandleInterval) =>
+    ["candles", symbol, interval] as const,
 };
 
 export interface TradesFilters {
@@ -85,6 +89,20 @@ export function usePrices(opts?: UseQueryOptions<PriceRow[]>) {
     queryKey: queryKeys.prices,
     queryFn: () => apiGet<PriceRow[]>("/prices"),
     staleTime: 2_000,
+    ...opts,
+  });
+}
+
+export function useCandles(
+  symbol: string,
+  interval: CandleInterval,
+  opts?: UseQueryOptions<CandleRow[]>,
+) {
+  return useQuery({
+    queryKey: queryKeys.candles(symbol, interval),
+    queryFn: () => apiGet<CandleRow[]>(`/prices/${symbol}/candles?interval=${interval}&limit=500`),
+    enabled: !!symbol,
+    staleTime: 5_000,
     ...opts,
   });
 }

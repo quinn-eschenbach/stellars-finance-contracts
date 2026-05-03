@@ -84,5 +84,54 @@ export function buildRestRoutes(db: Db): Hono {
     return c.json(rows);
   });
 
+  /**
+   * GET /prices/:symbol/candles?interval=60&limit=500
+   *
+   * Synthesize OHLC candles from oracle ticks by integer-bucketing the unix
+   * timestamp. Returned newest-first from SQL but reversed so the chart gets
+   * ascending time. Prices stay as protocol-scaled strings (× 10^7); the
+   * frontend converts to numbers for lightweight-charts.
+   */
+  r.get("/prices/:symbol/candles", async (c) => {
+    const symbol = c.req.param("symbol");
+    const intervalRaw = Number(c.req.query("interval") ?? 60);
+    const limitRaw = Number(c.req.query("limit") ?? 500);
+    const allowed = new Set([60, 300, 900, 3600, 14400, 86400]);
+    if (!allowed.has(intervalRaw)) return c.json({ error: "bad_interval" }, 400);
+    const limit = Math.min(Math.max(1, isNaN(limitRaw) ? 500 : limitRaw), 1000);
+
+    const rows = await db.execute(sql`
+      SELECT
+        bucket::bigint AS time,
+        (array_agg(price::text ORDER BY id ASC))[1] AS open,
+        MAX(price)::text AS high,
+        MIN(price)::text AS low,
+        (array_agg(price::text ORDER BY id DESC))[1] AS close
+      FROM (
+        SELECT
+          (timestamp::bigint / ${intervalRaw}) * ${intervalRaw} AS bucket,
+          price,
+          id
+        FROM oracle_prices
+        WHERE symbol = ${symbol}
+      ) sub
+      GROUP BY bucket
+      ORDER BY bucket DESC
+      LIMIT ${limit}
+    `);
+
+    type CandleRow = { time: string | number; open: string; high: string; low: string; close: string };
+    const candles = (rows.rows as CandleRow[])
+      .map((r) => ({
+        time: Number(r.time),
+        open: r.open,
+        high: r.high,
+        low: r.low,
+        close: r.close,
+      }))
+      .reverse();
+    return c.json(candles);
+  });
+
   return r;
 }
