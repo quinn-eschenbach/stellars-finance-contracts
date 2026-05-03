@@ -620,7 +620,7 @@ pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symb
         token.transfer(&contract_addr, &vault_addr, &pos.collateral);
         // Notify vault of the inflow so off-chain indexers can keep their
         // tracked total_assets consistent with the actual on-chain balance.
-        vault.absorb_collateral(&contract_addr, trader, &pos.collateral);
+        vault.record_absorbed_collateral(&contract_addr, trader, &pos.collateral);
     }
 
     // Compute funding protocol cut (consistent with settle_close)
@@ -1022,14 +1022,14 @@ fn settle_close(
 
     // Vault pays profit to trader
     if vault_to_trader > 0 {
-        vault.settle_pnl(&contract_addr, trader, &vault_to_trader, &0_i128, &true);
+        vault.pay_profit(&contract_addr, trader, &vault_to_trader);
     }
 
-    // PM sends loss portion to vault directly (avoid nested auth issue with settle_pnl)
+    // PM sends loss portion to vault directly (see ADR-0001).
     if pm_to_vault > 0 {
         token.transfer(&contract_addr, &vault_addr, &pm_to_vault);
         // Notify vault of the inflow so off-chain indexers stay consistent.
-        vault.absorb_collateral(&contract_addr, trader, &pm_to_vault);
+        vault.record_absorbed_collateral(&contract_addr, trader, &pm_to_vault);
     }
 
     // PM sends remaining collateral to trader

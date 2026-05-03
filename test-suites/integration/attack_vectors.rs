@@ -219,20 +219,20 @@ fn test_vault_withdrawal_limited_during_high_utilization() {
 }
 
 // ---------------------------------------------------------------------------
-// Non-PM cannot call vault.settle_pnl
+// Non-PM cannot call vault.pay_profit
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_non_pm_cannot_call_vault_settle() {
+fn test_non_pm_cannot_call_vault_pay_profit() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
     let random = Address::generate(&env);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         f.vault
-            .settle_pnl(&random, &f.trader, &(1_000 * USDC_UNIT), &0, &true);
+            .pay_profit(&random, &f.trader, &(1_000 * USDC_UNIT));
     }));
-    assert!(result.is_err(), "Non-PM cannot call settle_pnl");
+    assert!(result.is_err(), "Non-PM cannot call pay_profit");
 }
 
 // ---------------------------------------------------------------------------

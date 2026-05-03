@@ -5,23 +5,23 @@ use soroban_sdk::{contractevent, Address};
 // Defining duplicates here would cause the indexer's spec map (keyed by topic
 // name) to collide with OZ's specs and mis-parse one of the two events.
 
-#[contractevent(topics = ["settle"], data_format = "vec")]
+/// Vault has paid `amount` to `trader` to settle a position profit. PM is
+/// always the caller; the asset moves vault → trader.
+#[contractevent(topics = ["pay_profit"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SettlePnl {
+pub struct PayProfit {
     #[topic]
     pub trader: Address,
     pub amount: i128,
-    pub reserved_delta: i128,
-    pub is_profit: bool,
 }
 
-/// Vault has absorbed collateral that PositionManager transferred directly
-/// (bypassing settle_pnl to avoid nested-auth issues during liquidation /
-/// loss-settlement). Used by off-chain indexers to keep their tracked
-/// total_assets consistent with the vault's on-chain balance.
-#[contractevent(topics = ["absorb"], data_format = "vec")]
+/// PositionManager has just transferred `amount` USDC into the vault to
+/// absorb a trader's loss. The transfer happened off this call (PM does it
+/// directly, see ADR-0001); this event lets off-chain indexers keep their
+/// tracked total_assets consistent with the vault's on-chain balance.
+#[contractevent(topics = ["absorbed"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Absorb {
+pub struct AbsorbedCollateral {
     #[topic]
     pub trader: Address,
     pub amount: i128,

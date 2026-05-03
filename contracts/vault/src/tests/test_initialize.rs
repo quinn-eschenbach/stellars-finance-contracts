@@ -492,12 +492,12 @@ fn test_unpause_before_init_panics() {
 }
 
 // ===========================================================================
-// 10. Post-init: settle_pnl requires initialized state
+// 10. Post-init: pay_profit requires initialized state
 // ===========================================================================
 
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
-fn test_settle_pnl_before_init_panics() {
+fn test_pay_profit_before_init_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -507,7 +507,7 @@ fn test_settle_pnl_before_init_panics() {
     let vault_id = env.register(crate::VaultContract, ());
     let vault_client = crate::VaultContractClient::new(&env, &vault_id);
 
-    vault_client.settle_pnl(&caller, &trader, &1000i128, &0i128, &true);
+    vault_client.pay_profit(&caller, &trader, &1000i128);
 }
 
 // ===========================================================================

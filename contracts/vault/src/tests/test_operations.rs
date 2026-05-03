@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-//! Comprehensive tests for vault operations: settle_pnl, reserve_liquidity,
+//! Comprehensive tests for vault operations: pay_profit, reserve_liquidity,
 //! release_liquidity, pause, unpause, update_net_pnl, accrue_fees, claim_fees.
 //!
 //! Written in TDD style -- these tests define the *expected* behavior and will
@@ -120,97 +120,50 @@ fn _grant_admin_role(fix: &TestFixture, addr: &Address) {
 }
 
 // ===========================================================================
-// settle_pnl tests
+// pay_profit tests
 // ===========================================================================
+//
+// Loss settlement does NOT route through pay_profit — see ADR-0001. The loss
+// path is exercised by integration tests against PositionManager (direct
+// token.transfer + record_absorbed_collateral).
 
-mod settle_pnl {
+mod pay_profit {
     use super::*;
 
     // -----------------------------------------------------------------------
-    // 1. Settle loss: PM sends margin USDC to vault (trader loses)
+    // 1. Settle profit: vault sends USDC to trader (trader wins)
     // -----------------------------------------------------------------------
     #[test]
-    fn test_settle_pnl_loss() {
-        let fix = setup();
-        let (_depositor, _shares) = seed_vault(&fix, 100 * ONE_USDC);
-        let trader = Address::generate(&fix.env);
-
-        // Give PM some USDC (representing trader's margin held by PM)
-        fix.token_client
-            .mint(&fix.position_manager, &(10 * ONE_USDC));
-
-        let vault_balance_before = fix.token_client.balance(&fix.vault_id);
-        let total_assets_before = fix.vault_client.total_assets();
-
-        // Settle loss of 10 USDC (is_profit = false => PM sends margin to vault)
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(10 * ONE_USDC),
-            &0i128,
-            &false,
-        );
-
-        let vault_balance_after = fix.token_client.balance(&fix.vault_id);
-        let total_assets_after = fix.vault_client.total_assets();
-
-        assert_eq!(
-            vault_balance_after,
-            vault_balance_before + 10 * ONE_USDC,
-            "Vault USDC balance must increase by 10 USDC after loss settlement"
-        );
-        assert_eq!(
-            total_assets_after,
-            total_assets_before + 10 * ONE_USDC,
-            "total_assets must increase by 10 USDC after loss settlement"
-        );
-        assert_eq!(
-            fix.token_client.balance(&fix.position_manager),
-            0,
-            "PM balance must be 0 after transferring 10 USDC to vault"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // 2. Settle profit: vault sends USDC to trader (trader wins)
-    // -----------------------------------------------------------------------
-    #[test]
-    fn test_settle_pnl_profit() {
+    fn test_pay_profit_succeeds() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
 
         let vault_balance_before = fix.token_client.balance(&fix.vault_id);
 
-        // Settle profit of 10 USDC (is_profit = true => vault pays trader)
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(10 * ONE_USDC),
-            &0i128,
-            &true,
-        );
+        fix.vault_client
+            .pay_profit(&fix.position_manager, &trader, &(10 * ONE_USDC));
 
         let vault_balance_after = fix.token_client.balance(&fix.vault_id);
 
         assert_eq!(
             vault_balance_after,
             vault_balance_before - 10 * ONE_USDC,
-            "Vault USDC balance must decrease by 10 USDC after profit settlement"
+            "Vault USDC balance must decrease by 10 USDC after profit payment"
         );
         assert_eq!(
             fix.token_client.balance(&trader),
             10 * ONE_USDC,
-            "Trader must receive 10 USDC from profit settlement"
+            "Trader must receive 10 USDC from profit payment"
         );
     }
 
     // -----------------------------------------------------------------------
-    // 3. Settle profit exceeding free liquidity should revert
+    // 2. Profit exceeding free liquidity should revert
     // -----------------------------------------------------------------------
     #[test]
     #[should_panic(expected = "Error(Contract, #4)")]
-    fn test_settle_pnl_profit_exceeds_free_liquidity_reverts() {
+    fn test_pay_profit_exceeds_free_liquidity_reverts() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
@@ -219,135 +172,77 @@ mod settle_pnl {
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(95 * ONE_USDC));
 
-        // Try to settle profit of 10 USDC, but only 5 free
-        // Should panic with InsufficientFreeLiquidity = 4
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(10 * ONE_USDC),
-            &0i128,
-            &true,
-        );
+        // Try to pay 10 USDC profit, but only 5 free → InsufficientFreeLiquidity = 4
+        fix.vault_client
+            .pay_profit(&fix.position_manager, &trader, &(10 * ONE_USDC));
     }
 
     // -----------------------------------------------------------------------
-    // 4. Unauthorized caller (non-position_manager) should fail
+    // 3. Unauthorized caller (non-position_manager) should fail
     // -----------------------------------------------------------------------
     #[test]
     #[should_panic(expected = "Error(Contract, #7)")]
-    fn test_settle_pnl_unauthorized_reverts() {
+    fn test_pay_profit_unauthorized_reverts() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
 
-        // Random address, NOT the position manager
         let attacker = Address::generate(&fix.env);
         let trader = Address::generate(&fix.env);
 
-        // Should panic with VaultError::NotPositionManager = 7
+        // VaultError::NotPositionManager = 7
         fix.vault_client
-            .settle_pnl(&attacker, &trader, &(10 * ONE_USDC), &0i128, &false);
+            .pay_profit(&attacker, &trader, &(10 * ONE_USDC));
     }
 
     // -----------------------------------------------------------------------
-    // 5. Zero amount should revert with ZeroAmount
+    // 4. Zero amount should revert with ZeroAmount
     // -----------------------------------------------------------------------
     #[test]
     #[should_panic(expected = "Error(Contract, #6)")]
-    fn test_settle_pnl_zero_amount_reverts() {
+    fn test_pay_profit_zero_amount_reverts() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
 
         // ZeroAmount = 6
         fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &0i128, &0i128, &false);
+            .pay_profit(&fix.position_manager, &trader, &0i128);
     }
 
     // -----------------------------------------------------------------------
-    // 6. Negative amount should also revert with ZeroAmount (amount <= 0)
+    // 5. Negative amount should revert with ZeroAmount (amount <= 0)
     // -----------------------------------------------------------------------
     #[test]
     #[should_panic(expected = "Error(Contract, #6)")]
-    fn test_settle_pnl_negative_amount_reverts() {
+    fn test_pay_profit_negative_amount_reverts() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
 
         fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &-1i128, &0i128, &false);
+            .pay_profit(&fix.position_manager, &trader, &-1i128);
     }
 
     // -----------------------------------------------------------------------
-    // 7. Loss settlement affects share price (ERC-4626 accounting)
-    //    After a loss (vault gains assets), shares are worth more.
-    // -----------------------------------------------------------------------
-    #[test]
-    fn test_settle_pnl_loss_affects_share_price() {
-        let fix = setup();
-        let (depositor, shares) = seed_vault(&fix, 100 * ONE_USDC);
-        let trader = Address::generate(&fix.env);
-
-        assert!(shares > 0, "Depositor must have shares after deposit");
-
-        let value_before = fix.vault_client.convert_to_assets(&shares);
-
-        // Settle loss of 50 USDC (vault gains 50 USDC from PM's margin)
-        fix.token_client
-            .mint(&fix.position_manager, &(50 * ONE_USDC));
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(50 * ONE_USDC),
-            &0i128,
-            &false,
-        );
-
-        let value_after = fix.vault_client.convert_to_assets(&shares);
-
-        assert!(
-            value_after > value_before,
-            "Share value must increase after loss settlement (vault gains assets). \
-             Before: {}, After: {}",
-            value_before,
-            value_after
-        );
-
-        // Depositor shares should now be worth ~150 USDC
-        let depositor_shares = fix.vault_client.balance(&depositor);
-        let depositor_value = fix.vault_client.convert_to_assets(&depositor_shares);
-        assert!(
-            depositor_value >= 149 * ONE_USDC,
-            "Depositor shares should be worth approximately 150 USDC, got: {}",
-            depositor_value
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // 8. Profit settlement affects share price (ERC-4626 accounting)
+    // 6. Profit affects share price (ERC-4626 accounting)
     //    After a profit (vault loses assets), shares are worth less.
     // -----------------------------------------------------------------------
     #[test]
-    fn test_settle_pnl_profit_affects_share_price() {
+    fn test_pay_profit_affects_share_price() {
         let fix = setup();
         let (_depositor, shares) = seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
 
         let value_before = fix.vault_client.convert_to_assets(&shares);
 
-        // Settle profit of 30 USDC (vault loses 30 USDC)
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(30 * ONE_USDC),
-            &0i128,
-            &true,
-        );
+        fix.vault_client
+            .pay_profit(&fix.position_manager, &trader, &(30 * ONE_USDC));
 
         let value_after = fix.vault_client.convert_to_assets(&shares);
 
         assert!(
             value_after < value_before,
-            "Share value must decrease after profit settlement (vault loses assets). \
+            "Share value must decrease after profit payment (vault loses assets). \
              Before: {}, After: {}",
             value_before,
             value_after
@@ -355,10 +250,10 @@ mod settle_pnl {
     }
 
     // -----------------------------------------------------------------------
-    // 9. Settle profit draining all free liquidity exactly at boundary
+    // 7. Pay profit draining all free liquidity exactly at boundary
     // -----------------------------------------------------------------------
     #[test]
-    fn test_settle_pnl_profit_exact_free_liquidity() {
+    fn test_pay_profit_exact_free_liquidity() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
@@ -367,28 +262,23 @@ mod settle_pnl {
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
 
-        // Settle exactly 50 profit -- should succeed at the boundary
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(50 * ONE_USDC),
-            &0i128,
-            &true,
-        );
+        // Pay exactly 50 profit -- should succeed at the boundary
+        fix.vault_client
+            .pay_profit(&fix.position_manager, &trader, &(50 * ONE_USDC));
 
         assert_eq!(
             fix.vault_client.free_liquidity(),
             0,
-            "Free liquidity must be 0 after settling exact free amount as profit"
+            "Free liquidity must be 0 after paying exact free amount as profit"
         );
     }
 
     // -----------------------------------------------------------------------
-    // 10. Settle profit of 1 more than free liquidity should fail
+    // 8. Pay profit of 1 more than free liquidity should fail
     // -----------------------------------------------------------------------
     #[test]
     #[should_panic(expected = "Error(Contract, #4)")]
-    fn test_settle_pnl_profit_one_over_free_liquidity_reverts() {
+    fn test_pay_profit_one_over_free_liquidity_reverts() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
@@ -397,125 +287,23 @@ mod settle_pnl {
         fix.vault_client
             .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
 
-        // Settle 50 * ONE_USDC + 1 = should fail
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(50 * ONE_USDC + 1),
-            &0i128,
-            &true,
-        );
+        // 50 * ONE_USDC + 1 — should fail
+        fix.vault_client
+            .pay_profit(&fix.position_manager, &trader, &(50 * ONE_USDC + 1));
     }
 
     // -----------------------------------------------------------------------
-    // 11. Adversarial: i128::MAX amount overflow attempt
+    // 9. Adversarial: i128::MAX amount panics (cannot exceed free liquidity)
     // -----------------------------------------------------------------------
     #[test]
     #[should_panic]
-    fn test_settle_pnl_max_i128_amount_panics() {
+    fn test_pay_profit_max_i128_amount_panics() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let trader = Address::generate(&fix.env);
 
-        // Trying to settle i128::MAX as loss -- should fail somewhere
         fix.vault_client
-            .settle_pnl(&fix.position_manager, &trader, &i128::MAX, &0i128, &false);
-    }
-
-    // -----------------------------------------------------------------------
-    // 12. Loss settlement does not change reserved_usdc (when reserved_delta=0)
-    // -----------------------------------------------------------------------
-    #[test]
-    fn test_settle_pnl_loss_does_not_change_reserved() {
-        let fix = setup();
-        seed_vault(&fix, 100 * ONE_USDC);
-        let trader = Address::generate(&fix.env);
-
-        // Reserve some liquidity
-        fix.vault_client
-            .reserve_liquidity(&fix.position_manager, &(30 * ONE_USDC));
-
-        let free_before = fix.vault_client.free_liquidity();
-
-        // Settle loss (PM sends margin)
-        fix.token_client
-            .mint(&fix.position_manager, &(10 * ONE_USDC));
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(10 * ONE_USDC),
-            &0i128,
-            &false,
-        );
-
-        let free_after = fix.vault_client.free_liquidity();
-
-        // Free liquidity should increase by the loss amount (total_assets grows,
-        // reserved stays the same)
-        assert_eq!(
-            free_after,
-            free_before + 10 * ONE_USDC,
-            "Free liquidity must increase by loss amount (reserved unchanged)"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // 13. settle_pnl with reserved_delta releases reserved liquidity
-    // -----------------------------------------------------------------------
-    #[test]
-    fn test_settle_pnl_with_reserved_delta() {
-        let fix = setup();
-        seed_vault(&fix, 100 * ONE_USDC);
-        let trader = Address::generate(&fix.env);
-
-        // Reserve 50 USDC
-        fix.vault_client
-            .reserve_liquidity(&fix.position_manager, &(50 * ONE_USDC));
-
-        // free = 100 - 50 = 50
-        assert_eq!(fix.vault_client.free_liquidity(), 50 * ONE_USDC);
-
-        // Settle profit of 10, and release 20 from reserved (position partially closed)
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(10 * ONE_USDC),
-            &(20 * ONE_USDC),
-            &true,
-        );
-
-        // After: total_assets = 90, reserved = 30, free = 90 - 30 = 60
-        assert_eq!(
-            fix.vault_client.free_liquidity(),
-            60 * ONE_USDC,
-            "free_liquidity must reflect both the profit payout and reserved_delta release"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // 14. settle_pnl reserved_delta exceeding reserved clamps to 0
-    // -----------------------------------------------------------------------
-    #[test]
-    #[should_panic(expected = "Error(Contract, #4)")]
-    fn test_settle_pnl_reserved_delta_exceeds_reserved_panics() {
-        let fix = setup();
-        seed_vault(&fix, 100 * ONE_USDC);
-        let trader = Address::generate(&fix.env);
-
-        // Reserve 10 USDC
-        fix.vault_client
-            .reserve_liquidity(&fix.position_manager, &(10 * ONE_USDC));
-
-        // Settle with reserved_delta = 50 (more than 10 reserved) -- must panic
-        fix.token_client
-            .mint(&fix.position_manager, &(5 * ONE_USDC));
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(5 * ONE_USDC),
-            &(50 * ONE_USDC),
-            &false,
-        );
+            .pay_profit(&fix.position_manager, &trader, &i128::MAX);
     }
 }
 
@@ -920,10 +708,10 @@ mod pause_unpause {
     }
 
     // -----------------------------------------------------------------------
-    // 8. settle_pnl still works when paused (PM operations not blocked)
+    // 8. pay_profit still works when paused (PM operations not blocked)
     // -----------------------------------------------------------------------
     #[test]
-    fn test_settle_pnl_works_when_paused() {
+    fn test_pay_profit_works_when_paused() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
         let pauser = grant_pauser(&fix);
@@ -931,22 +719,13 @@ mod pause_unpause {
 
         fix.vault_client.pause(&pauser);
 
-        // Settle loss should still work even when paused (PM sends margin)
-        fix.token_client
-            .mint(&fix.position_manager, &(10 * ONE_USDC));
-        fix.vault_client.settle_pnl(
-            &fix.position_manager,
-            &trader,
-            &(10 * ONE_USDC),
-            &0i128,
-            &false,
-        );
+        fix.vault_client
+            .pay_profit(&fix.position_manager, &trader, &(10 * ONE_USDC));
 
-        // Verify it went through
         assert_eq!(
-            fix.token_client.balance(&fix.vault_id),
-            110 * ONE_USDC,
-            "settle_pnl must work even when vault is paused"
+            fix.token_client.balance(&trader),
+            10 * ONE_USDC,
+            "pay_profit must work even when vault is paused"
         );
     }
 

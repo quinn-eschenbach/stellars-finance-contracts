@@ -764,12 +764,10 @@ fn test_deposit_after_vault_loss() {
     // User 1 deposits 100 USDC
     let shares1 = fix.vault_client.deposit(&(100 * USDC), &user1, &user1, &user1);
 
-    // Simulate loss: position manager settles a trader profit
-    // This reduces vault USDC but total_assets tracks the USDC balance.
+    // Simulate loss to LPs: PM pays a profitable trader 50 USDC, draining the vault.
     let trader = Address::generate(&fix.env);
-
-    // Settle 50 USDC loss (is_profit = true means vault pays out)
-    fix.vault_client.settle_pnl(&fix.position_manager, &trader, &(50 * USDC), &0i128, &true);
+    fix.vault_client
+        .pay_profit(&fix.position_manager, &trader, &(50 * USDC));
 
     // Now total_assets should be 50 USDC, total_supply still = shares1
     // Price per share = 50 / shares1 < 1

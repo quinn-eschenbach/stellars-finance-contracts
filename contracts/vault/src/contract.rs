@@ -176,13 +176,13 @@ impl VaultContract {
         shared::bump_instance_ttl(&env);
     }
 
-    pub fn settle_pnl(
+    /// Pay `amount` from the vault to `trader` to settle a profitable close.
+    /// Loss settlement does NOT route through here — see ADR-0001.
+    pub fn pay_profit(
         env: Env,
         caller: Address,
         trader: Address,
         amount: i128,
-        reserved_delta: i128,
-        is_profit: bool,
     ) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
@@ -191,25 +191,12 @@ impl VaultContract {
             panic_with_error!(&env, VaultError::ZeroAmount);
         }
 
-        if reserved_delta > 0 {
-            let current_reserved = vault_storage::get_reserved_usdc(&env);
-            if reserved_delta > current_reserved {
-                panic_with_error!(&env, VaultError::InsufficientFreeLiquidity);
-            }
-            vault_storage::set_reserved_usdc(&env, current_reserved - reserved_delta);
-        }
-
+        vault_logic::require_free_liquidity(&env, amount);
         let asset = Vault::query_asset(&env);
         let vault_addr = env.current_contract_address();
+        vault_logic::transfer_asset(&env, &asset, &vault_addr, &trader, amount);
 
-        if is_profit {
-            vault_logic::require_free_liquidity(&env, amount);
-            vault_logic::transfer_asset(&env, &asset, &vault_addr, &trader, amount);
-        } else {
-            vault_logic::transfer_asset(&env, &asset, &caller, &vault_addr, amount);
-        }
-
-        vault_events::SettlePnl { trader: trader.clone(), amount, reserved_delta, is_profit }.publish(&env);
+        vault_events::PayProfit { trader: trader.clone(), amount }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -261,20 +248,16 @@ impl VaultContract {
     /// Notify the vault that PositionManager has just transferred `amount`
     /// USDC of seized/loss-settlement collateral directly into the vault's
     /// wallet. This call does NOT move tokens — it only verifies the caller
-    /// is PM, then emits an Absorb event so off-chain indexers can update
-    /// their tracked total_assets in lockstep with the vault's actual
-    /// on-chain balance.
-    ///
-    /// Pairs with the direct token.transfer pattern in PM's
-    /// do_liquidate_position and settle_close paths, which bypass
-    /// settle_pnl to avoid nested-auth issues during liquidations.
-    pub fn absorb_collateral(env: Env, caller: Address, trader: Address, amount: i128) {
+    /// is PM, then emits an event so off-chain indexers can update their
+    /// tracked total_assets in lockstep with the vault's actual on-chain
+    /// balance. See ADR-0001 for why losses bypass `pay_profit`.
+    pub fn record_absorbed_collateral(env: Env, caller: Address, trader: Address, amount: i128) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
         if amount <= 0 {
             panic_with_error!(&env, VaultError::ZeroAmount);
         }
-        vault_events::Absorb { trader, amount }.publish(&env);
+        vault_events::AbsorbedCollateral { trader, amount }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 

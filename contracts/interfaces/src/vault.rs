@@ -12,14 +12,7 @@ pub trait VaultInterface {
         position_manager: Address,
     );
 
-    fn settle_pnl(
-        env: Env,
-        caller: Address,
-        trader: Address,
-        amount: i128,
-        reserved_delta: i128,
-        is_profit: bool,
-    );
+    fn pay_profit(env: Env, caller: Address, trader: Address, amount: i128);
 
     fn reserve_liquidity(env: Env, caller: Address, amount: i128);
 
@@ -27,7 +20,7 @@ pub trait VaultInterface {
 
     fn update_net_pnl(env: Env, caller: Address, pnl: i128);
 
-    fn absorb_collateral(env: Env, caller: Address, trader: Address, amount: i128);
+    fn record_absorbed_collateral(env: Env, caller: Address, trader: Address, amount: i128);
 
     fn accrue_fees(env: Env, caller: Address, amount: i128);
 
