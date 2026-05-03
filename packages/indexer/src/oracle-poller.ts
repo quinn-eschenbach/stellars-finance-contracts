@@ -11,7 +11,7 @@ import type { IndexerConfig } from "./config.js";
  */
 const TICKERS = ["BTCUSD", "ETHUSD"];
 
-const POLL_MS = 2_000;
+const POLL_MS = 500;
 
 /**
  * Periodically simulate `oracle_router.get_price(symbol)` for each known
@@ -58,7 +58,20 @@ export async function runOraclePoller(
       if (!isRunning()) break;
       try {
         const tx = await client.get_price({ symbol });
-        const price = tx.result as bigint;
+        const price = tx.result;
+
+        // The SDK's AssembledTransaction.result getter swallows contract
+        // panics: parseError matches the error code against errorTypes and
+        // returns `new Err({ message })` instead of throwing. Surface that
+        // here so the underlying router error (StalePrice, PriceDeviationTooHigh,
+        // etc.) shows up in logs rather than `[object Object]` from a numeric
+        // insert downstream.
+        if (typeof price !== "bigint") {
+          const detail =
+            (price as { error?: { message?: string } } | undefined)?.error?.message ??
+            JSON.stringify(price);
+          throw new Error(`router returned non-numeric: ${detail}`);
+        }
 
         if (lastPrice.get(symbol) === price) continue;
         lastPrice.set(symbol, price);

@@ -33,7 +33,13 @@ async function main() {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  return { port: config.port, fetch: app.fetch };
+  // idleTimeout: 0 disables Bun's default 10s per-connection idle timeout.
+  // SSE streams sit quiet between events (vault/positions can be silent for
+  // minutes) and the 10s default kills them mid-stream, which the vite proxy
+  // surfaces as "socket hang up" and the browser as repeated EventSource
+  // reconnects. SSE clients close the socket themselves when they leave the
+  // page, so no timeout is the correct behavior for this server.
+  return { port: config.port, fetch: app.fetch, idleTimeout: 0 };
 }
 
 // Bun auto-detects default exports with `port` + `fetch` and serves them.

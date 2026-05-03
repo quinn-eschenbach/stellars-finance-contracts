@@ -32,9 +32,9 @@ export interface PushPolicy {
   pushOnStaleSec: number;
 }
 
-/** Default policy — 3s poll, 25 bps move OR 30 s staleness triggers a push. */
+/** Default policy — 1s poll, 5 bps move OR 5 s staleness triggers a push. */
 export const DEFAULT_POLICY: PushPolicy = {
-  pollIntervalMs: 3_000,
-  pushOnDeltaBps: 25,
-  pushOnStaleSec: 30,
+  pollIntervalMs: 1_000,
+  pushOnDeltaBps: 5,
+  pushOnStaleSec: 5,
 };

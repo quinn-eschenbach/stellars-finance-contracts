@@ -217,7 +217,7 @@ invoke --id "$OR_ID" -- set_oracle_sources \
 echo "  set oracle config"
 invoke --id "$OR_ID" -- set_oracle_config \
   --caller "$ADMIN_ADDR" \
-  --config '{"cache_duration":10,"max_deviation_bps":"500","staleness_threshold":600}'
+  --config '{"cache_duration":2,"max_deviation_bps":"500","staleness_threshold":600}'
 
 # ---------- Seed oracle prices ----------
 echo ""

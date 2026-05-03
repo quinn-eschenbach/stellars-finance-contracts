@@ -11,27 +11,35 @@ import type { MarketRow, PositionRow, PriceRow, TradeRow, VaultStateRow } from "
  * EventSource is browser-native; no extra dep needed. Cross-region LB
  * stickiness is the deployment side of this — see project memory.
  */
-function streamEvents<T>(path: string, onEvent: (data: T) => void): () => void {
+function streamEvents<T>(path: string, eventName: string, onEvent: (data: T) => void): () => void {
   const url = `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
   const es = new EventSource(url);
-  es.onmessage = (e) => {
+  // Per EventSource spec: messages with an explicit `event:` field are NOT
+  // delivered to onmessage — they only fire listeners registered for that
+  // exact name. The API tags every stream (event: "price" / "market" / ...),
+  // so listening via onmessage silently drops everything.
+  const handler = (e: MessageEvent) => {
     try {
       onEvent(JSON.parse(e.data) as T);
     } catch (err) {
       console.error(`[sse] failed to parse event from ${path}:`, err);
     }
   };
+  es.addEventListener(eventName, handler);
   // EventSource auto-reconnects on transient errors. Log only to keep the
   // user informed.
   es.onerror = () => console.warn(`[sse] reconnecting ${path}…`);
-  return () => es.close();
+  return () => {
+    es.removeEventListener(eventName, handler);
+    es.close();
+  };
 }
 
 /** Stream price updates → patch the prices query cache by symbol. */
 export function useStreamPrices() {
   const qc = useQueryClient();
   useEffect(() => {
-    return streamEvents<PriceRow>("/stream/prices", (price) => {
+    return streamEvents<PriceRow>("/stream/prices", "price", (price) => {
       qc.setQueryData<PriceRow[]>(queryKeys.prices, (prev) => {
         if (!prev) return [price];
         const idx = prev.findIndex((p) => p.symbol === price.symbol);
@@ -49,7 +57,7 @@ export function useStreamMarket(symbol: string | null | undefined) {
   const qc = useQueryClient();
   useEffect(() => {
     if (!symbol) return;
-    return streamEvents<MarketRow>(`/stream/markets/${symbol}`, (market) => {
+    return streamEvents<MarketRow>(`/stream/markets/${symbol}`, "market", (market) => {
       qc.setQueryData(queryKeys.market(symbol), market);
       // Also patch the markets list if it's loaded.
       qc.setQueryData<MarketRow[]>(queryKeys.markets, (prev) => {
@@ -69,7 +77,7 @@ export function useStreamTrades(symbol: string | null | undefined) {
   const qc = useQueryClient();
   useEffect(() => {
     if (!symbol) return;
-    return streamEvents<TradeRow>(`/stream/trades/${symbol}`, () => {
+    return streamEvents<TradeRow>(`/stream/trades/${symbol}`, "trade", () => {
       // Trade queries are filtered by varied params; safer to invalidate
       // than try to patch all relevant lists. Cheap because the trades
       // page only mounts a few queries at a time.
@@ -89,6 +97,7 @@ export function useStreamPositions(trader: string | null | undefined) {
     if (!trader) return;
     return streamEvents<{ trader: string; symbol: string; op: string }>(
       "/stream/positions",
+      "position",
       (event) => {
         if (event.trader === trader) {
           qc.invalidateQueries({ queryKey: queryKeys.positions(trader) });
@@ -102,7 +111,7 @@ export function useStreamPositions(trader: string | null | undefined) {
 export function useStreamVault() {
   const qc = useQueryClient();
   useEffect(() => {
-    return streamEvents<VaultStateRow>("/stream/vault", (vault) => {
+    return streamEvents<VaultStateRow>("/stream/vault", "vault", (vault) => {
       qc.setQueryData(queryKeys.vault, vault);
     });
   }, [qc]);
