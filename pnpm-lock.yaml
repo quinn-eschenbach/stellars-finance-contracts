@@ -236,12 +236,69 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/oracle-base:
+    dependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^14.1.1
+        version: 14.6.1
+      '@stellars/bindings':
+        specifier: workspace:*
+        version: link:../bindings
+      '@stellars/config':
+        specifier: workspace:*
+        version: link:../config
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/oracle-binance:
+    dependencies:
+      '@stellars/config':
+        specifier: workspace:*
+        version: link:../config
+      '@stellars/oracle-base':
+        specifier: workspace:*
+        version: link:../oracle-base
+      dotenv:
+        specifier: ^16.4.0
+        version: 16.6.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/oracle-keeper:
     dependencies:
       '@stellars/config':
         specifier: workspace:*
         version: link:../config
     devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/oracle-kucoin:
+    dependencies:
+      '@stellars/config':
+        specifier: workspace:*
+        version: link:../config
+      '@stellars/oracle-base':
+        specifier: workspace:*
+        version: link:../oracle-base
+      dotenv:
+        specifier: ^16.4.0
+        version: 16.6.1
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

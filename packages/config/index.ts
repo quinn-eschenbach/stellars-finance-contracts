@@ -17,6 +17,11 @@ export interface NetworkContracts {
   configManager: ContractInfo;
   oracleRouter: ContractInfo;
   oracle: ContractInfo;
+  /** Per-source oracle instances populated by scripts/deploy-cex-oracles.sh. */
+  binanceOracle: ContractInfo;
+  kucoinOracle: ContractInfo;
+  /** Test-only mock USDC token. Empty address on mainnet. */
+  mockToken: ContractInfo;
 }
 
 export interface NetworkConfig {

@@ -4,24 +4,36 @@
     "networkPassphrase": "Standalone Network ; February 2017",
     "contracts": {
       "vault": {
-        "address": "CBCRM5IVMCIUCWHT6HA2LTOA54FXJHPWRBYDMZZVLTBVEFTQO7T2AI2F",
-        "startLedger": 126
+        "address": "CDCFPXVZTJWDEJH47I2NEJZNOV5MWIDIBIAX5BD53ANZDXM4REFCSY7D",
+        "startLedger": 135
       },
       "positionManager": {
-        "address": "CCAPQATOZJJECEJ4E3FCT5KCHSW2PE6XWYBYKESX3FWAHFX6YNXVI36D",
-        "startLedger": 130
+        "address": "CDTKDK5JPALJCMOUFTSQRXLAJPDNBBA46IMU6ALGV55P4TVLCXSQJQSM",
+        "startLedger": 139
       },
       "configManager": {
-        "address": "CBMKVHYTN6NTKRD47M34JN5G3DNV7D6KO5IXCVNC6UQDOX7N76NRQZ4U",
-        "startLedger": 114
+        "address": "CCEVY2Y4GJWP4HMJYY3OOJMDCYVJKSXL3MITYPXFT5MRNAEK754E7GSN",
+        "startLedger": 123
       },
       "oracleRouter": {
-        "address": "CD5M4UGUZOYE4GNBDBW6VNBXBRLSWFDCGOXUSXM3RHC43PL7WWWHRNYX",
-        "startLedger": 118
+        "address": "CCUL57PVPWWZYQCHYFVTM3PBL3USGYEUPRXQAMDI4TWGBDQFA2SWIK4L",
+        "startLedger": 127
       },
       "oracle": {
-        "address": "CARZCL5MJWYF3VC5DEIZ7PCSZSG3GJKZF52MKNWM7ZV7O6DO22LAMWBK",
-        "startLedger": 120
+        "address": "CCNNJ63EFSXJM2UJ2X7NHUA7XEBPMBZBKQTO6LBCF75RF6K2JSWRI6CT",
+        "startLedger": 129
+      },
+      "binanceOracle": {
+        "address": "CBLJA7MB33IWJ4GSEFDV2D7DNNBF5L3DGOSHRWH5S5YOMLNABGDAS3SJ",
+        "startLedger": 175
+      },
+      "kucoinOracle": {
+        "address": "CAHCDDUIYJC2MAKQDYBWTN5XNI6CMY536WUHLQBV2MGFAXSHXNS2X6NW",
+        "startLedger": 176
+      },
+      "mockToken": {
+        "address": "CAUC2BG6CIO6RJKW534ORXH43CYHT4VNOAEKYRRLNT76PRLU5HU6KLPV",
+        "startLedger": 131
       }
     }
   },
@@ -48,6 +60,18 @@
       "oracle": {
         "address": "",
         "startLedger": 0
+      },
+      "binanceOracle": {
+        "address": "",
+        "startLedger": 0
+      },
+      "kucoinOracle": {
+        "address": "",
+        "startLedger": 0
+      },
+      "mockToken": {
+        "address": "",
+        "startLedger": 0
       }
     }
   },
@@ -72,6 +96,18 @@
         "startLedger": 0
       },
       "oracle": {
+        "address": "",
+        "startLedger": 0
+      },
+      "binanceOracle": {
+        "address": "",
+        "startLedger": 0
+      },
+      "kucoinOracle": {
+        "address": "",
+        "startLedger": 0
+      },
+      "mockToken": {
         "address": "",
         "startLedger": 0
       }
