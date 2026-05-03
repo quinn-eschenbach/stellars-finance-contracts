@@ -14,7 +14,11 @@ export function Header() {
             Stellars
           </Link>
           <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-            <Link to="/" className="hover:text-foreground" activeProps={{ className: "text-foreground" }}>
+            <Link
+              to="/markets"
+              className="hover:text-foreground"
+              activeProps={{ className: "text-foreground" }}
+            >
               Markets
             </Link>
             <Link

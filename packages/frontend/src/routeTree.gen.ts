@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as MarketsRouteImport } from './routes/markets'
 import { Route as FaucetRouteImport } from './routes/faucet'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TradeSymbolRouteImport } from './routes/trade.$symbol'
@@ -23,6 +24,11 @@ const VaultRoute = VaultRouteImport.update({
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketsRoute = MarketsRouteImport.update({
+  id: '/markets',
+  path: '/markets',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaucetRoute = FaucetRouteImport.update({
@@ -44,6 +50,7 @@ const TradeSymbolRoute = TradeSymbolRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/faucet': typeof FaucetRoute
+  '/markets': typeof MarketsRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
   '/trade/$symbol': typeof TradeSymbolRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/faucet': typeof FaucetRoute
+  '/markets': typeof MarketsRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
   '/trade/$symbol': typeof TradeSymbolRoute
@@ -59,21 +67,36 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/faucet': typeof FaucetRoute
+  '/markets': typeof MarketsRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
   '/trade/$symbol': typeof TradeSymbolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/faucet' | '/portfolio' | '/vault' | '/trade/$symbol'
+  fullPaths:
+    | '/'
+    | '/faucet'
+    | '/markets'
+    | '/portfolio'
+    | '/vault'
+    | '/trade/$symbol'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/faucet' | '/portfolio' | '/vault' | '/trade/$symbol'
-  id: '__root__' | '/' | '/faucet' | '/portfolio' | '/vault' | '/trade/$symbol'
+  to: '/' | '/faucet' | '/markets' | '/portfolio' | '/vault' | '/trade/$symbol'
+  id:
+    | '__root__'
+    | '/'
+    | '/faucet'
+    | '/markets'
+    | '/portfolio'
+    | '/vault'
+    | '/trade/$symbol'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FaucetRoute: typeof FaucetRoute
+  MarketsRoute: typeof MarketsRoute
   PortfolioRoute: typeof PortfolioRoute
   VaultRoute: typeof VaultRoute
   TradeSymbolRoute: typeof TradeSymbolRoute
@@ -93,6 +116,13 @@ declare module '@tanstack/react-router' {
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/markets': {
+      id: '/markets'
+      path: '/markets'
+      fullPath: '/markets'
+      preLoaderRoute: typeof MarketsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faucet': {
@@ -122,6 +152,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FaucetRoute: FaucetRoute,
+  MarketsRoute: MarketsRoute,
   PortfolioRoute: PortfolioRoute,
   VaultRoute: VaultRoute,
   TradeSymbolRoute: TradeSymbolRoute,
