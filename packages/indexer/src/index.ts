@@ -11,6 +11,7 @@ import { fetchEvents } from "./rpc.js";
 import { buildContractSpecMaps, parseEvent } from "./spec-parser.js";
 import { buildRoutes } from "./handlers/index.js";
 import { startHealthServer, updateHealth } from "./health.js";
+import { runOraclePoller } from "./oracle-poller.js";
 
 /**
  * Construct a binding Client to access its embedded contract spec.
@@ -81,75 +82,84 @@ async function main() {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Main polling loop
-  while (running) {
-    try {
-      const { events, latestLedger, nextCursor } = await fetchEvents(server, startLedger, contractIds, cursor);
+  // Event ingestion loop and oracle-router poller run in parallel.
+  // The poller is independent of event polling — it issues read-only
+  // simulations against the router so the DB always has fresh median
+  // prices regardless of whether anything on-chain triggered a get_price.
+  const isRunning = () => running;
 
-      for (const rawEvent of events) {
-        const handler = routes[rawEvent.contractId];
-        if (!handler) {
-          console.warn(`[indexer] no route for contract ${rawEvent.contractId} — event id=${rawEvent.id} ledger=${rawEvent.ledger}`);
-          continue;
+  const eventLoop = async () => {
+    while (running) {
+      try {
+        const { events, latestLedger, nextCursor } = await fetchEvents(server, startLedger, contractIds, cursor);
+
+        for (const rawEvent of events) {
+          const handler = routes[rawEvent.contractId];
+          if (!handler) {
+            console.warn(`[indexer] no route for contract ${rawEvent.contractId} — event id=${rawEvent.id} ledger=${rawEvent.ledger}`);
+            continue;
+          }
+
+          const parsed = parseEvent(rawEvent, specMaps);
+          if (!parsed) {
+            console.warn(`[indexer] parseEvent returned null — contract=${rawEvent.contractId} ledger=${rawEvent.ledger} id=${rawEvent.id} (unknown topic0 in spec map?)`);
+            continue;
+          }
+          try {
+            await handler(db, parsed);
+          } catch (err) {
+            console.error(`Handler error for ${parsed.topic0} in ${rawEvent.contractId}:`, err);
+          }
         }
 
-        const parsed = parseEvent(rawEvent, specMaps);
-        if (!parsed) {
-          console.warn(`[indexer] parseEvent returned null — contract=${rawEvent.contractId} ledger=${rawEvent.ledger} id=${rawEvent.id} (unknown topic0 in spec map?)`);
-          continue;
-        }
-        try {
-          await handler(db, parsed);
-        } catch (err) {
-          console.error(`Handler error for ${parsed.topic0} in ${rawEvent.contractId}:`, err);
-        }
-      }
+        // Always advance cursor — even on empty pages — so we don't re-scan
+        // ledgers we've already inspected. The RPC returns a cursor pointing at
+        // the next ledger past the scanned window regardless of event count.
+        if (nextCursor && nextCursor !== cursor) {
+          cursor = nextCursor;
+          startLedger = latestLedger;
 
-      // Always advance cursor — even on empty pages — so we don't re-scan
-      // ledgers we've already inspected. The RPC returns a cursor pointing at
-      // the next ledger past the scanned window regardless of event count.
-      if (nextCursor && nextCursor !== cursor) {
-        cursor = nextCursor;
-        startLedger = latestLedger;
+          // Most-recent observed close time: prefer the last event's
+          // ledgerClosedAt; fall back to wall time when the page is empty
+          // (we just polled successfully, so the chain is at latestLedger
+          // as of approximately now).
+          const lastEvent = events[events.length - 1];
+          const lastLedgerCloseTime = lastEvent
+            ? Math.floor(new Date(lastEvent.ledgerClosedAt).getTime() / 1000)
+            : Math.floor(Date.now() / 1000);
 
-        // Most-recent observed close time: prefer the last event's
-        // ledgerClosedAt; fall back to wall time when the page is empty
-        // (we just polled successfully, so the chain is at latestLedger
-        // as of approximately now).
-        const lastEvent = events[events.length - 1];
-        const lastLedgerCloseTime = lastEvent
-          ? Math.floor(new Date(lastEvent.ledgerClosedAt).getTime() / 1000)
-          : Math.floor(Date.now() / 1000);
-
-        await db
-          .insert(indexerCursor)
-          .values({
-            id: 1,
-            last_ledger: startLedger,
-            last_cursor: cursor,
-            last_ledger_close_time: lastLedgerCloseTime.toString(),
-          })
-          .onConflictDoUpdate({
-            target: indexerCursor.id,
-            set: {
+          await db
+            .insert(indexerCursor)
+            .values({
+              id: 1,
               last_ledger: startLedger,
               last_cursor: cursor,
               last_ledger_close_time: lastLedgerCloseTime.toString(),
-              updated_at: new Date(),
-            },
-          });
-      }
+            })
+            .onConflictDoUpdate({
+              target: indexerCursor.id,
+              set: {
+                last_ledger: startLedger,
+                last_cursor: cursor,
+                last_ledger_close_time: lastLedgerCloseTime.toString(),
+                updated_at: new Date(),
+              },
+            });
+        }
 
-      updateHealth(latestLedger);
+        updateHealth(latestLedger);
 
-      if (events.length === 0) {
+        if (events.length === 0) {
+          await sleep(config.pollIntervalMs);
+        }
+      } catch (err) {
+        console.error("Poll error:", err);
         await sleep(config.pollIntervalMs);
       }
-    } catch (err) {
-      console.error("Poll error:", err);
-      await sleep(config.pollIntervalMs);
     }
-  }
+  };
+
+  await Promise.all([eventLoop(), runOraclePoller(db, server, config, isRunning)]);
 
   console.log("Indexer stopped.");
   process.exit(0);
