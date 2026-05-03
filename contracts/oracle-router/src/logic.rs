@@ -88,11 +88,11 @@ pub fn fetch_and_validate_price(env: &Env, symbol: Symbol) -> i128 {
         }
     }
 
-    crate::math::insertion_sort(&mut valid_prices);
+    insertion_sort(&mut valid_prices);
 
     let n = valid_prices.len();
-    let median = valid_prices.get(crate::math::median_idx(n)).unwrap();
-    let dev = crate::math::deviation_bps(
+    let median = valid_prices.get(median_idx(n)).unwrap();
+    let dev = deviation_bps(
         median,
         valid_prices.get(0).unwrap(),
         valid_prices.get(n - 1).unwrap(),
@@ -122,4 +122,41 @@ pub fn dedup_sources(env: &Env, sources: &Vec<Address>) -> Vec<Address> {
         result.push_back(addr);
     }
     result
+}
+
+/// In-place insertion sort for a `Vec<i128>` (ascending). O(n²) — fine for the
+/// small source lists we aggregate over.
+pub(crate) fn insertion_sort(prices: &mut Vec<i128>) {
+    let n = prices.len();
+    for i in 1..n {
+        let key = prices.get(i).unwrap();
+        let mut j = i;
+        while j > 0 {
+            let prev = prices.get(j - 1).unwrap();
+            if prev <= key {
+                break;
+            }
+            prices.set(j, prev);
+            j -= 1;
+        }
+        prices.set(j, key);
+    }
+}
+
+/// Lower-median index for a sorted slice of length `n`. Odd `n` → middle; even
+/// `n` → `n/2 - 1`. Assumes `n > 0`.
+pub(crate) fn median_idx(n: u32) -> u32 {
+    if n % 2 == 1 {
+        n / 2
+    } else {
+        n / 2 - 1
+    }
+}
+
+/// Max one-sided deviation in basis points:
+/// `max(max − median, median − min) × 10_000 / median`.
+pub(crate) fn deviation_bps(median: i128, min: i128, max: i128) -> i128 {
+    let upper = (max - median) * 10_000 / median;
+    let lower = (median - min) * 10_000 / median;
+    if upper > lower { upper } else { lower }
 }

@@ -4,7 +4,6 @@ pub mod contract;
 mod errors;
 mod events;
 mod logic;
-mod math;
 mod storage;
 mod types;
 
