@@ -37,6 +37,10 @@ pub const ROLE_UPGRADER: &str = "UPGRADER";
 pub const ROLE_PAUSER: &str = "PAUSER";
 /// Whitelisted keeper bot network for liquidations, ADL, index updates.
 pub const ROLE_KEEPER: &str = "KEEPER";
+/// Whitelisted oracle publishers — push CEX/aggregator prices into oracle
+/// contracts. Distinct from KEEPER so the price-publishing surface can be
+/// rotated/revoked independently of the liquidation keeper network.
+pub const ROLE_ORACLE: &str = "ORACLE";
 
 // ---------------------------------------------------------------------------
 // Protocol default constants (used by ConfigManager::initialize)

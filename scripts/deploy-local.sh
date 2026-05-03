@@ -181,6 +181,14 @@ invoke --id "$CM_ID" -- grant_role \
   --role PAUSER \
   --account "$ADMIN_ADDR"
 
+# Admin needs ORACLE so this script can seed prices on the real `oracle`
+# contract (which requires ROLE_ORACLE for set_price).
+echo "  grant ORACLE to admin"
+invoke --id "$CM_ID" -- grant_role \
+  --caller "$ADMIN_ADDR" \
+  --role ORACLE \
+  --account "$ADMIN_ADDR"
+
 # ---------- Relax protocol limits for local dev ----------
 echo ""
 echo "=== Setting local protocol limits (zero cooldowns) ==="
@@ -254,11 +262,13 @@ jq \
   --arg cm "$CM_ID"                 --argjson cmL       "${CM_LEDGER:-0}" \
   --arg or "$OR_ID"                 --argjson orL       "${OR_LEDGER:-0}" \
   --arg oracle "$ORACLE_ID"         --argjson oracleL   "${ORACLE_LEDGER:-0}" \
+  --arg mockToken "$MOCK_TOKEN_ID"  --argjson mockTokenL "${MOCK_TOKEN_LEDGER:-0}" \
   '.[$net].contracts.vault          = {address: $vault,  startLedger: $vaultL}
    | .[$net].contracts.positionManager = {address: $pm,    startLedger: $pmL}
    | .[$net].contracts.configManager   = {address: $cm,    startLedger: $cmL}
    | .[$net].contracts.oracleRouter    = {address: $or,    startLedger: $orL}
-   | .[$net].contracts.oracle          = {address: $oracle,startLedger: $oracleL}' \
+   | .[$net].contracts.oracle          = {address: $oracle,startLedger: $oracleL}
+   | .[$net].contracts.mockToken       = {address: $mockToken, startLedger: $mockTokenL}' \
   "$ADDRESSES_FILE" > "$TMP_ADDR"
 mv "$TMP_ADDR" "$ADDRESSES_FILE"
 

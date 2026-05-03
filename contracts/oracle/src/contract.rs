@@ -26,7 +26,7 @@ impl Oracle for OracleContract {
             panic_with_error!(&env, OracleError::NotInitialized);
         }
         let config_mgr = storage::get_config_manager(&env);
-        shared::require_role(&env, &caller, &config_mgr, shared::ROLE_KEEPER);
+        shared::require_role(&env, &caller, &config_mgr, shared::ROLE_ORACLE);
 
         storage::set_price(&env, &symbol, price);
         storage::set_last_update(&env, &symbol, env.ledger().timestamp());
