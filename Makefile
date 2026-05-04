@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex
+.PHONY: build optimize test clean up down deploy deploy-testnet upgrade-local upgrade-testnet provision-keys provision-keys-testnet db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -49,8 +49,33 @@ reset:
 	docker compose down -v
 	$(MAKE) local
 
+# ---- Identity provisioning ----
+# Generates (and on local/testnet, funds) the Stellar identities the protocol
+# services use: admin, keeper, binance-oracle, kucoin-oracle. Idempotent —
+# existing keys are left in place. Run this BEFORE `make deploy` on a fresh
+# environment. Secrets land in .env.<network> (mode 600).
+provision-keys:
+	NETWORK_KEY=local bash scripts/provision-keys.sh
+
+provision-keys-testnet:
+	NETWORK_KEY=testnet bash scripts/provision-keys.sh
+
+# Network-agnostic deploy. NETWORK_KEY=local goes through deploy.sh just
+# like testnet/mainnet, so all networks share the same code path.
 deploy: build
-	bash scripts/deploy-local.sh
+	NETWORK_KEY=local bash scripts/deploy.sh
+
+deploy-testnet: build
+	NETWORK_KEY=testnet bash scripts/deploy.sh
+
+# Push freshly-built WASM bytecode to existing on-chain contracts via the
+# OZ Upgradeable `upgrade(operator, new_wasm_hash)` entrypoint. Admin needs
+# the UPGRADER role (granted automatically by deploy.sh).
+upgrade-local: build
+	NETWORK_KEY=local bash scripts/upgrade.sh
+
+upgrade-testnet: build
+	NETWORK_KEY=testnet bash scripts/upgrade.sh
 
 grant-keepers:
 	bash scripts/grant-keepers.sh
@@ -128,9 +153,10 @@ sim-one:
 sim-cleanup:
 	pnpm --filter @stellars/simulation cleanup
 
-# Full local bootstrap (on-chain only): services → schema → core contracts →
-# CEX oracle contracts. After this, `make server` brings up all off-chain
-# processes (indexer, keeper, api, frontend, oracle publishers) in parallel.
-local: up db-migrate deploy cex-oracles
+# Full local bootstrap (on-chain only): services → schema → identity →
+# core contracts → CEX oracle contracts. After this, `make server` brings
+# up all off-chain processes (indexer, keeper, api, frontend, oracle
+# publishers) in parallel.
+local: up db-migrate provision-keys deploy cex-oracles
 	@echo ""
 	@echo "Local environment ready! Run 'make server' to start the off-chain stack, then 'make sim'."

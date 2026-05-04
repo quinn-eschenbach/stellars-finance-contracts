@@ -3,8 +3,9 @@ node_modules/
 packages/*/dist/
 packages/bindings/
 *.tgz
-.env.local
 .env
+.env.*
+!.env.example
 packages/simulation/state/
 
 # Soroban test snapshots — auth/state recordings regenerated on every cargo
