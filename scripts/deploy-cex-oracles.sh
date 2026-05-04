@@ -12,12 +12,32 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WASM_DIR="$ROOT/target/wasm32v1-none/release"
-ENV_FILE="$ROOT/.env.local"
 ADDRESSES_FILE="$ROOT/packages/config/addresses.json"
 NETWORK_KEY="${NETWORK_KEY:-local}"
+ENV_FILE="${ENV_FILE:-$ROOT/.env.${NETWORK_KEY}}"
 
-RPC_URL="${RPC_URL:-http://localhost:8000/soroban/rpc}"
-NETWORK_PASSPHRASE="${NETWORK_PASSPHRASE:-Standalone Network ; February 2017}"
+# Network params — mirror deploy.sh so NETWORK_KEY alone selects the right
+# RPC. Without this the script silently fell through to local RPC even when
+# called as `NETWORK_KEY=testnet make cex-oracles`, and the addresses.json
+# slots got mixed (testnet base contracts + local oracle deploys → grant_role
+# errors).
+case "$NETWORK_KEY" in
+  local)
+    RPC_URL="${RPC_URL:-http://localhost:8000/soroban/rpc}"
+    NETWORK_PASSPHRASE="${NETWORK_PASSPHRASE:-Standalone Network ; February 2017}"
+    ;;
+  testnet)
+    RPC_URL="${RPC_URL:-https://soroban-testnet.stellar.org}"
+    NETWORK_PASSPHRASE="${NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}"
+    ;;
+  mainnet)
+    RPC_URL="${RPC_URL:-https://soroban.stellar.org}"
+    NETWORK_PASSPHRASE="${NETWORK_PASSPHRASE:-Public Global Stellar Network ; September 2015}"
+    ;;
+  *)
+    : "${RPC_URL:?required for unknown NETWORK_KEY}" "${NETWORK_PASSPHRASE:?required}"
+    ;;
+esac
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "❌ jq is required — install via 'brew install jq'"
@@ -207,7 +227,7 @@ jq \
   "$ADDRESSES_FILE" > "$TMP"
 mv "$TMP" "$ADDRESSES_FILE"
 
-# ---------- Append publisher secrets to .env.local ----------
+# ---------- Append publisher secrets to .env.<network> ----------
 BINANCE_SECRET=$(stellar keys show binance-oracle)
 KUCOIN_SECRET=$(stellar keys show kucoin-oracle)
 
