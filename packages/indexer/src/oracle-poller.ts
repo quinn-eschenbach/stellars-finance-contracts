@@ -1,5 +1,6 @@
 import { rpc } from "@stellar/stellar-sdk";
-import { type Db, oraclePrices } from "@stellars/db";
+import { eq } from "drizzle-orm";
+import { type Db, oraclePrices, latestOraclePrices } from "@stellars/db";
 import { Client as OracleRouterClient } from "@stellars/bindings/oracle-router";
 import { client, readOnlySigner } from "@stellars/protocol-clients";
 import type { IndexerConfig } from "./config.js";
@@ -21,9 +22,10 @@ const POLL_MS = 500;
  * run it as fast as we want and the result reflects whatever the router
  * would return to a live caller right now.
  *
- * Dedupe: only insert when the median actually changes vs the last value
- * we wrote, so the SSE stream fires only on genuine moves rather than
- * once per poll tick.
+ * Dedupe: only insert when the simulated median differs from the most
+ * recently persisted observation (queried via `latest_oracle_prices`).
+ * Consulting the table — not an in-memory map — means we also dedup
+ * against rows the event handler wrote, and stay correct across restarts.
  */
 export async function runOraclePoller(
   db: Db,
@@ -48,8 +50,6 @@ export async function runOraclePoller(
     readOnlySigner(sourceAccount),
   );
 
-  const lastPrice = new Map<string, bigint>();
-
   console.log(`[poller] tickers=${TICKERS.join(",")} cadence=${POLL_MS}ms`);
 
   while (isRunning()) {
@@ -73,14 +73,19 @@ export async function runOraclePoller(
           throw new Error(`router returned non-numeric: ${detail}`);
         }
 
-        if (lastPrice.get(symbol) === price) continue;
-        lastPrice.set(symbol, price);
+        const priceStr = price.toString();
+        const latest = await db
+          .select({ price: latestOraclePrices.price })
+          .from(latestOraclePrices)
+          .where(eq(latestOraclePrices.symbol, symbol))
+          .limit(1);
+        if (latest[0]?.price === priceStr) continue;
 
         await db.insert(oraclePrices).values({
           ledger,
           timestamp: Math.floor(Date.now() / 1000).toString(),
           symbol,
-          price: price.toString(),
+          price: priceStr,
         });
         console.log(`[poller] ${symbol} = ${price}`);
       } catch (err) {
