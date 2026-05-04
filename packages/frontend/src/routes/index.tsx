@@ -56,12 +56,19 @@ function Hero({ priceBySymbol }: { priceBySymbol: Map<string, string> }) {
   const tickers = Array.from(priceBySymbol.entries()).slice(0, 4);
 
   return (
-    <section className="relative overflow-hidden pt-10 md:pt-16">
-      {/* Local hero glows — denser than the global aurora */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-24 top-12 h-[420px] w-[420px] animate-drift-a rounded-full bg-ember/35 blur-[110px]" />
-        <div className="absolute right-1/4 top-44 h-[340px] w-[340px] animate-drift-b rounded-full bg-moss/30 blur-[100px]" />
-        <div className="absolute -right-32 -top-12 h-[480px] w-[480px] animate-drift-c rounded-full bg-dusk/45 blur-[120px]" />
+    <section className="relative pt-10 md:pt-16">
+      {/* Local hero glows — denser than the global aurora. The wrapper spans
+          the full viewport width (centered, 100vw) instead of the centered
+          container, so the colored falloff fades into the page background
+          rather than ending at a hard container edge. body has `overflow-x:
+          hidden`, so 100vw never produces a horizontal scrollbar. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 left-1/2 -z-10 w-screen -translate-x-1/2"
+      >
+        <div className="absolute left-[8%] top-12 h-[420px] w-[420px] animate-drift-a rounded-full bg-ember/35 blur-[110px]" />
+        <div className="absolute left-1/2 top-44 h-[340px] w-[340px] -translate-x-1/2 animate-drift-b rounded-full bg-moss/30 blur-[100px]" />
+        <div className="absolute right-[6%] -top-12 h-[480px] w-[480px] animate-drift-c rounded-full bg-dusk/45 blur-[120px]" />
       </div>
 
       <div className="relative space-y-10 py-12 text-center md:py-20">
