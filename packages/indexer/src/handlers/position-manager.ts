@@ -1,5 +1,5 @@
 import { eq, and, sql } from "drizzle-orm";
-import { type Db, positions, markets, trades, pauseEvents } from "@stellars/db";
+import { type Db, positions, markets, trades, pauseEvents, protocolConfig } from "@stellars/db";
 import type { ParsedEvent } from "../spec-parser.js";
 import { toNumericString, unixSeconds } from "../spec-parser.js";
 
@@ -350,12 +350,30 @@ async function handleMarketPnl(db: Db, event: ParsedEvent) {
 
 async function handlePause(db: Db, event: ParsedEvent) {
   const { data } = event;
+  const ts = unixSeconds(event.timestamp);
   await db.insert(pauseEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
-    timestamp: unixSeconds(event.timestamp),
+    timestamp: ts,
     contract: "position_manager",
     is_paused: data.is_paused,
     caller: String(data.caller),
   });
+
+  // Mirror PositionManager's on-chain LastUnpauseTime so off-chain MarketTick
+  // projection can clamp `effective_start = max(last_index_update, last_unpause_time)`.
+  // Insert with id=1 so the upsert hits the singleton row (matches getProtocolConfig).
+  if (!data.is_paused) {
+    await db
+      .insert(protocolConfig)
+      .values({ id: 1, last_unpause_time: ts, updated_at_ledger: event.ledger })
+      .onConflictDoUpdate({
+        target: protocolConfig.id,
+        set: {
+          last_unpause_time: ts,
+          updated_at_ledger: event.ledger,
+          updated_at: new Date(),
+        },
+      });
+  }
 }

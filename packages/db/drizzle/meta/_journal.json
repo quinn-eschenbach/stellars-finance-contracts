@@ -15,6 +15,13 @@
       "when": 1777859180788,
       "tag": "0001_lp_lockups_and_liquidation_threshold",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777905334674,
+      "tag": "0002_last_unpause_time",
+      "breakpoints": true
     }
   ]
 }

@@ -1,18 +1,16 @@
 import type { Db } from "@stellars/db";
+import {
+  MarketTick,
+  BPS,
+  type BorrowRateConfig,
+  type MarketState,
+  type PositionState,
+  type VaultLiquidity,
+} from "@stellars/protocol-math";
 import type { Executor } from "./executor.js";
 import type { KeeperConfig } from "./config.js";
 import type { TtlDedup } from "./dedup.js";
 import type { Serialize } from "./serializer.js";
-import {
-  toBigInt,
-  calcUnrealizedPnl,
-  calcBorrowFee,
-  calcFundingFee,
-  calcHealth,
-  isTpTriggered,
-  isSlTriggered,
-  BPS,
-} from "./math.js";
 import {
   getAllPositions,
   getMarkets,
@@ -22,6 +20,8 @@ import {
   getIndexerCursor,
   type PositionRow,
   type MarketRow,
+  type VaultStateRow,
+  type ProtocolConfigRow,
 } from "./scanner.js";
 
 export const DEDUP_TTL_MS = 60_000;
@@ -32,6 +32,11 @@ export function posKey(trader: string, symbol: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toBigInt(value: string | null | undefined): bigint {
+  if (value == null || value === "") return 0n;
+  return BigInt(value);
 }
 
 /**
@@ -67,6 +72,75 @@ async function checkStaleness(
   return { skip: false, lagSec };
 }
 
+/** Adapt a markets row to the structural type protocol-math expects. */
+function toMarketState(m: MarketRow): MarketState {
+  return {
+    acc_borrow_index: toBigInt(m.acc_borrow_index),
+    acc_funding_index: toBigInt(m.acc_funding_index),
+    last_index_update: toBigInt(m.last_index_update),
+    long_open_interest: toBigInt(m.long_open_interest),
+    short_open_interest: toBigInt(m.short_open_interest),
+  };
+}
+
+function toVaultLiquidity(v: VaultStateRow | undefined): VaultLiquidity {
+  return {
+    reserved_usdc: toBigInt(v?.reserved_usdc),
+    total_assets: toBigInt(v?.total_assets),
+  };
+}
+
+function toBorrowRateConfig(c: ProtocolConfigRow | undefined): BorrowRateConfig {
+  return {
+    base_borrow_rate_bps: toBigInt(c?.base_borrow_rate_bps),
+    slope1_bps: toBigInt(c?.slope1_bps),
+    slope2_bps: toBigInt(c?.slope2_bps),
+    optimal_utilization_bps: toBigInt(c?.optimal_utilization_bps),
+    base_funding_rate_bps: toBigInt(c?.base_funding_rate_bps),
+  };
+}
+
+function toPositionState(p: PositionRow): PositionState {
+  return {
+    is_long: p.is_long,
+    size: toBigInt(p.size),
+    collateral: toBigInt(p.collateral),
+    entry_price: toBigInt(p.entry_price),
+    entry_borrow_index: toBigInt(p.entry_borrow_index),
+    entry_funding_index: toBigInt(p.entry_funding_index),
+  };
+}
+
+/**
+ * Build a Map<symbol, MarketTick> by projecting each market forward to `now`.
+ * Symbols without a current price are skipped — callers handle missing ticks
+ * the same way they handle missing positions.
+ */
+function buildTicks(
+  allMarkets: MarketRow[],
+  prices: Map<string, string>,
+  vault: VaultLiquidity,
+  rate_config: BorrowRateConfig,
+  last_unpause_time: bigint,
+  now: bigint,
+): Map<string, MarketTick> {
+  const ticks = new Map<string, MarketTick>();
+  for (const m of allMarkets) {
+    const priceStr = prices.get(m.symbol);
+    if (!priceStr) continue;
+    const tick = MarketTick.project({
+      market: toMarketState(m),
+      mark_price: toBigInt(priceStr),
+      vault,
+      rate_config,
+      now,
+      last_unpause_time,
+    });
+    ticks.set(m.symbol, tick);
+  }
+  return ticks;
+}
+
 // -- Liquidation candidate scanning ------------------------------------------
 
 interface LiquidationCandidate {
@@ -78,15 +152,24 @@ async function scanLiquidationCandidates(
   db: Db,
   config: KeeperConfig,
 ): Promise<LiquidationCandidate[]> {
-  const [allPositions, allMarkets, prices, protoCfg] = await Promise.all([
+  const nowUnix = BigInt(Math.floor(Date.now() / 1000));
+
+  const [allPositions, allMarkets, prices, vault, protoCfg] = await Promise.all([
     getAllPositions(db),
     getMarkets(db),
     getLatestPrices(db),
+    getVaultState(db),
     getProtocolConfig(db),
   ]);
 
-  const marketBySymbol = new Map<string, MarketRow>();
-  for (const m of allMarkets) marketBySymbol.set(m.symbol, m);
+  const ticks = buildTicks(
+    allMarkets,
+    prices,
+    toVaultLiquidity(vault),
+    toBorrowRateConfig(protoCfg),
+    toBigInt(protoCfg?.last_unpause_time),
+    nowUnix,
+  );
 
   // Read the threshold from on-chain config (mirrored by the indexer into
   // protocol_config). Env var is a cold-start fallback before the indexer has
@@ -96,13 +179,12 @@ async function scanLiquidationCandidates(
   );
   const candidates: LiquidationCandidate[] = [];
   for (const pos of allPositions) {
-    const market = marketBySymbol.get(pos.symbol);
-    const markPriceStr = prices.get(pos.symbol);
-    if (!market || !markPriceStr) continue;
+    const tick = ticks.get(pos.symbol);
+    if (!tick) continue;
 
     const collateral = toBigInt(pos.collateral);
     const threshold = (collateral * thresholdBps) / BPS;
-    const health = computeHealth(pos, market, markPriceStr);
+    const { health } = tick.evaluate(toPositionState(pos));
     if (health >= threshold) continue;
 
     candidates.push({ pos, health });
@@ -182,8 +264,14 @@ async function runColdTick(
     getProtocolConfig(db),
   ]);
 
-  const marketBySymbol = new Map<string, MarketRow>();
-  for (const m of allMarkets) marketBySymbol.set(m.symbol, m);
+  const ticks = buildTicks(
+    allMarkets,
+    prices,
+    toVaultLiquidity(vault),
+    toBorrowRateConfig(protoCfg),
+    toBigInt(protoCfg?.last_unpause_time),
+    nowUnix,
+  );
 
   // Step 1: Update stale indices. Indices have no per-(trader, symbol) dedup
   // key — the executor's sim gate rejects redundant updates cheaply.
@@ -203,16 +291,14 @@ async function runColdTick(
     const sl = toBigInt(pos.stop_loss);
     if (tp === 0n && sl === 0n) continue;
 
-    const markPriceStr = prices.get(pos.symbol);
-    if (!markPriceStr) continue;
-    const markPrice = toBigInt(markPriceStr);
+    const tick = ticks.get(pos.symbol);
+    if (!tick) continue;
 
     const age = nowUnix - toBigInt(pos.last_increased_time);
     if (age < minLifetime) continue;
 
     const triggered =
-      isTpTriggered(tp, markPrice, pos.is_long) ||
-      isSlTriggered(sl, markPrice, pos.is_long);
+      tick.isTpTriggered(tp, pos.is_long) || tick.isSlTriggered(sl, pos.is_long);
     if (!triggered) continue;
 
     const key = posKey(pos.trader, pos.symbol);
@@ -234,7 +320,7 @@ async function runColdTick(
       const utilTrigger = (reserved * BPS) / totalAssets > adlUtilBps;
 
       if (pnlTrigger || utilTrigger) {
-        const target = findAdlTarget(allPositions, marketBySymbol, prices);
+        const target = findAdlTarget(allPositions, ticks);
         if (target) {
           const key = posKey(target.trader, target.symbol);
           if (dedup.claim(key, DEDUP_TTL_MS)) {
@@ -276,25 +362,11 @@ export async function runColdLoop(
   }
 }
 
-// -- Math helpers -----------------------------------------------------------
-
-function computeHealth(pos: PositionRow, market: MarketRow, markPriceStr: string): bigint {
-  const size = toBigInt(pos.size);
-  const entryPrice = toBigInt(pos.entry_price);
-  const markPrice = toBigInt(markPriceStr);
-  const collateral = toBigInt(pos.collateral);
-
-  const pnl = calcUnrealizedPnl(size, entryPrice, markPrice, pos.is_long);
-  const borrow = calcBorrowFee(size, toBigInt(pos.entry_borrow_index), toBigInt(market.acc_borrow_index));
-  const funding = calcFundingFee(size, toBigInt(pos.entry_funding_index), toBigInt(market.acc_funding_index), pos.is_long);
-
-  return calcHealth(collateral, pnl, borrow, funding);
-}
+// -- ADL targeting ----------------------------------------------------------
 
 function findAdlTarget(
   positions: PositionRow[],
-  marketBySymbol: Map<string, MarketRow>,
-  prices: Map<string, string>,
+  ticks: Map<string, MarketTick>,
 ): PositionRow | null {
   // Mirrors the BitMEX/Bybit/dYdX ADL ranking: profitable positions are
   // ordered by `unrealizedPnl × leverage`, where leverage = size / collateral.
@@ -304,19 +376,13 @@ function findAdlTarget(
   let bestScore = 0n;
 
   for (const pos of positions) {
-    const market = marketBySymbol.get(pos.symbol);
-    const markPriceStr = prices.get(pos.symbol);
-    if (!market || !markPriceStr) continue;
+    const tick = ticks.get(pos.symbol);
+    if (!tick) continue;
 
     const collateral = toBigInt(pos.collateral);
     if (collateral === 0n) continue;
 
-    const pnl = calcUnrealizedPnl(
-      toBigInt(pos.size),
-      toBigInt(pos.entry_price),
-      toBigInt(markPriceStr),
-      pos.is_long,
-    );
+    const { pnl } = tick.evaluate(toPositionState(pos));
     if (pnl <= 0n) continue;
 
     const score = (pnl * toBigInt(pos.size)) / collateral;

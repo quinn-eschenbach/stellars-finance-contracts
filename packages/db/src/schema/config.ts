@@ -21,6 +21,10 @@ export const protocolConfig = pgTable("protocol_config", {
   slope2_bps: numeric().notNull().default("0"),
   optimal_utilization_bps: numeric().notNull().default("0"),
   base_funding_rate_bps: numeric().notNull().default("0"),
+  // Last on-chain unpause timestamp (unix seconds). Off-chain MarketTick
+  // projection clamps fee accrual using max(last_index_update, last_unpause_time)
+  // so projected indices match what an immediate on-chain refresh would produce.
+  last_unpause_time: numeric().notNull().default("0"),
   // Metadata
   updated_at_ledger: integer().notNull().default(0),
   updated_at: timestamp().defaultNow().notNull(),

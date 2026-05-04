@@ -1,0 +1,1 @@
+ALTER TABLE "protocol_config" ADD COLUMN "last_unpause_time" numeric DEFAULT '0' NOT NULL;

@@ -219,6 +219,9 @@ importers:
       '@stellars/db':
         specifier: workspace:*
         version: link:../db
+      '@stellars/protocol-math':
+        specifier: workspace:*
+        version: link:../protocol-math
       dotenv:
         specifier: ^16.4.0
         version: 16.6.1
@@ -299,6 +302,15 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
+  packages/protocol-math:
+    devDependencies:
+      '@types/bun':
+        specifier: latest
+        version: 1.3.13
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -1667,6 +1679,9 @@ packages:
 
   '@types/babel__traverse@7.28.0':
     resolution: {integrity: sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==}
+
+  '@types/bun@1.3.13':
+    resolution: {integrity: sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw==}
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
@@ -3732,6 +3747,10 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.0
 
+  '@types/bun@1.3.13':
+    dependencies:
+      bun-types: 1.3.13
+
   '@types/estree@1.0.8': {}
 
   '@types/node@22.19.15':
@@ -3843,7 +3862,6 @@ snapshots:
   bun-types@1.3.13:
     dependencies:
       '@types/node': 22.19.15
-    optional: true
 
   call-bind-apply-helpers@1.0.2:
     dependencies:

@@ -28,7 +28,9 @@ The four reasons a Position Closes — `User`, `Liquidation`, `Deleverage` (ADL)
 ### Market evaluation
 
 **MarketTick**:
-A snapshot of a Market's state immediately after refreshing borrow and funding indices, carrying mark price. The only way to obtain one is `MarketTick::refresh(env, symbol)`, which performs the index update and pushes Unrealized PnL to the Vault.
+A snapshot of a Market's state at time T, bundling refreshed borrow/funding indices with mark price. Constructed two ways, both yielding identical shape and `evaluate` / `is_tp_triggered` / `is_sl_triggered` semantics:
+- _On-chain (canonical):_ `MarketTick::refresh(env, symbol)` updates indices in storage, pushes Unrealized PnL to the Vault, and emits `UpdateIndices`.
+- _Off-chain (projected):_ the `protocol-math` TS package derives a tick from cached indices by projecting forward to `now` using the same accumulation formulas the contract uses. Pure, no writes. Matches what an immediate on-chain refresh would produce.
 _Avoid_: snapshot, view, context
 
 **PositionEvaluation**:
