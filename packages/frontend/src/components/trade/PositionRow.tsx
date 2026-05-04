@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { useAddress, useWallet } from "@/wallet/WalletProvider";
 import { positionManager } from "@/contracts/clients";
 import { signAndSendWithWallet } from "@/contracts/sender";
-import { formatPrice, parsePrice } from "@/lib/utils";
+import { formatPrice, parsePrice, cn } from "@/lib/utils";
 import { unrealizedPnl } from "@/lib/math";
 import { queryKeys } from "@/api/hooks";
 import type { PositionRow as PositionRowData } from "@/api/types";
@@ -54,26 +54,42 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
   const pnlClass = pnl > 0n ? "text-bull" : pnl < 0n ? "text-bear" : "text-muted-foreground";
   const tp = BigInt(position.take_profit);
   const sl = BigInt(position.stop_loss);
+  const isLong = position.is_long;
 
   return (
-    <div className="space-y-3 rounded-md border border-border p-4 font-mono text-sm">
-      <div className="flex items-center justify-between">
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-xl border border-border/50 bg-card/40 backdrop-blur-md transition-all hover:border-border",
+        "shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset]",
+      )}
+    >
+      {/* Side accent bar */}
+      <span
+        className={cn(
+          "absolute left-0 top-0 h-full w-px",
+          isLong ? "bg-gradient-to-b from-transparent via-bull/60 to-transparent" : "bg-gradient-to-b from-transparent via-bear/60 to-transparent",
+        )}
+      />
+
+      <div className="flex items-center justify-between p-4">
         <Link
           to="/trade/$symbol"
           params={{ symbol: position.symbol }}
-          className="group flex items-center gap-3 text-foreground transition-colors hover:text-primary"
+          className="group/link flex items-center gap-3 text-foreground transition-colors"
         >
-          <span className="font-semibold">{position.symbol}</span>
+          <span className="font-display text-xl tracking-tight">{position.symbol}</span>
           <span
-            className={
-              position.is_long
-                ? "rounded bg-bull/15 px-2 py-0.5 text-xs text-bull"
-                : "rounded bg-bear/15 px-2 py-0.5 text-xs text-bear"
-            }
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em]",
+              isLong
+                ? "border-bull/30 bg-bull/10 text-bull"
+                : "border-bear/30 bg-bear/10 text-bear",
+            )}
           >
-            {position.is_long ? "LONG" : "SHORT"}
+            <span className={cn("h-1 w-1 rounded-full", isLong ? "bg-bull" : "bg-bear")} />
+            {isLong ? "Long" : "Short"}
           </span>
-          <ArrowUpRight className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+          <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover/link:opacity-100" />
         </Link>
         <Button
           size="sm"
@@ -85,12 +101,12 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-border/40 px-4 py-3.5 md:grid-cols-4">
         <Stat label="Size" value={<NumberFlowUsd value={position.size} />} />
         <Stat label="Margin" value={<NumberFlowUsd value={position.collateral} />} />
         <Stat label="Entry" value={<NumberFlowUsd value={position.entry_price} />} />
         <Stat
-          label="PnL"
+          label="Unrealized"
           value={
             markPrice ? <NumberFlowUsd value={pnl} signDisplay="exceptZero" /> : "—"
           }
@@ -98,24 +114,25 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
         />
       </div>
 
-      <div className="flex items-center justify-between border-t border-border pt-3 text-xs">
-        <div className="flex gap-4">
-          <span>
-            <span className="text-muted-foreground">TP </span>
-            <span>{tp > 0n ? <NumberFlowUsd value={tp} /> : "—"}</span>
+      <div className="flex items-center justify-between border-t border-border/40 px-4 py-3 text-xs">
+        <div className="flex gap-5 font-mono">
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">TP</span>
+            <span className="tabular-nums">{tp > 0n ? <NumberFlowUsd value={tp} /> : <span className="text-muted-foreground/40">—</span>}</span>
           </span>
-          <span>
-            <span className="text-muted-foreground">SL </span>
-            <span>{sl > 0n ? <NumberFlowUsd value={sl} /> : "—"}</span>
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">SL</span>
+            <span className="tabular-nums">{sl > 0n ? <NumberFlowUsd value={sl} /> : <span className="text-muted-foreground/40">—</span>}</span>
           </span>
         </div>
         <Button
           size="sm"
           variant="ghost"
           onClick={() => setEditing((v) => !v)}
-          className="text-xs"
+          className="h-7 px-2.5 text-[11px]"
         >
-          {editing ? "Cancel" : "Edit TP/SL"}
+          <Pencil className="h-3 w-3" />
+          {editing ? "Cancel" : "Edit"}
         </Button>
       </div>
 
@@ -131,7 +148,7 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
       )}
 
       {close.error && (
-        <p className="text-xs text-destructive">
+        <p className="border-t border-border/40 px-4 py-2 text-xs text-destructive">
           {(close.error as Error).message?.slice(0, 200) ?? "error"}
         </p>
       )}
@@ -141,9 +158,9 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
 
 function Stat({ label, value, className }: { label: string; value: ReactNode; className?: string }) {
   return (
-    <div className="flex flex-col">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={className}>{value}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">{label}</span>
+      <span className={cn("font-mono text-sm tabular-nums", className)}>{value}</span>
     </div>
   );
 }
@@ -205,38 +222,41 @@ function TpSlEditor({ symbol, isLong, entryPrice, initialTp, initialSl, onClose 
   });
 
   return (
-    <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 rounded-md bg-secondary/30 p-3">
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Take profit</Label>
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={tpInput}
-          onChange={(e) => setTpInput(e.target.value)}
-          placeholder={isLong ? "above entry" : "below entry"}
-        />
-        {tpError && <p className="text-xs text-destructive">{tpError}</p>}
+    <div className="border-t border-border/40 bg-background/30 p-4 animate-fade-up">
+      <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+        <div className="space-y-1.5">
+          <Label className="text-[10px]">Take profit</Label>
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={tpInput}
+            onChange={(e) => setTpInput(e.target.value)}
+            placeholder={isLong ? "above entry" : "below entry"}
+          />
+          {tpError && <p className="font-mono text-[10px] text-destructive">{tpError}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-[10px]">Stop loss</Label>
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={slInput}
+            onChange={(e) => setSlInput(e.target.value)}
+            placeholder={isLong ? "below entry" : "above entry"}
+          />
+          {slError && <p className="font-mono text-[10px] text-destructive">{slError}</p>}
+        </div>
+        <Button
+          size="default"
+          variant="primary"
+          disabled={save.isPending || !!tpError || !!slError}
+          onClick={() => save.mutate()}
+        >
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
       </div>
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Stop loss</Label>
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={slInput}
-          onChange={(e) => setSlInput(e.target.value)}
-          placeholder={isLong ? "below entry" : "above entry"}
-        />
-        {slError && <p className="text-xs text-destructive">{slError}</p>}
-      </div>
-      <Button
-        size="sm"
-        disabled={save.isPending || !!tpError || !!slError}
-        onClick={() => save.mutate()}
-      >
-        {save.isPending ? "Saving…" : "Save"}
-      </Button>
       {save.error && (
-        <p className="col-span-3 text-xs text-destructive">
+        <p className="mt-2 text-[11px] text-destructive">
           {(save.error as Error).message?.slice(0, 200) ?? "error"}
         </p>
       )}

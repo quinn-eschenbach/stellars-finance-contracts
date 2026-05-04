@@ -9,7 +9,7 @@ type SliderProps = InputHTMLAttributes<HTMLInputElement> & {
 
 /**
  * Native range input styled to match the design system, with the portion
- * left of the thumb filled in the primary color. Computes the fill % from
+ * left of the thumb filled by an ember gradient. Computes the fill % from
  * value/min/max and pipes it into a CSS variable consumed by `background`.
  */
 export const Slider = forwardRef<HTMLInputElement, SliderProps>(
@@ -23,7 +23,7 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(
 
     const fillStyle = {
       ...style,
-      background: `linear-gradient(to right, hsl(var(--primary)) 0%, hsl(var(--primary)) ${pct}%, hsl(var(--secondary)) ${pct}%, hsl(var(--secondary)) 100%)`,
+      background: `linear-gradient(to right, hsl(28 70% 58%) 0%, hsl(24 65% 50%) ${pct}%, hsl(30 6% 18% / 0.9) ${pct}%, hsl(30 6% 18% / 0.9) 100%)`,
     } as CSSProperties;
 
     return (
@@ -36,9 +36,13 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(
         defaultValue={defaultValue}
         style={fillStyle}
         className={cn(
-          "h-1.5 w-full appearance-none rounded-full outline-none",
-          "[&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow [&::-webkit-slider-thumb]:cursor-pointer",
-          "[&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:cursor-pointer",
+          "h-2 w-full appearance-none rounded-full outline-none border border-border/40 transition-all",
+          "[&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full",
+          "[&::-webkit-slider-thumb]:bg-foreground [&::-webkit-slider-thumb]:cursor-grab active:[&::-webkit-slider-thumb]:cursor-grabbing",
+          "[&::-webkit-slider-thumb]:shadow-[0_0_0_2px_hsl(24_70%_50%/0.6),0_0_18px_-2px_hsl(24_70%_55%/0.7),inset_0_-2px_4px_-1px_rgba(0,0,0,0.3)]",
+          "[&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-110",
+          "[&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-foreground [&::-moz-range-thumb]:cursor-grab",
+          "[&::-moz-range-thumb]:shadow-[0_0_0_2px_hsl(24_70%_50%/0.6),0_0_18px_-2px_hsl(24_70%_55%/0.7)]",
           className,
         )}
         {...props}

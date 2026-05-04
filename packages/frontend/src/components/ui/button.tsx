@@ -4,23 +4,34 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium tracking-tight transition-all duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-border bg-transparent hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        bull: "bg-bull text-white hover:bg-bull/90",
-        bear: "bg-bear text-white hover:bg-bear/90",
+        default:
+          "bg-foreground text-background hover:bg-foreground/90 shadow-[0_1px_0_0_rgba(255,255,255,0.15)_inset,0_8px_24px_-12px_rgba(0,0,0,0.6)]",
+        primary:
+          "bg-gradient-to-b from-[hsl(28_60%_60%)] to-[hsl(24_70%_48%)] text-background shadow-[0_1px_0_0_rgba(255,255,255,0.25)_inset,0_10px_28px_-10px_hsl(24_70%_45%/0.6)] hover:brightness-110",
+        destructive:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline:
+          "border border-border/70 bg-card/30 text-foreground backdrop-blur-md hover:border-border hover:bg-card/60",
+        secondary:
+          "bg-secondary/70 text-secondary-foreground hover:bg-secondary backdrop-blur-md border border-border/40",
+        ghost:
+          "text-muted-foreground hover:bg-card/60 hover:text-foreground",
+        link:
+          "text-foreground underline-offset-4 hover:underline",
+        bull:
+          "bg-bull/15 text-bull border border-bull/30 hover:bg-bull/25 hover:border-bull/50 backdrop-blur-md shadow-[0_0_24px_-8px_hsl(var(--bull)/0.4)]",
+        bear:
+          "bg-bear/15 text-bear border border-bear/30 hover:bg-bear/25 hover:border-bear/50 backdrop-blur-md shadow-[0_0_24px_-8px_hsl(var(--bear)/0.4)]",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
-        icon: "h-9 w-9",
+        default: "h-10 px-5",
+        sm: "h-8 px-3.5 text-xs",
+        lg: "h-12 px-7 text-base",
+        icon: "h-10 w-10",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

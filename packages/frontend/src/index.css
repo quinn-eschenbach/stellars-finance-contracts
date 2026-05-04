@@ -4,43 +4,178 @@
 
 @layer base {
   :root {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
+    /* near-black with a warm undertone — feels lived in, not synthetic */
+    --background: 30 10% 5%;
+    --foreground: 36 22% 92%;
 
-    --card: 240 8% 7%;
-    --card-foreground: 0 0% 98%;
+    /* card surface: not pure black, slightly warmer for grain to read against */
+    --card: 30 8% 9%;
+    --card-foreground: 36 22% 92%;
 
-    --primary: 263 70% 60%;
-    --primary-foreground: 0 0% 100%;
+    /* primary swapped from cliché purple to muted copper/ember */
+    --primary: 28 55% 62%;
+    --primary-foreground: 30 20% 8%;
 
-    --secondary: 240 5% 14%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 30 6% 14%;
+    --secondary-foreground: 36 18% 88%;
 
-    --muted: 240 5% 14%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 30 6% 12%;
+    --muted-foreground: 36 12% 60%;
 
-    --accent: 240 5% 14%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 30 8% 16%;
+    --accent-foreground: 36 22% 92%;
 
-    --destructive: 0 70% 55%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 8 60% 56%;
+    --destructive-foreground: 30 20% 96%;
 
-    --border: 240 5% 18%;
-    --input: 240 5% 14%;
-    --ring: 263 70% 60%;
+    --border: 36 10% 18%;
+    --input: 30 6% 12%;
+    --ring: 28 55% 62%;
 
-    --bull: 142 70% 45%;
-    --bear: 0 70% 55%;
+    /* muted, painterly bull/bear — sage moss vs old brick */
+    --bull: 142 28% 52%;
+    --bear: 8 60% 60%;
 
-    --radius: 0.5rem;
+    /* aurora palette */
+    --ember: 24 75% 55%;
+    --moss: 138 25% 38%;
+    --dusk: 248 50% 38%;
+
+    --radius: 0.875rem;
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1, "tnum" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "tnum" 0;
+    font-family: "Geist", system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* Aurora background. Three drifting blobs, fixed-position, behind everything. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -10%;
+    z-index: -2;
+    pointer-events: none;
+    background:
+      radial-gradient(40% 55% at 12% 38%, hsl(var(--ember) / 0.42), transparent 60%),
+      radial-gradient(45% 60% at 50% 80%, hsl(var(--moss) / 0.32), transparent 65%),
+      radial-gradient(45% 60% at 88% 32%, hsl(var(--dusk) / 0.55), transparent 60%),
+      radial-gradient(80% 80% at 50% 0%, hsl(30 8% 8%) 0%, hsl(30 10% 4%) 60%);
+    filter: saturate(115%);
+    animation: aurora-shift 28s ease-in-out infinite;
+  }
+
+  /* Grain — SVG noise. Renders at every scale, no image asset needed. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.55;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.95 0 0 0 0 0.85 0 0 0 0 0.7 0 0 0 0.6 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 200px 200px;
+  }
+
+  @keyframes aurora-shift {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    33% { transform: translate3d(2%, -1%, 0) scale(1.04); }
+    66% { transform: translate3d(-1%, 2%, 0) scale(1.02); }
+  }
+
+  /* Subtle scrollbar styling — inherits the warm palette */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(36 10% 22% / 0.6);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(36 12% 32% / 0.7);
+    background-clip: padding-box;
+  }
+
+  /* Selection feels warm and intentional */
+  ::selection {
+    background: hsl(var(--ember) / 0.35);
+    color: hsl(36 22% 96%);
+  }
+}
+
+@layer components {
+  /* Generic grain overlay any element can opt into. Inherits color via blend. */
+  .grain {
+    position: relative;
+    isolation: isolate;
+  }
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    mix-blend-mode: overlay;
+    border-radius: inherit;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.95 0 0 0 0 0.85 0 0 0 0 0.7 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+  }
+
+  /* Soft surface — slightly translucent dark with warm gradient border. */
+  .surface {
+    background: linear-gradient(
+        180deg,
+        hsl(30 8% 11% / 0.7) 0%,
+        hsl(30 10% 7% / 0.8) 100%
+      );
+    border: 1px solid hsl(36 10% 22% / 0.6);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow:
+      0 1px 0 0 hsl(36 30% 90% / 0.05) inset,
+      0 0 0 1px hsl(36 10% 28% / 0.15),
+      0 24px 60px -30px rgba(0, 0, 0, 0.75);
+  }
+
+  /* Pill-style row — used for nav and small badges. */
+  .pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/40 px-3 py-1 backdrop-blur-md;
+  }
+
+  /* Display heading style — mixes serif with optical refinements. */
+  .display {
+    font-family: "Instrument Serif", ui-serif, Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.02;
+  }
+
+  /* "Tabular numbers" — opt-in for any numeric column that should align. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Hairline divider that fades on each end — feels editorial. */
+  .hairline {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(36 10% 30% / 0.6) 20%,
+      hsl(36 10% 30% / 0.6) 80%,
+      transparent
+    );
   }
 }

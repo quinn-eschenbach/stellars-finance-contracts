@@ -1,17 +1,18 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { Slider } from "@/components/ui/slider";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAddress, useWallet } from "@/wallet/WalletProvider";
 import { positionManager } from "@/contracts/clients";
 import { signAndSendWithWallet } from "@/contracts/sender";
 import { parsePrice, parseUsdc } from "@/lib/utils";
 import { approxLiquidationPrice } from "@/lib/math";
 import { queryKeys } from "@/api/hooks";
+import { cn } from "@/lib/utils";
 
 interface OrderFormProps {
   symbol: string;
@@ -26,6 +27,8 @@ interface OrderFormProps {
   leverage: number;
   setLeverage: (n: number) => void;
 }
+
+const QUICK_AMOUNTS = ["100", "500", "1000", "5000"];
 
 /**
  * Market-order open form. Order state is owned by the parent so the chart
@@ -111,33 +114,52 @@ export function OrderForm({
     !address || open.isPending || collateralScaled <= 0n || !!tpError || !!slError;
 
   return (
-    <div className="space-y-4">
-      <Tabs value={side} onValueChange={(v) => setSide(v as "long" | "short")}>
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="long" className="data-[state=active]:bg-bull/20">
-            Long
-          </TabsTrigger>
-          <TabsTrigger value="short" className="data-[state=active]:bg-bear/20">
-            Short
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+    <div className="space-y-5">
+      {/* Side toggle — bull/bear segmented control */}
+      <div className="grid grid-cols-2 gap-1 rounded-full border border-border/50 bg-card/40 p-1 backdrop-blur-md">
+        <SideButton active={isLong} kind="long" onClick={() => setSide("long")} />
+        <SideButton active={!isLong} kind="short" onClick={() => setSide("short")} />
+      </div>
 
+      {/* Collateral with quick-amount chips */}
       <div className="space-y-2">
-        <Label>Collateral (USDC)</Label>
+        <div className="flex items-center justify-between">
+          <Label>Collateral</Label>
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground/70">USDC</span>
+        </div>
         <Input
           type="text"
           inputMode="decimal"
           value={collateralInput}
           onChange={(e) => setCollateralInput(e.target.value)}
-          placeholder="100"
+          placeholder="0.00"
+          className="h-12 text-lg"
         />
+        <div className="flex gap-1.5">
+          {QUICK_AMOUNTS.map((amt) => (
+            <button
+              key={amt}
+              type="button"
+              onClick={() => setCollateralInput(amt)}
+              className={cn(
+                "flex-1 rounded-lg border border-border/50 bg-card/30 px-2 py-1 font-mono text-[11px] tracking-tight text-muted-foreground transition-all hover:border-ember/50 hover:bg-card/60 hover:text-foreground",
+                collateralInput === amt && "border-ember/60 bg-ember/10 text-foreground",
+              )}
+            >
+              {amt}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
+      {/* Leverage with marker pips */}
+      <div className="space-y-3">
+        <div className="flex items-end justify-between">
           <Label>Leverage</Label>
-          <span className="text-sm font-mono">{cappedLeverage}x</span>
+          <div className="flex items-baseline gap-1">
+            <span className="font-display text-3xl leading-none text-foreground">{cappedLeverage}</span>
+            <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">×</span>
+          </div>
         </div>
         <Slider
           min={1}
@@ -146,53 +168,63 @@ export function OrderForm({
           value={cappedLeverage}
           onChange={(e) => setLeverage(Number(e.target.value))}
         />
+        <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
+          <span>1×</span>
+          <span>{Math.round(maxLeverage / 2)}×</span>
+          <span>{maxLeverage}×</span>
+        </div>
       </div>
 
+      {/* TP / SL accordion */}
       <div className="space-y-2">
         <button
           type="button"
           onClick={() => setShowTpSl((v) => !v)}
-          className="flex w-full items-center justify-between text-left text-xs text-muted-foreground hover:text-foreground"
+          className="flex w-full items-center justify-between rounded-lg border border-border/40 bg-card/30 px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-all hover:border-border/70 hover:text-foreground"
         >
-          <span>Take profit / Stop loss (optional)</span>
-          <span className="font-mono">{showTpSl ? "−" : "+"}</span>
+          <span>Take profit / Stop loss</span>
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showTpSl && "rotate-180")} />
         </button>
         {showTpSl && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 animate-fade-up">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Take profit</Label>
               <Input
                 type="text"
                 inputMode="decimal"
                 value={tpInput}
                 onChange={(e) => setTpInput(e.target.value)}
-                placeholder={isLong ? "above mark" : "below mark"}
+                placeholder={isLong ? "TP above mark" : "TP below mark"}
               />
-              {tpError && <p className="text-xs text-destructive">{tpError}</p>}
+              {tpError && <p className="font-mono text-[10px] text-destructive">{tpError}</p>}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Stop loss</Label>
               <Input
                 type="text"
                 inputMode="decimal"
                 value={slInput}
                 onChange={(e) => setSlInput(e.target.value)}
-                placeholder={isLong ? "below mark" : "above mark"}
+                placeholder={isLong ? "SL below mark" : "SL above mark"}
               />
-              {slError && <p className="text-xs text-destructive">{slError}</p>}
+              {slError && <p className="font-mono text-[10px] text-destructive">{slError}</p>}
             </div>
           </div>
         )}
       </div>
 
-      <div className="space-y-1 rounded-md border border-border bg-secondary/30 p-3 font-mono text-xs">
+      {/* Order summary */}
+      <div className="space-y-1.5 rounded-xl border border-border/40 bg-background/30 p-3.5">
         <Row label="Size" value={<NumberFlowUsd value={sizeScaled} />} />
         <Row label="Mark price" value={markPrice ? <NumberFlowUsd value={markPrice} /> : "—"} />
-        <Row label="Est. liq price" value={liq ? <NumberFlowUsd value={liq} /> : "—"} />
+        <Row
+          label="Est. liq. price"
+          value={liq ? <NumberFlowUsd value={liq} /> : "—"}
+          tone="warn"
+        />
       </div>
 
       <Button
         variant={isLong ? "bull" : "bear"}
+        size="lg"
         className="w-full"
         disabled={submitDisabled}
         onClick={() => open.mutate()}
@@ -201,11 +233,11 @@ export function OrderForm({
           ? "Connect wallet"
           : open.isPending
             ? "Submitting…"
-            : `Open ${cappedLeverage}x ${isLong ? "Long" : "Short"}`}
+            : `Open ${cappedLeverage}× ${isLong ? "Long" : "Short"}`}
       </Button>
 
       {open.isSuccess && (
-        <p className="text-xs font-mono text-bull">opened ✓ tx {open.data?.slice(0, 12)}…</p>
+        <p className="font-mono text-[11px] text-bull">opened ✓ tx {open.data?.slice(0, 12)}…</p>
       )}
       {open.error && (
         <p className="text-xs text-destructive">
@@ -213,6 +245,41 @@ export function OrderForm({
         </p>
       )}
     </div>
+  );
+}
+
+function SideButton({
+  active,
+  kind,
+  onClick,
+}: {
+  active: boolean;
+  kind: "long" | "short";
+  onClick: () => void;
+}) {
+  const isLong = kind === "long";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "relative flex h-9 items-center justify-center gap-1.5 rounded-full text-xs font-medium tracking-tight transition-all",
+        active
+          ? isLong
+            ? "bg-bull/20 text-bull shadow-[inset_0_0_0_1px_hsl(var(--bull)/0.4),0_0_24px_-8px_hsl(var(--bull)/0.5)]"
+            : "bg-bear/20 text-bear shadow-[inset_0_0_0_1px_hsl(var(--bear)/0.4),0_0_24px_-8px_hsl(var(--bear)/0.5)]"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          isLong ? "bg-bull" : "bg-bear",
+          !active && "opacity-50",
+        )}
+      />
+      {isLong ? "Long" : "Short"}
+    </button>
   );
 }
 
@@ -239,11 +306,19 @@ function validateSl(markPrice: bigint, sl: bigint, isLong: boolean): string | nu
   return null;
 }
 
-function Row({ label, value }: { label: string; value: ReactNode }) {
+function Row({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: ReactNode;
+  tone?: "warn";
+}) {
   return (
-    <div className="flex justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
+    <div className="flex items-center justify-between font-mono text-xs">
+      <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80">{label}</span>
+      <span className={cn("tabular-nums", tone === "warn" && "text-bear/90")}>{value}</span>
     </div>
   );
 }

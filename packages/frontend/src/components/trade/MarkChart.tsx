@@ -73,31 +73,33 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
     const chart = createChart(containerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#a1a1aa",
-        fontFamily:
-          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-        fontSize: 11,
+        textColor: "rgba(232, 218, 195, 0.55)",
+        fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace',
+        fontSize: 10,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.04)" },
-        horzLines: { color: "rgba(255,255,255,0.04)" },
+        vertLines: { color: "rgba(255,225,180,0.04)" },
+        horzLines: { color: "rgba(255,225,180,0.04)" },
       },
-      rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
+      rightPriceScale: { borderColor: "rgba(255,225,180,0.08)" },
       timeScale: {
-        borderColor: "rgba(255,255,255,0.08)",
+        borderColor: "rgba(255,225,180,0.08)",
         timeVisible: true,
         secondsVisible: false,
       },
       crosshair: { mode: CrosshairMode.Normal },
       autoSize: true,
     });
+    // Muted painterly palette — sage/moss for bull, brick/terracotta for bear.
+    const BULL = "#9ab59b";
+    const BEAR = "#cc7a6f";
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      upColor: BULL,
+      downColor: BEAR,
+      borderUpColor: BULL,
+      borderDownColor: BEAR,
+      wickUpColor: BULL,
+      wickDownColor: BEAR,
     });
     chartRef.current = chart;
     seriesRef.current = series;
@@ -199,19 +201,19 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
           value={String(interval)}
           onValueChange={(v) => setInterval(Number(v) as CandleInterval)}
         >
-          <TabsList className="bg-muted/40">
+          <TabsList className="h-8 p-0.5">
             {INTERVALS.map((i) => (
-              <TabsTrigger key={i.value} value={String(i.value)} className="text-xs">
+              <TabsTrigger key={i.value} value={String(i.value)} className="px-3 py-1 text-[11px] font-mono">
                 {i.label}
               </TabsTrigger>
             ))}
           </TabsList>
         </Tabs>
       </div>
-      <div className="relative flex-1 min-h-[320px]">
+      <div className="relative flex-1 min-h-[320px] overflow-hidden rounded-xl border border-border/40 bg-background/40">
         <div ref={containerRef} className="absolute inset-0" />
         {status && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs uppercase tracking-[0.2em] text-muted-foreground">
             {status}
           </div>
         )}

@@ -1,11 +1,11 @@
-import type { ReactNode } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowRight, Gauge, Layers, ShieldCheck, Zap } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Gauge, Layers, ShieldCheck, Zap } from "lucide-react";
 import { useMarkets, usePrices, useVault } from "@/api/hooks";
 import { useStreamPrices } from "@/api/sse";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { NumberFlowPlain, NumberFlowUsd } from "@/components/ui/number-flow";
+import { BiasGauge } from "@/components/ui/bias-gauge";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -32,8 +32,8 @@ function Landing() {
     .slice(0, 3);
 
   return (
-    <div className="space-y-20 pb-16">
-      <Hero />
+    <div className="space-y-24 pb-24">
+      <Hero priceBySymbol={priceBySymbol} />
 
       <StatsStrip
         tvl={vault.data?.total_assets}
@@ -50,29 +50,68 @@ function Landing() {
   );
 }
 
-function Hero() {
+function Hero({ priceBySymbol }: { priceBySymbol: Map<string, string> }) {
+  // Tiny live ticker — picks up to 4 symbols and shows their prices in the
+  // bottom-of-hero pill row. Makes the page feel alive even on first paint.
+  const tickers = Array.from(priceBySymbol.entries()).slice(0, 4);
+
   return (
-    <section className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute left-1/2 top-0 h-[420px] w-[820px] -translate-x-1/2 rounded-full bg-primary/20 blur-[120px]" />
+    <section className="relative overflow-hidden pt-10 md:pt-16">
+      {/* Local hero glows — denser than the global aurora */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -left-24 top-12 h-[420px] w-[420px] animate-drift-a rounded-full bg-ember/35 blur-[110px]" />
+        <div className="absolute right-1/4 top-44 h-[340px] w-[340px] animate-drift-b rounded-full bg-moss/30 blur-[100px]" />
+        <div className="absolute -right-32 -top-12 h-[480px] w-[480px] animate-drift-c rounded-full bg-dusk/45 blur-[120px]" />
       </div>
-      <div className="space-y-8 py-16 text-center md:py-24">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/40 px-3 py-1 text-xs text-muted-foreground">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-bull" />
+
+      <div className="relative space-y-10 py-12 text-center md:py-20">
+        <div
+          className="pill mx-auto animate-fade-up font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground"
+          style={{ animationDelay: "0ms" }}
+        >
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inset-0 animate-ember-pulse rounded-full bg-bull/80" />
+            <span className="relative h-1.5 w-1.5 rounded-full bg-bull" />
+          </span>
           Live on Stellar testnet
         </div>
-        <h1 className="mx-auto max-w-3xl text-balance text-4xl font-semibold tracking-tight md:text-6xl">
-          Perpetuals, settled at the{" "}
-          <span className="bg-gradient-to-r from-primary to-bull bg-clip-text text-transparent">
-            speed of Stellar
+
+        <h1
+          className="mx-auto max-w-4xl animate-fade-up text-balance text-5xl tracking-tightest md:text-7xl lg:text-[88px]"
+          style={{ animationDelay: "80ms" }}
+        >
+          <span className="font-display font-normal text-foreground">Perpetuals,</span>{" "}
+          <span className="font-display italic text-muted-foreground">settled at</span>
+          <span className="block">
+            <span className="font-display font-normal text-foreground">the speed of </span>
+            <span
+              className="font-display font-normal"
+              style={{
+                background:
+                  "linear-gradient(120deg, hsl(28 80% 70%) 0%, hsl(24 70% 55%) 40%, hsl(248 60% 65%) 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}
+            >
+              Stellar.
+            </span>
           </span>
         </h1>
-        <p className="mx-auto max-w-xl text-balance text-base text-muted-foreground md:text-lg">
-          Trade up to 200× leverage against a community-owned LP vault. Sub-second
-          finality, sub-cent fees, fully on-chain.
+
+        <p
+          className="mx-auto max-w-xl animate-fade-up text-balance text-base text-muted-foreground md:text-lg"
+          style={{ animationDelay: "180ms" }}
+        >
+          Trade up to 200× leverage against a community-owned LP vault. Sub-second finality,
+          sub-cent fees, fully on-chain.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Button asChild size="lg">
+
+        <div
+          className="flex animate-fade-up flex-wrap items-center justify-center gap-3"
+          style={{ animationDelay: "260ms" }}
+        >
+          <Button asChild variant="primary" size="lg">
             <Link to="/markets">
               Launch app
               <ArrowRight className="h-4 w-4" />
@@ -82,6 +121,29 @@ function Hero() {
             <Link to="/vault">Provide liquidity</Link>
           </Button>
         </div>
+
+        {tickers.length > 0 && (
+          <div
+            className="mx-auto flex max-w-2xl animate-fade-up flex-wrap items-center justify-center gap-2 pt-4"
+            style={{ animationDelay: "340ms" }}
+          >
+            {tickers.map(([symbol, price]) => (
+              <Link
+                key={symbol}
+                to="/trade/$symbol"
+                params={{ symbol }}
+                className="group flex items-center gap-2 rounded-full border border-border/40 bg-card/30 px-3 py-1.5 backdrop-blur-md transition-all hover:border-ember/40 hover:bg-card/60"
+              >
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  {symbol}
+                </span>
+                <span className="font-mono text-xs tabular-nums text-foreground/95">
+                  <NumberFlowUsd value={price} />
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -98,24 +160,39 @@ function StatsStrip({
 }) {
   return (
     <section>
-      <div className="grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
-        <Stat
-          label="Total value locked"
-          value={tvl ? <NumberFlowUsd value={tvl} decimals={0} /> : "—"}
-        />
-        <Stat label="Open interest" value={<NumberFlowUsd value={openInterest} decimals={0} />} />
-        <Stat label="Live markets" value={<NumberFlowPlain value={marketCount} />} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <Card>
+          <div className="relative z-10 space-y-2 p-6">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Total value locked
+            </span>
+            <div className="font-display text-4xl tracking-tightest text-foreground md:text-5xl">
+              {tvl ? <NumberFlowUsd value={tvl} decimals={0} /> : "—"}
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <div className="relative z-10 space-y-2 p-6">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Open interest
+            </span>
+            <div className="font-display text-4xl tracking-tightest text-foreground md:text-5xl">
+              <NumberFlowUsd value={openInterest} decimals={0} />
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <div className="relative z-10 space-y-2 p-6">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+              Live markets
+            </span>
+            <div className="font-display text-4xl tracking-tightest text-foreground md:text-5xl">
+              <NumberFlowPlain value={marketCount} />
+            </div>
+          </div>
+        </Card>
       </div>
     </section>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="bg-card px-6 py-6">
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-2 font-mono text-2xl font-semibold tabular-nums">{value}</div>
-    </div>
   );
 }
 
@@ -129,7 +206,7 @@ function Features() {
     {
       icon: Gauge,
       title: "Up to 200× leverage",
-      body: "Per-market leverage caps with continuous funding and borrow rates that rebalance long/short demand.",
+      body: "Per-market caps with continuous funding and borrow rates that rebalance long/short demand.",
     },
     {
       icon: ShieldCheck,
@@ -143,19 +220,28 @@ function Features() {
     },
   ];
   return (
-    <section className="space-y-6">
-      <div className="space-y-2 text-center">
-        <h2 className="text-3xl font-semibold tracking-tight">Built for serious size</h2>
-        <p className="text-muted-foreground">A perp DEX engineered around Stellar's settlement guarantees.</p>
+    <section className="space-y-10">
+      <div className="space-y-3 text-center">
+        <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          Built for size
+        </span>
+        <h2 className="mx-auto max-w-2xl font-display text-4xl tracking-tightest text-foreground md:text-5xl">
+          A perp DEX engineered around{" "}
+          <span className="italic text-muted-foreground">Stellar's</span> settlement.
+        </h2>
       </div>
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-        {items.map(({ icon: Icon, title, body }) => (
-          <Card key={title}>
-            <CardHeader className="pb-3">
-              <Icon className="h-5 w-5 text-primary" />
-              <CardTitle className="pt-3 text-base">{title}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">{body}</CardContent>
+        {items.map(({ icon: Icon, title, body }, idx) => (
+          <Card key={title} className="animate-fade-up" style={{ animationDelay: `${idx * 60}ms` }}>
+            <div className="relative z-10 flex h-full flex-col gap-4 p-5">
+              <span className="grid h-9 w-9 place-items-center rounded-full border border-ember/25 bg-ember/10 text-ember">
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="space-y-1.5">
+                <h3 className="font-display text-xl tracking-tightest text-foreground">{title}</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>
+              </div>
+            </div>
           </Card>
         ))}
       </div>
@@ -176,34 +262,66 @@ function FeaturedMarkets({
 }) {
   if (!featured.length) return null;
   return (
-    <section className="space-y-4">
+    <section className="space-y-6">
       <div className="flex items-end justify-between">
-        <h2 className="text-2xl font-semibold tracking-tight">Featured markets</h2>
-        <Link to="/markets" className="text-sm text-muted-foreground hover:text-foreground">
-          View all →
+        <div className="space-y-1">
+          <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            Top by open interest
+          </span>
+          <h2 className="font-display text-3xl tracking-tightest text-foreground md:text-4xl">
+            Featured markets
+          </h2>
+        </div>
+        <Link
+          to="/markets"
+          className="group inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          View all
+          <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        {featured.map((m) => {
+        {featured.map((m, idx) => {
           const price = priceBySymbol.get(m.symbol);
-          const oi = BigInt(m.long_open_interest) + BigInt(m.short_open_interest);
           return (
-            <Link key={m.symbol} to="/trade/$symbol" params={{ symbol: m.symbol }} className="block">
-              <Card className="transition-colors hover:border-primary/50">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">{m.symbol}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="font-mono text-2xl tabular-nums">
+            <Link
+              key={m.symbol}
+              to="/trade/$symbol"
+              params={{ symbol: m.symbol }}
+              className="block focus-visible:outline-none"
+            >
+              <Card
+                className="group/card animate-fade-up cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover"
+                style={{ animationDelay: `${idx * 60}ms` }}
+              >
+                <div className="relative z-10 flex items-start justify-between p-5 pb-3">
+                  <div>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+                      Perp
+                    </span>
+                    <div className="font-display text-3xl tracking-tightest text-foreground">
+                      {m.symbol}
+                    </div>
+                  </div>
+                  <ArrowUpRight className="h-4 w-4 text-muted-foreground/40 transition-all group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5 group-hover/card:text-ember" />
+                </div>
+                <div className="relative z-10 px-5 pb-5">
+                  <div className="font-mono text-3xl tabular-nums text-foreground">
                     {price ? <NumberFlowUsd value={price} /> : "—"}
                   </div>
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>
-                      OI <NumberFlowUsd value={oi.toString()} decimals={0} />
-                    </span>
-                    <span>{m.max_leverage || "—"}× max</span>
+                  <div className="hairline my-3" />
+                  <div className="flex items-center justify-between gap-4">
+                    <BiasGauge longOi={m.long_open_interest} shortOi={m.short_open_interest} size={100} />
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+                        Max lev
+                      </span>
+                      <span className="font-display text-2xl tracking-tightest text-foreground">
+                        {m.max_leverage || "—"}×
+                      </span>
+                    </div>
                   </div>
-                </CardContent>
+                </div>
               </Card>
             </Link>
           );
@@ -215,22 +333,35 @@ function FeaturedMarkets({
 
 function ClosingCta() {
   return (
-    <section className="rounded-xl border border-border bg-card/40 px-6 py-12 text-center md:px-12">
-      <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Ready to trade?</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        Connect a Freighter wallet, claim testnet USDC from the faucet, and open your first position.
-      </p>
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-        <Button asChild size="lg">
-          <Link to="/markets">
-            Open the app
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </Button>
-        <Button asChild size="lg" variant="ghost">
-          <Link to="/faucet">Get testnet USDC</Link>
-        </Button>
-      </div>
+    <section className="relative overflow-hidden">
+      <Card className="relative isolate overflow-hidden">
+        {/* Aurora wash inside the closing card */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute -left-12 -top-20 h-72 w-72 rounded-full bg-ember/30 blur-[80px]" />
+          <div className="absolute -right-12 -bottom-20 h-72 w-72 rounded-full bg-dusk/35 blur-[80px]" />
+        </div>
+        <div className="relative z-10 space-y-6 px-6 py-14 text-center md:px-12 md:py-20">
+          <h2 className="mx-auto max-w-xl font-display text-4xl tracking-tightest text-foreground md:text-5xl">
+            Ready to <span className="italic">trade?</span>
+          </h2>
+          <p className="mx-auto max-w-md text-sm text-muted-foreground">
+            Connect a Freighter wallet, claim testnet USDC from the faucet, and open your first
+            position.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button asChild variant="primary" size="lg">
+              <Link to="/markets">
+                Open the app
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="ghost">
+              <Link to="/faucet">Get testnet USDC</Link>
+            </Button>
+          </div>
+        </div>
+      </Card>
     </section>
   );
 }
+

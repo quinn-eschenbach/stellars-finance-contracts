@@ -4,6 +4,7 @@ import { useMarket, usePositions, usePrices } from "@/api/hooks";
 import { useStreamMarket, useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
+import { BiasGauge } from "@/components/ui/bias-gauge";
 import { MarkChart, type ChartPriceLine } from "@/components/trade/MarkChart";
 import { OrderForm } from "@/components/trade/OrderForm";
 import { PositionRow } from "@/components/trade/PositionRow";
@@ -41,10 +42,11 @@ function TradePage() {
   //  - if there are no open positions, draw a single staged-order Liq preview
   //    (no Entry — it'd just track mark price and add visual noise).
   const priceLines = useMemo<ChartPriceLine[]>(() => {
-    const ENTRY_COLOR = "rgba(168, 162, 255, 0.95)";
-    const LIQ_COLOR = "hsl(0, 70%, 60%)";
-    const TP_COLOR = "hsl(142, 70%, 55%)";
-    const SL_COLOR = "hsl(30, 90%, 60%)";
+    // Painterly muted palette — matches the new bull/bear/ember tokens.
+    const ENTRY_COLOR = "rgba(212, 165, 116, 0.85)"; // ember
+    const LIQ_COLOR = "rgba(204, 122, 111, 0.95)";   // bear
+    const TP_COLOR = "rgba(154, 181, 155, 0.95)";    // bull
+    const SL_COLOR = "rgba(212, 145, 100, 0.95)";    // amber
 
     if (myPositions.length > 0) {
       const lines: ChartPriceLine[] = [];
@@ -112,59 +114,92 @@ function TradePage() {
   }, [myPositions, markPrice, collateralInput, leverage, side]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-baseline gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{symbol}</h1>
-        <span className="font-mono text-xl">
-          {markPrice ? <NumberFlowUsd value={markPrice} /> : "—"}
-        </span>
+    <div className="space-y-6 animate-fade-up">
+      {/* Symbol + mark price hero strip */}
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border/30 pb-5">
+        <div className="space-y-1">
+          <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            Perpetual · Stellar
+          </span>
+          <div className="flex items-baseline gap-4">
+            <h1 className="font-display text-5xl tracking-tightest text-foreground md:text-6xl">
+              {symbol}
+            </h1>
+            <span className="font-mono text-3xl tabular-nums tracking-tight text-foreground/95 md:text-4xl">
+              {markPrice ? <NumberFlowUsd value={markPrice} /> : "—"}
+            </span>
+          </div>
+        </div>
+        {market.data && (
+          <div className="flex items-center gap-8 font-mono text-xs">
+            <MiniStat label="Long OI" value={<NumberFlowUsd value={market.data.long_open_interest} decimals={0} />} />
+            <MiniStat label="Short OI" value={<NumberFlowUsd value={market.data.short_open_interest} decimals={0} />} />
+            <MiniStat label="Max lev" value={`${market.data.max_leverage}×`} />
+            <MiniStat
+              label="Mkt PnL"
+              value={
+                <NumberFlowUsd
+                  value={market.data.market_unrealized_pnl}
+                  signDisplay="exceptZero"
+                />
+              }
+            />
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <div className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Chart</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[420px]">
+            <CardContent className="pt-5">
+              <div className="h-[460px]">
                 <MarkChart symbol={symbol} priceLines={priceLines} />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Market</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-4">
-              {market.data && (
-                <>
-                  <Stat label="Long OI" value={<NumberFlowUsd value={market.data.long_open_interest} />} />
-                  <Stat label="Short OI" value={<NumberFlowUsd value={market.data.short_open_interest} />} />
-                  <Stat label="Max leverage" value={`${market.data.max_leverage}x`} />
-                  <Stat
-                    label="Mark unrealized"
-                    value={
-                      <NumberFlowUsd
-                        value={market.data.market_unrealized_pnl}
-                        signDisplay="exceptZero"
-                      />
-                    }
+          {market.data && (
+            <Card>
+              <CardContent className="flex flex-wrap items-center justify-between gap-6 px-5 py-4">
+                <div className="flex items-center gap-4">
+                  <BiasGauge
+                    longOi={market.data.long_open_interest}
+                    shortOi={market.data.short_open_interest}
+                    size={84}
                   />
-                </>
-              )}
-            </CardContent>
-          </Card>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+                      Market sentiment
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Based on long vs short open interest
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6 font-mono">
+                  <MiniStat
+                    label="Long OI"
+                    value={<NumberFlowUsd value={market.data.long_open_interest} decimals={0} />}
+                  />
+                  <MiniStat
+                    label="Short OI"
+                    value={<NumberFlowUsd value={market.data.short_open_interest} decimals={0} />}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {address && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">My positions on {symbol}</CardTitle>
+                <CardTitle>Your positions on {symbol}</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-2.5">
                 {myPositions.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No open positions on this market.</p>
+                  <p className="rounded-xl border border-dashed border-border/50 bg-background/30 px-4 py-6 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    No open positions on this market
+                  </p>
                 )}
                 {myPositions.map((p) => (
                   <PositionRow key={p.id} position={p} markPrice={markPrice} />
@@ -174,10 +209,10 @@ function TradePage() {
           )}
         </div>
 
-        <Card>
-          <CardHeader className="space-y-0.5">
-            <CardTitle className="text-sm">Order</CardTitle>
-            <p className="text-xs text-muted-foreground">Market — fills at the next oracle tick.</p>
+        <Card className="self-start">
+          <CardHeader>
+            <CardTitle>Order</CardTitle>
+            <p className="text-[11px] text-muted-foreground/80">Market · fills at the next oracle tick</p>
           </CardHeader>
           <CardContent>
             <OrderForm
@@ -198,11 +233,13 @@ function TradePage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: ReactNode }) {
+function MiniStat({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex flex-col font-mono">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-sm">{value}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80">
+        {label}
+      </span>
+      <span className="tabular-nums text-foreground/95">{value}</span>
     </div>
   );
 }

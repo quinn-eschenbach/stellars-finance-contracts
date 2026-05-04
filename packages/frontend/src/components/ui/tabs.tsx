@@ -38,7 +38,7 @@ export function TabsList({ className, children }: { className?: string; children
   return (
     <div
       className={cn(
-        "inline-flex h-9 items-center justify-center rounded-md bg-secondary p-1 text-muted-foreground",
+        "inline-flex h-10 items-center justify-center rounded-full border border-border/50 bg-card/40 p-1 text-muted-foreground backdrop-blur-md",
         className,
       )}
     >
@@ -64,8 +64,10 @@ export function TabsTrigger({
       type="button"
       onClick={() => ctx.onChange(value)}
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        active ? "bg-background text-foreground shadow" : "hover:text-foreground",
+        "relative inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-medium tracking-tight transition-all duration-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        active
+          ? "bg-foreground/95 text-background shadow-[0_1px_0_0_rgba(255,255,255,0.18)_inset,0_4px_14px_-6px_rgba(0,0,0,0.6)]"
+          : "hover:text-foreground",
         className,
       )}
     >
@@ -86,5 +88,5 @@ export function TabsContent({
   const ctx = useContext(TabsContext);
   if (!ctx) throw new Error("TabsContent must be used inside Tabs");
   if (ctx.value !== value) return null;
-  return <div className={cn("mt-3", className)}>{children}</div>;
+  return <div className={cn("mt-4 animate-fade-up", className)}>{children}</div>;
 }

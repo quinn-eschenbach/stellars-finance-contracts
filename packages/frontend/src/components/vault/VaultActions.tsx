@@ -80,14 +80,22 @@ export function VaultActions() {
   });
 
   if (!address) {
-    return <p className="text-sm text-muted-foreground">Connect a wallet to deposit / withdraw.</p>;
+    return (
+      <p className="rounded-xl border border-dashed border-border/50 bg-background/30 px-4 py-6 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground">
+        Connect a wallet to deposit
+      </p>
+    );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between text-sm font-mono">
-        <span className="text-muted-foreground">Wallet USDC</span>
-        <span>{usdcBalance.data != null ? <NumberFlowUsd value={usdcBalance.data} /> : "—"}</span>
+      <div className="flex items-center justify-between rounded-xl border border-border/40 bg-background/30 px-4 py-3">
+        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          Wallet USDC
+        </span>
+        <span className="font-mono text-sm tabular-nums text-foreground">
+          {usdcBalance.data != null ? <NumberFlowUsd value={usdcBalance.data} /> : "—"}
+        </span>
       </div>
 
       <Tabs defaultValue="deposit">
@@ -104,8 +112,11 @@ export function VaultActions() {
             value={depositAmt}
             onChange={(e) => setDepositAmt(e.target.value)}
             placeholder="0.00"
+            className="h-12 text-lg"
           />
           <Button
+            variant="primary"
+            size="lg"
             className="w-full"
             disabled={deposit.isPending || !depositAmt}
             onClick={() => deposit.mutate()}
@@ -113,7 +124,7 @@ export function VaultActions() {
             {deposit.isPending ? "Submitting…" : "Deposit"}
           </Button>
           {deposit.isSuccess && (
-            <p className="text-xs font-mono text-bull">deposited ✓ tx {deposit.data?.slice(0, 12)}…</p>
+            <p className="font-mono text-[11px] text-bull">deposited ✓ tx {deposit.data?.slice(0, 12)}…</p>
           )}
           {deposit.error && (
             <p className="text-xs text-destructive">{(deposit.error as Error).message?.slice(0, 200)}</p>
@@ -128,8 +139,11 @@ export function VaultActions() {
             value={withdrawAmt}
             onChange={(e) => setWithdrawAmt(e.target.value)}
             placeholder="0.00"
+            className="h-12 text-lg"
           />
           <Button
+            variant="outline"
+            size="lg"
             className="w-full"
             disabled={withdraw.isPending || !withdrawAmt}
             onClick={() => withdraw.mutate()}
@@ -137,7 +151,7 @@ export function VaultActions() {
             {withdraw.isPending ? "Submitting…" : "Withdraw"}
           </Button>
           {withdraw.isSuccess && (
-            <p className="text-xs font-mono text-bull">withdrew ✓ tx {withdraw.data?.slice(0, 12)}…</p>
+            <p className="font-mono text-[11px] text-bull">withdrew ✓ tx {withdraw.data?.slice(0, 12)}…</p>
           )}
           {withdraw.error && (
             <p className="text-xs text-destructive">{(withdraw.error as Error).message?.slice(0, 200)}</p>
