@@ -19,13 +19,16 @@ NETWORK_KEY="${NETWORK_KEY:-local}"
 RPC_URL="${RPC_URL:-http://localhost:8000/soroban/rpc}"
 NETWORK_PASSPHRASE="${NETWORK_PASSPHRASE:-Standalone Network ; February 2017}"
 
-# Tickers to register for both sources. Edit here AND in each oracle
-# package's src/index.ts to add a new market — the script and the oracle
-# loop must agree on what's published.
-TICKERS=("BTCUSD" "ETHUSD")
-
 if ! command -v jq >/dev/null 2>&1; then
   echo "❌ jq is required — install via 'brew install jq'"
+  exit 1
+fi
+
+# Tickers come from addresses.json so the script, the oracle publishers,
+# the indexer poller, and the frontend symbol picker all agree.
+mapfile -t TICKERS < <(jq -r --arg net "$NETWORK_KEY" '.[$net].tickers[]' "$ADDRESSES_FILE")
+if [ "${#TICKERS[@]}" -eq 0 ]; then
+  echo "❌ No tickers configured for network '$NETWORK_KEY' in $ADDRESSES_FILE"
   exit 1
 fi
 

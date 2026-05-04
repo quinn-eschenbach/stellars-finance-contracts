@@ -7,6 +7,7 @@ export interface IndexerConfig {
   networkPassphrase: string;
   pollIntervalMs: number;
   healthPort: number;
+  tickers: readonly string[];
   contracts: {
     vault: ContractInfo;
     positionManager: ContractInfo;
@@ -26,6 +27,7 @@ export function loadConfig(): IndexerConfig {
     networkPassphrase: networkConfig.networkPassphrase,
     pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 3000),
     healthPort: Number(process.env.HEALTH_PORT ?? 3001),
+    tickers: networkConfig.tickers,
     contracts: {
       vault: networkConfig.contracts.vault,
       positionManager: networkConfig.contracts.positionManager,

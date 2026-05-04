@@ -21,9 +21,10 @@ export const NETWORK_NAME = NETWORK;
 /** Mock USDC token, populated by `make deploy` for local/testnet. Empty on mainnet. */
 export const MOCK_TOKEN_CONTRACT = networkConfig.contracts.mockToken?.address ?? "";
 
-/** Symbols supported in the UI. Mirrors what the protocol has configured. */
-export const SUPPORTED_SYMBOLS = ["BTCUSD", "ETHUSD"] as const;
-export type Symbol = (typeof SUPPORTED_SYMBOLS)[number];
+/** Symbols supported in the UI. Sourced from addresses.json so the protocol
+ *  decides what trades; the UI never gets out of sync. */
+export const SUPPORTED_SYMBOLS = networkConfig.tickers as readonly string[];
+export type Symbol = string;
 
 /** Backend API base URL. Vite proxies /api → API in dev. */
 export const API_BASE = (import.meta.env.VITE_API_URL ?? "/api") as string;

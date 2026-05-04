@@ -27,6 +27,9 @@ export interface NetworkContracts {
 export interface NetworkConfig {
   rpcUrl: string;
   networkPassphrase: string;
+  /** Markets supported on this network. Single source of truth for oracle
+   *  publishers, indexer poller, frontend symbol picker, and deploy scripts. */
+  tickers: readonly string[];
   contracts: NetworkContracts;
 }
 

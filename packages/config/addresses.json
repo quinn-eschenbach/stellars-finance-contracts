@@ -2,44 +2,46 @@
   "local": {
     "rpcUrl": "http://localhost:8000/soroban/rpc",
     "networkPassphrase": "Standalone Network ; February 2017",
+    "tickers": ["BTCUSD", "ETHUSD"],
     "contracts": {
       "vault": {
-        "address": "CDBL5DIVOP75SRJSYRXINIBD2MG5MVPPXRG3LI4PGWQU6KYJLE6EM3YZ",
-        "startLedger": 137
+        "address": "CBKPHO3OFVVZS5TE27U6HIYTS6SI3Z373CSR475O2FDDWC2XMDA7GQNO",
+        "startLedger": 130
       },
       "positionManager": {
-        "address": "CCWFW2A6GUMX6HPA2QI2FEQ65KHQKC4NCB4MIT34MAO6FFJ4PCHF5ST5",
-        "startLedger": 139
+        "address": "CAPXSYOGAHFSJM5FUP2OCRM4QDNRTQSVMIJMRDG2Q7LJTW4HXHAR2FYT",
+        "startLedger": 132
       },
       "configManager": {
-        "address": "CBASV2VCA2GE6JU4OVYGABAGFHQ3VDAR4S64VLST4AZAHJVSXO74YV77",
-        "startLedger": 125
+        "address": "CDRSL5J3IFELIFXSJGOXN3F3NYZWB5ZUDE5MZMEOH2K5SQYHLLEOZOCG",
+        "startLedger": 118
       },
       "oracleRouter": {
-        "address": "CB75ZVWA4TTT3VCPL6ATDJY47VWG37CMQJVG4K2FFEGTNZCBFVIJS42R",
-        "startLedger": 127
+        "address": "CCTJBRCMZJJMQVWHNXZWHKHZKBRUHJZ2AIYLCJYLRYMSOSJTB5RT2W5K",
+        "startLedger": 120
       },
       "oracle": {
-        "address": "CBEUF2KSDKVMMHPTWAIKDJ4IFMVN76DW5Q3A2JWBK3FFB74OI6ELZT72",
-        "startLedger": 131
+        "address": "CB4FWWXBCNQWGEGAYRMA4QNNJEKLQ3QQJO3LMTOFPIAABNTRRGS7F5CK",
+        "startLedger": 124
       },
       "binanceOracle": {
-        "address": "CANSBBYXO7VDPL2DG2XYZ27XMTWF43AWAOZOEK2S276IYUFY7K3QWJW2",
-        "startLedger": 174
+        "address": "CBWRGS6WSGQUGCTWJR2KSFHZN6QBNUM5TX3FKGHOKRTHDXQE3JLD44UZ",
+        "startLedger": 164
       },
       "kucoinOracle": {
-        "address": "CCK23TRVPRFR67XR2V3XHZLROL4ZORMUM555H3Z4LRSPPA3YT2BYFLV2",
-        "startLedger": 175
+        "address": "CACRLCQY6CZ2CA3ARYX2HUP6CZOZCAKQDENIOQCO6GSX5KS5JGPJR6AR",
+        "startLedger": 165
       },
       "mockToken": {
-        "address": "CDYHXZHPQA75MNWW4GZDIB6UZA2MSEGILG4AVHFGHNMUEJJC2P57YCV7",
-        "startLedger": 135
+        "address": "CBAUYPJEWVAR474A54WYWIX7TU5CXTGTUJKG36M6LY25AI6W2KDG6DDS",
+        "startLedger": 128
       }
     }
   },
   "testnet": {
     "rpcUrl": "https://soroban-testnet.stellar.org",
     "networkPassphrase": "Test SDF Network ; September 2015",
+    "tickers": ["BTCUSD", "ETHUSD"],
     "contracts": {
       "vault": {
         "address": "",
@@ -78,6 +80,7 @@
   "mainnet": {
     "rpcUrl": "https://soroban.stellar.org",
     "networkPassphrase": "Public Global Stellar Network ; September 2015",
+    "tickers": ["BTCUSD", "ETHUSD"],
     "contracts": {
       "vault": {
         "address": "",

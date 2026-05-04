@@ -5,14 +5,6 @@ import { Client as OracleRouterClient } from "@stellars/bindings/oracle-router";
 import { client, readOnlySigner } from "@stellars/protocol-clients";
 import type { IndexerConfig } from "./config.js";
 
-/**
- * Tickers polled from the OracleRouter. Hardcoded here rather than read
- * from env / addresses so the indexer's polling surface is explicit and
- * traceable. Add tickers here in lockstep with the corresponding entries
- * in packages/oracle-binance, packages/oracle-kucoin, and the deploy script.
- */
-const TICKERS = ["BTCUSD", "ETHUSD"];
-
 const POLL_MS = 500;
 
 /**
@@ -50,11 +42,12 @@ export async function runOraclePoller(
     readOnlySigner(sourceAccount),
   );
 
-  console.log(`[poller] tickers=${TICKERS.join(",")} cadence=${POLL_MS}ms`);
+  const tickers = config.tickers;
+  console.log(`[poller] tickers=${tickers.join(",")} cadence=${POLL_MS}ms`);
 
   while (isRunning()) {
     const ledger = await safeLatestLedger(server);
-    for (const symbol of TICKERS) {
+    for (const symbol of tickers) {
       if (!isRunning()) break;
       try {
         const tx = await oracleClient.get_price({ symbol });
