@@ -77,6 +77,22 @@ export interface CandleRow {
 
 export type CandleInterval = 60 | 300 | 900 | 3600 | 14400 | 86400;
 
+export interface LeaderboardRow {
+  trader: string;
+  /** Sum of pnl across all trade events for this trader (USDC × 10^7). */
+  realized_pnl: string;
+  /** Sum of |size_delta| across trades — proxy for cumulative notional volume. */
+  volume: string;
+  /** Number of closing events (decrease/liquidation/order/adl). */
+  closes: number;
+  /** Closing events with positive pnl. */
+  wins: number;
+  /** Closing events with negative pnl. */
+  losses: number;
+  /** Unix-seconds timestamp of the latest trade event. */
+  last_trade_at: number | null;
+}
+
 export interface TradeRow {
   id: number;
   tx_hash: string;

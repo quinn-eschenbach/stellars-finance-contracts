@@ -1,11 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowRight, ArrowUpRight, Gauge, Layers, ShieldCheck, Zap } from "lucide-react";
+import { ArrowRight, Gauge, Layers, ShieldCheck, Zap } from "lucide-react";
 import { useMarkets, usePrices, useVault } from "@/api/hooks";
 import { useStreamPrices } from "@/api/sse";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { NumberFlowPlain, NumberFlowUsd } from "@/components/ui/number-flow";
-import { BiasGauge } from "@/components/ui/bias-gauge";
+import { MarketCard } from "@/components/MarketCard";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -111,10 +111,10 @@ function Hero({ priceBySymbol }: { priceBySymbol: Map<string, string> }) {
           className="flex animate-fade-up flex-wrap items-center justify-center gap-3"
           style={{ animationDelay: "260ms" }}
         >
-          <Button asChild variant="primary" size="lg">
+          <Button asChild variant="primary" size="lg" className="group">
             <Link to="/markets">
               Launch app
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline">
@@ -281,51 +281,15 @@ function FeaturedMarkets({
         </Link>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
-        {featured.map((m, idx) => {
-          const price = priceBySymbol.get(m.symbol);
-          return (
-            <Link
-              key={m.symbol}
-              to="/trade/$symbol"
-              params={{ symbol: m.symbol }}
-              className="block focus-visible:outline-none"
-            >
-              <Card
-                className="group/card animate-fade-up cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover"
-                style={{ animationDelay: `${idx * 60}ms` }}
-              >
-                <div className="relative z-10 flex items-start justify-between p-5 pb-3">
-                  <div>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
-                      Perp
-                    </span>
-                    <div className="font-display text-3xl tracking-tightest text-foreground">
-                      {m.symbol}
-                    </div>
-                  </div>
-                  <ArrowUpRight className="h-4 w-4 text-muted-foreground/40 transition-all group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5 group-hover/card:text-ember" />
-                </div>
-                <div className="relative z-10 px-5 pb-5">
-                  <div className="font-mono text-3xl tabular-nums text-foreground">
-                    {price ? <NumberFlowUsd value={price} /> : "—"}
-                  </div>
-                  <div className="hairline my-3" />
-                  <div className="flex items-center justify-between gap-4">
-                    <BiasGauge longOi={m.long_open_interest} shortOi={m.short_open_interest} size={100} />
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
-                        Max lev
-                      </span>
-                      <span className="font-display text-2xl tracking-tightest text-foreground">
-                        {m.max_leverage || "—"}×
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </Link>
-          );
-        })}
+        {featured.map((m, idx) => (
+          <MarketCard
+            key={m.symbol}
+            market={m}
+            price={priceBySymbol.get(m.symbol)}
+            className="animate-fade-up"
+            style={{ animationDelay: `${idx * 60}ms` }}
+          />
+        ))}
       </div>
     </section>
   );
@@ -349,10 +313,10 @@ function ClosingCta() {
             position.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Button asChild variant="primary" size="lg">
+            <Button asChild variant="primary" size="lg" className="group">
               <Link to="/markets">
                 Open the app
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
               </Link>
             </Button>
             <Button asChild size="lg" variant="ghost">

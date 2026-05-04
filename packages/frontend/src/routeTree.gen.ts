@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as MarketsRouteImport } from './routes/markets'
+import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as FaucetRouteImport } from './routes/faucet'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TradeSymbolRouteImport } from './routes/trade.$symbol'
@@ -29,6 +31,16 @@ const PortfolioRoute = PortfolioRouteImport.update({
 const MarketsRoute = MarketsRouteImport.update({
   id: '/markets',
   path: '/markets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeaderboardRoute = LeaderboardRouteImport.update({
+  id: '/leaderboard',
+  path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InsightsRoute = InsightsRouteImport.update({
+  id: '/insights',
+  path: '/insights',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FaucetRoute = FaucetRouteImport.update({
@@ -50,6 +62,8 @@ const TradeSymbolRoute = TradeSymbolRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/faucet': typeof FaucetRoute
+  '/insights': typeof InsightsRoute
+  '/leaderboard': typeof LeaderboardRoute
   '/markets': typeof MarketsRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
@@ -58,6 +72,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/faucet': typeof FaucetRoute
+  '/insights': typeof InsightsRoute
+  '/leaderboard': typeof LeaderboardRoute
   '/markets': typeof MarketsRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
@@ -67,6 +83,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/faucet': typeof FaucetRoute
+  '/insights': typeof InsightsRoute
+  '/leaderboard': typeof LeaderboardRoute
   '/markets': typeof MarketsRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
@@ -77,16 +95,28 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/faucet'
+    | '/insights'
+    | '/leaderboard'
     | '/markets'
     | '/portfolio'
     | '/vault'
     | '/trade/$symbol'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/faucet' | '/markets' | '/portfolio' | '/vault' | '/trade/$symbol'
+  to:
+    | '/'
+    | '/faucet'
+    | '/insights'
+    | '/leaderboard'
+    | '/markets'
+    | '/portfolio'
+    | '/vault'
+    | '/trade/$symbol'
   id:
     | '__root__'
     | '/'
     | '/faucet'
+    | '/insights'
+    | '/leaderboard'
     | '/markets'
     | '/portfolio'
     | '/vault'
@@ -96,6 +126,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   FaucetRoute: typeof FaucetRoute
+  InsightsRoute: typeof InsightsRoute
+  LeaderboardRoute: typeof LeaderboardRoute
   MarketsRoute: typeof MarketsRoute
   PortfolioRoute: typeof PortfolioRoute
   VaultRoute: typeof VaultRoute
@@ -125,6 +157,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarketsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/leaderboard': {
+      id: '/leaderboard'
+      path: '/leaderboard'
+      fullPath: '/leaderboard'
+      preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/insights': {
+      id: '/insights'
+      path: '/insights'
+      fullPath: '/insights'
+      preLoaderRoute: typeof InsightsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/faucet': {
       id: '/faucet'
       path: '/faucet'
@@ -152,6 +198,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   FaucetRoute: FaucetRoute,
+  InsightsRoute: InsightsRoute,
+  LeaderboardRoute: LeaderboardRoute,
   MarketsRoute: MarketsRoute,
   PortfolioRoute: PortfolioRoute,
   VaultRoute: VaultRoute,

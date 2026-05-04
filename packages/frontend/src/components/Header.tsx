@@ -3,8 +3,12 @@ import { useWallet } from "@/wallet/WalletProvider";
 import { Button } from "@/components/ui/button";
 import { shortAddress } from "@/lib/utils";
 
-const NAV: ReadonlyArray<{ to: "/markets" | "/portfolio" | "/vault" | "/faucet"; label: string }> = [
+const NAV: ReadonlyArray<{
+  to: "/markets" | "/portfolio" | "/vault" | "/leaderboard" | "/faucet";
+  label: string;
+}> = [
   { to: "/markets", label: "Markets" },
+  { to: "/leaderboard", label: "Leaderboard" },
   { to: "/portfolio", label: "Portfolio" },
   { to: "/vault", label: "Vault" },
   { to: "/faucet", label: "Faucet" },
@@ -30,11 +34,16 @@ export function Header() {
             <Link
               key={item.to}
               to={item.to}
-              className="rounded-full px-3.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-              activeProps={{
-                className:
-                  "rounded-full px-3.5 py-1.5 text-[13px] font-medium bg-foreground text-background",
-              }}
+              className="
+                rounded-full px-3.5 py-1.5 text-[13px] font-medium
+                text-muted-foreground transition-all duration-200
+                hover:bg-foreground/[0.06] hover:text-foreground
+                data-[status=active]:bg-foreground
+                data-[status=active]:text-background
+                data-[status=active]:shadow-[0_1px_0_0_rgba(255,255,255,0.25)_inset,0_4px_14px_-6px_rgba(0,0,0,0.5)]
+                data-[status=active]:hover:bg-foreground
+                data-[status=active]:hover:text-background
+              "
             >
               {item.label}
             </Link>

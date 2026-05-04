@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMarket, usePositions, usePrices } from "@/api/hooks";
 import { useStreamMarket, useStreamPositions, useStreamPrices } from "@/api/sse";
@@ -130,21 +130,10 @@ function TradePage() {
             </span>
           </div>
         </div>
-        {market.data && (
-          <div className="flex items-center gap-8 font-mono text-xs">
-            <MiniStat label="Long OI" value={<NumberFlowUsd value={market.data.long_open_interest} decimals={0} />} />
-            <MiniStat label="Short OI" value={<NumberFlowUsd value={market.data.short_open_interest} decimals={0} />} />
-            <MiniStat label="Max lev" value={`${market.data.max_leverage}×`} />
-            <MiniStat
-              label="Mkt PnL"
-              value={
-                <NumberFlowUsd
-                  value={market.data.market_unrealized_pnl}
-                  signDisplay="exceptZero"
-                />
-              }
-            />
-          </div>
+        {market.data?.max_leverage && (
+          <span className="rounded-full border border-border/40 bg-card/40 px-2.5 py-1 font-mono text-[11px] tabular-nums uppercase tracking-[0.18em] text-muted-foreground/80">
+            {market.data.max_leverage}× max leverage
+          </span>
         )}
       </div>
 
@@ -160,31 +149,19 @@ function TradePage() {
 
           {market.data && (
             <Card>
-              <CardContent className="flex flex-wrap items-center justify-between gap-6 px-5 py-4">
-                <div className="flex items-center gap-4">
-                  <BiasGauge
-                    longOi={market.data.long_open_interest}
-                    shortOi={market.data.short_open_interest}
-                    size={84}
-                  />
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
-                      Market sentiment
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Based on long vs short open interest
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-6 font-mono">
-                  <MiniStat
-                    label="Long OI"
-                    value={<NumberFlowUsd value={market.data.long_open_interest} decimals={0} />}
-                  />
-                  <MiniStat
-                    label="Short OI"
-                    value={<NumberFlowUsd value={market.data.short_open_interest} decimals={0} />}
-                  />
+              <CardContent className="flex items-center gap-6 px-6 py-5">
+                <BiasGauge
+                  longOi={market.data.long_open_interest}
+                  shortOi={market.data.short_open_interest}
+                  size={140}
+                />
+                <div className="flex flex-col gap-1">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
+                    Market sentiment
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    Long vs short open interest
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -233,13 +210,3 @@ function TradePage() {
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80">
-        {label}
-      </span>
-      <span className="tabular-nums text-foreground/95">{value}</span>
-    </div>
-  );
-}

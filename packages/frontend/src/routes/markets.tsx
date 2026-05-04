@@ -1,10 +1,7 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMarkets, usePrices } from "@/api/hooks";
 import { useStreamPrices } from "@/api/sse";
-import { Card } from "@/components/ui/card";
-import { NumberFlowUsd } from "@/components/ui/number-flow";
-import { BiasGauge } from "@/components/ui/bias-gauge";
+import { MarketCard } from "@/components/MarketCard";
 
 export const Route = createFileRoute("/markets")({
   component: MarketsList,
@@ -51,50 +48,10 @@ function MarketsList() {
       )}
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {(markets.data ?? []).map((m) => {
-          const price = priceBySymbol.get(m.symbol);
-          return (
-            <Link
-              key={m.symbol}
-              to="/trade/$symbol"
-              params={{ symbol: m.symbol }}
-              className="block focus-visible:outline-none"
-            >
-              <Card className="group/card cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover">
-                <div className="relative z-10 flex items-start justify-between p-5 pb-3">
-                  <div>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
-                      Perp
-                    </span>
-                    <div className="font-display text-3xl tracking-tightest text-foreground">
-                      {m.symbol}
-                    </div>
-                  </div>
-                  <ArrowUpRight className="h-4 w-4 text-muted-foreground/40 transition-all group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5 group-hover/card:text-ember" />
-                </div>
-                <div className="relative z-10 px-5 pb-5">
-                  <div className="font-mono text-3xl tabular-nums text-foreground">
-                    {price ? <NumberFlowUsd value={price} /> : "—"}
-                  </div>
-                  <div className="hairline my-3" />
-                  <div className="flex items-center justify-between gap-4">
-                    <BiasGauge longOi={m.long_open_interest} shortOi={m.short_open_interest} size={108} />
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
-                        Max lev
-                      </span>
-                      <span className="font-display text-2xl tracking-tightest text-foreground">
-                        {m.max_leverage || "—"}×
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </Link>
-          );
-        })}
+        {(markets.data ?? []).map((m) => (
+          <MarketCard key={m.symbol} market={m} price={priceBySymbol.get(m.symbol)} />
+        ))}
       </div>
     </div>
   );
 }
-

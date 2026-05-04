@@ -22,9 +22,7 @@ const PRICE_UNIT = 10_000_000;
 const INTERVALS: ReadonlyArray<{ label: string; value: CandleInterval }> = [
   { label: "1m", value: 60 },
   { label: "5m", value: 300 },
-  { label: "15m", value: 900 },
   { label: "1h", value: 3600 },
-  { label: "4h", value: 14400 },
   { label: "1d", value: 86400 },
 ];
 

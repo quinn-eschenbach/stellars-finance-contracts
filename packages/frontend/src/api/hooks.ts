@@ -3,6 +3,7 @@ import { apiGet } from "./client";
 import type {
   CandleInterval,
   CandleRow,
+  LeaderboardRow,
   MarketRow,
   PositionRow,
   PriceRow,
@@ -20,6 +21,7 @@ export const queryKeys = {
   prices: ["prices"] as const,
   candles: (symbol: string, interval: CandleInterval) =>
     ["candles", symbol, interval] as const,
+  leaderboard: (limit: number) => ["leaderboard", limit] as const,
 };
 
 export interface TradesFilters {
@@ -103,6 +105,15 @@ export function useCandles(
     queryFn: () => apiGet<CandleRow[]>(`/prices/${symbol}/candles?interval=${interval}&limit=500`),
     enabled: !!symbol,
     staleTime: 5_000,
+    ...opts,
+  });
+}
+
+export function useLeaderboard(limit = 50, opts?: UseQueryOptions<LeaderboardRow[]>) {
+  return useQuery({
+    queryKey: queryKeys.leaderboard(limit),
+    queryFn: () => apiGet<LeaderboardRow[]>(`/leaderboard?limit=${limit}`),
+    staleTime: 10_000,
     ...opts,
   });
 }
