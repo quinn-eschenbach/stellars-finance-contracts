@@ -5,21 +5,23 @@ services:
     command: --local --enable-soroban-rpc
     ports:
       - "8000:8000"
-    # Healthy = soroban-rpc is reachable AND Stellar Core is producing
-    # ledgers (sequence > 0). When this passes, friendbot is ready to fund
-    # accounts too, since both depend on Core having bootstrapped.
+    # Healthy = friendbot can answer for a real address. getLatestLedger
+    # alone fires too early (Core produces genesis fast, but Horizon and
+    # friendbot lag). Probing friendbot itself is end-to-end.
+    #
+    # Accept HTTP 200 (account funded) OR 400 (account already exists) —
+    # both prove friendbot reached Horizon and validated the address.
+    # Other codes (000/connection-refused, 5xx) keep the loop going.
     healthcheck:
       test:
         - CMD-SHELL
-        - >-
-          curl -fsS -X POST http://localhost:8000/soroban/rpc
-          -H 'Content-Type: application/json'
-          -d '{"jsonrpc":"2.0","id":1,"method":"getLatestLedger"}'
-          | grep -q '"sequence":[1-9]'
-      interval: 3s
-      timeout: 3s
+        - |
+          code=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 4 'http://localhost:8000/friendbot?addr=GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7')
+          [ "$$code" = "200" ] || [ "$$code" = "400" ]
+      interval: 5s
+      timeout: 6s
       retries: 60
-      start_period: 20s
+      start_period: 30s
 
   postgres:
     image: postgres:16-alpine
