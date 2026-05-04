@@ -47,25 +47,48 @@ pub fn require_admin(env: &Env, caller: &Address) {
 }
 
 // ---------------------------------------------------------------------------
-// Cooldown guard
+// Lockup guard
 // ---------------------------------------------------------------------------
 
-/// Records the current timestamp as the user's last deposit time.
-pub fn record_deposit_time(env: &Env, user: &Address) {
+/// Compute lockup expiry as `now + cooldown_duration` (read from ConfigManager)
+/// and persist it for `user`. Emits a `Lockup` event.
+pub fn record_lockup(env: &Env, user: &Address) {
+    let config_mgr = storage::get_config_manager(env);
+    let limits = ConfigManagerClient::new(env, &config_mgr).get_protocol_limits();
     let now = env.ledger().timestamp();
-    storage::set_last_deposit_time(env, user, now);
+    let expires_at = now + limits.cooldown_duration;
+    storage::set_lockup_expires_at(env, user, expires_at);
+    crate::events::Lockup { user: user.clone(), expires_at }.publish(env);
 }
 
-/// Panics with `CooldownNotElapsed` if the user deposited within the cooldown window.
-/// Users who never deposited (no entry) bypass the cooldown.
-pub fn require_cooldown_elapsed(env: &Env, user: &Address) {
-    if let Some(last_deposit) = storage::get_last_deposit_time(env, user) {
-        let config_mgr = storage::get_config_manager(env);
-        let limits = ConfigManagerClient::new(env, &config_mgr).get_protocol_limits();
+/// Panics with `CooldownNotElapsed` if `now < stored_expiry`. Users without
+/// a stored expiry (never deposited) bypass the check.
+pub fn require_lockup_elapsed(env: &Env, user: &Address) {
+    if let Some(expiry) = storage::get_lockup_expires_at(env, user) {
         let now = env.ledger().timestamp();
-        if now < last_deposit + limits.cooldown_duration {
+        if now < expiry {
             panic_with_error!(env, VaultError::CooldownNotElapsed);
         }
+    }
+}
+
+/// Inherit `from`'s remaining lockup to `to` on share transfers, taking the
+/// max of `to`'s existing expiry and `from`'s expiry. Without this, an LP
+/// could deposit, immediately transfer their LP shares to a fresh address,
+/// and the recipient could withdraw without observing the cooldown.
+pub fn propagate_lockup_on_transfer(env: &Env, from: &Address, to: &Address) {
+    let from_expiry = storage::get_lockup_expires_at(env, from).unwrap_or(0);
+    if from_expiry == 0 {
+        return;
+    }
+    let now = env.ledger().timestamp();
+    if from_expiry <= now {
+        return;
+    }
+    let to_expiry = storage::get_lockup_expires_at(env, to).unwrap_or(0);
+    if from_expiry > to_expiry {
+        storage::set_lockup_expires_at(env, to, from_expiry);
+        crate::events::Lockup { user: to.clone(), expires_at: from_expiry }.publish(env);
     }
 }
 

@@ -26,6 +26,7 @@ pub struct LimitsUpdate {
     pub funding_cut_bps: u32,
     pub adl_pnl_bps: u32,
     pub adl_utilization_bps: u32,
+    pub liquidation_threshold_bps: u32,
 }
 
 #[contractevent(topics = ["rates"], data_format = "vec")]

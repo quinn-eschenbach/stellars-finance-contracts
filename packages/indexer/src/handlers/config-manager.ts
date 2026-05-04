@@ -55,6 +55,7 @@ async function handleLimits(db: Db, event: ParsedEvent) {
       funding_cut_bps: data.funding_cut_bps,
       adl_pnl_bps: data.adl_pnl_bps,
       adl_utilization_bps: data.adl_utilization_bps,
+      liquidation_threshold_bps: data.liquidation_threshold_bps,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
@@ -67,6 +68,7 @@ async function handleLimits(db: Db, event: ParsedEvent) {
         funding_cut_bps: data.funding_cut_bps,
         adl_pnl_bps: data.adl_pnl_bps,
         adl_utilization_bps: data.adl_utilization_bps,
+        liquidation_threshold_bps: data.liquidation_threshold_bps,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },

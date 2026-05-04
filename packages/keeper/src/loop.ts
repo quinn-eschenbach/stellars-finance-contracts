@@ -78,16 +78,22 @@ async function scanLiquidationCandidates(
   db: Db,
   config: KeeperConfig,
 ): Promise<LiquidationCandidate[]> {
-  const [allPositions, allMarkets, prices] = await Promise.all([
+  const [allPositions, allMarkets, prices, protoCfg] = await Promise.all([
     getAllPositions(db),
     getMarkets(db),
     getLatestPrices(db),
+    getProtocolConfig(db),
   ]);
 
   const marketBySymbol = new Map<string, MarketRow>();
   for (const m of allMarkets) marketBySymbol.set(m.symbol, m);
 
-  const safetyMarginBps = BigInt(config.liquidationSafetyMarginBps);
+  // Read the threshold from on-chain config (mirrored by the indexer into
+  // protocol_config). Env var is a cold-start fallback before the indexer has
+  // ingested the first LimitsUpdate event.
+  const thresholdBps = BigInt(
+    protoCfg?.liquidation_threshold_bps ?? config.liquidationSafetyMarginBps,
+  );
   const candidates: LiquidationCandidate[] = [];
   for (const pos of allPositions) {
     const market = marketBySymbol.get(pos.symbol);
@@ -95,9 +101,9 @@ async function scanLiquidationCandidates(
     if (!market || !markPriceStr) continue;
 
     const collateral = toBigInt(pos.collateral);
-    const safetyMargin = (collateral * safetyMarginBps) / BPS;
+    const threshold = (collateral * thresholdBps) / BPS;
     const health = computeHealth(pos, market, markPriceStr);
-    if (health >= safetyMargin) continue;
+    if (health >= threshold) continue;
 
     candidates.push({ pos, health });
   }

@@ -75,3 +75,13 @@ pub struct Pause {
     pub is_paused: bool,
     pub caller: Address,
 }
+
+/// Emitted when a deposit/mint records a lockup expiry. Off-chain indexers
+/// upsert per-user lockup state from this. The `expires_at` value is the
+/// absolute unix timestamp when withdraw/redeem becomes legal.
+#[contractevent(topics = ["lockup"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Lockup {
+    pub user: Address,
+    pub expires_at: u64,
+}

@@ -194,6 +194,7 @@ fn test_admin_transfer_and_new_admin_operates() {
                 funding_cut_bps: 500,
                 adl_pnl_bps: 9_000,
                 adl_utilization_bps: 9_500,
+                liquidation_threshold_bps: 200,
             },
         );
     }));
@@ -213,6 +214,7 @@ fn test_admin_transfer_and_new_admin_operates() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 9_500,
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&new_admin, &config_manager::BorrowRateConfig {
@@ -261,6 +263,7 @@ fn test_updated_utilization_cap_allows_larger_positions() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 9_500,
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {

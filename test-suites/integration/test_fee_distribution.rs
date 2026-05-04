@@ -211,6 +211,7 @@ fn test_adl_no_keeper_share() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 3_000, // 30% util triggers ADL
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {

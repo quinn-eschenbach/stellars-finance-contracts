@@ -29,6 +29,21 @@ impl FungibleToken for VaultContract {
     fn decimals(e: &Env) -> u32 {
         Vault::decimals(e)
     }
+
+    /// Override to propagate the sender's remaining lockup onto the recipient.
+    /// Without this, an LP could circumvent the cooldown by transferring LP
+    /// shares to a fresh address that then withdraws.
+    fn transfer(e: &Env, from: Address, to: MuxedAddress, amount: i128) {
+        let to_addr = to.address();
+        Base::transfer(e, &from, &to, amount);
+        vault_logic::propagate_lockup_on_transfer(e, &from, &to_addr);
+    }
+
+    /// Same lockup-propagation guarantee for the allowance-based path.
+    fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
+        Base::transfer_from(e, &spender, &from, &to, amount);
+        vault_logic::propagate_lockup_on_transfer(e, &from, &to);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -66,7 +81,12 @@ impl FungibleVault for VaultContract {
     fn deposit(e: &Env, assets: i128, receiver: Address, from: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
-        vault_logic::record_deposit_time(e, &receiver);
+        // Reject zero-asset deposits — without this, anyone can extend any
+        // user's lockup at zero cost by minting 0 shares to them.
+        if assets <= 0 {
+            panic_with_error!(e, VaultError::ZeroAmount);
+        }
+        vault_logic::record_lockup(e, &receiver);
         // OZ Vault::deposit auto-emits the deposit event.
         Vault::deposit(e, assets, receiver, from, operator)
     }
@@ -85,7 +105,12 @@ impl FungibleVault for VaultContract {
     fn mint(e: &Env, shares: i128, receiver: Address, from: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
-        vault_logic::record_deposit_time(e, &receiver);
+        // Symmetric guard with deposit() — block zero-share mints that would
+        // otherwise let anyone reset a victim's lockup for free.
+        if shares <= 0 {
+            panic_with_error!(e, VaultError::ZeroAmount);
+        }
+        vault_logic::record_lockup(e, &receiver);
         // OZ Vault::mint auto-emits the deposit event (mint and deposit collapse to one event).
         Vault::mint(e, shares, receiver, from, operator)
     }
@@ -112,7 +137,7 @@ impl FungibleVault for VaultContract {
     ) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
-        vault_logic::require_cooldown_elapsed(e, &owner);
+        vault_logic::require_lockup_elapsed(e, &owner);
         vault_logic::require_free_liquidity(e, assets);
         // OZ Vault::withdraw auto-emits the withdraw event.
         Vault::withdraw(e, assets, receiver, owner, operator)
@@ -133,7 +158,7 @@ impl FungibleVault for VaultContract {
     fn redeem(e: &Env, shares: i128, receiver: Address, owner: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
-        vault_logic::require_cooldown_elapsed(e, &owner);
+        vault_logic::require_lockup_elapsed(e, &owner);
         let assets = Vault::preview_redeem(e, shares);
         vault_logic::require_free_liquidity(e, assets);
         // OZ Vault::redeem auto-emits the withdraw event (redeem and withdraw collapse to one event).
@@ -338,6 +363,12 @@ impl VaultContract {
     pub fn reserved_usdc(env: Env) -> i128 {
         vault_logic::require_initialized(&env);
         vault_storage::get_reserved_usdc(&env)
+    }
+
+    /// Returns the unix timestamp at which `user` may next withdraw/redeem.
+    /// Returns 0 if `user` has never deposited (no lockup recorded).
+    pub fn lockup_expires_at(env: Env, user: Address) -> u64 {
+        vault_storage::get_lockup_expires_at(&env, &user).unwrap_or(0)
     }
 
     pub fn bump_vault_state(env: Env) {

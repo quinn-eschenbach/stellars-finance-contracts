@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { type Db, vaultState, vaultEvents, feeEvents, payProfitEvents, pauseEvents, lpTransfers } from "@stellars/db";
+import { type Db, vaultState, vaultEvents, vaultLockups, feeEvents, payProfitEvents, pauseEvents, lpTransfers } from "@stellars/db";
 import type { ParsedEvent } from "../spec-parser.js";
 import { toNumericString, unixSeconds } from "../spec-parser.js";
 
@@ -51,9 +51,32 @@ export async function handleVaultEvent(db: Db, event: ParsedEvent) {
       return handleClaimFeesTo(db, event);
     case "pause":
       return handlePause(db, event);
+    case "lockup":
+      return handleLockup(db, event);
     default:
       break;
   }
+}
+
+async function handleLockup(db: Db, event: ParsedEvent) {
+  const { data } = event;
+  const user = String(data.user);
+  const expiresAt = toNumericString(data.expires_at);
+  await db
+    .insert(vaultLockups)
+    .values({
+      user,
+      expires_at: expiresAt,
+      updated_at_ledger: event.ledger,
+    })
+    .onConflictDoUpdate({
+      target: vaultLockups.user,
+      set: {
+        expires_at: expiresAt,
+        updated_at_ledger: event.ledger,
+        updated_at: new Date(),
+      },
+    });
 }
 
 async function handleDeposit(db: Db, event: ParsedEvent) {

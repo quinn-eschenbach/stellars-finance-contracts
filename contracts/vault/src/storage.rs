@@ -13,8 +13,10 @@ pub enum VaultDataKey {
     NetGlobalTraderPnl,
     IsPaused,
     Version,
-    /// Per-user last deposit timestamp (persistent storage)
-    LastDepositTime(Address),
+    /// Per-user lockup expiry timestamp (persistent storage). Frozen at
+    /// deposit time as `now + cooldown_duration`; subsequent admin changes
+    /// to `cooldown_duration` MUST NOT alter already-stored values.
+    LockupExpiresAt(Address),
 }
 
 // ---------------------------------------------------------------------------
@@ -142,17 +144,17 @@ pub fn save_version(env: &Env, version: u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent storage: LastDepositTime (per-user)
+// Persistent storage: LockupExpiresAt (per-user)
 // ---------------------------------------------------------------------------
 
-pub fn get_last_deposit_time(env: &Env, user: &Address) -> Option<u64> {
-    let key = VaultDataKey::LastDepositTime(user.clone());
+pub fn get_lockup_expires_at(env: &Env, user: &Address) -> Option<u64> {
+    let key = VaultDataKey::LockupExpiresAt(user.clone());
     env.storage().persistent().get(&key)
 }
 
-pub fn set_last_deposit_time(env: &Env, user: &Address, timestamp: u64) {
-    let key = VaultDataKey::LastDepositTime(user.clone());
-    env.storage().persistent().set(&key, &timestamp);
+pub fn set_lockup_expires_at(env: &Env, user: &Address, expires_at: u64) {
+    let key = VaultDataKey::LockupExpiresAt(user.clone());
+    env.storage().persistent().set(&key, &expires_at);
     env.storage()
         .persistent()
         .extend_ttl(&key, SHARED_THRESHOLD, SHARED_BUMP);

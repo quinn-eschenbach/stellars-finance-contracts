@@ -67,6 +67,8 @@ pub const DEFAULT_FUNDING_CUT_BPS: u32 = 500;
 pub const DEFAULT_ADL_PNL_BPS: u32 = 9_000;
 /// Default ADL trigger: utilization threshold: 95% (9500 bps).
 pub const DEFAULT_ADL_UTILIZATION_BPS: u32 = 9_500;
+/// Default liquidation health threshold: 2% (200 bps). Liquidations trigger when health < collateral × threshold_bps / 10_000.
+pub const DEFAULT_LIQUIDATION_THRESHOLD_BPS: u32 = 200;
 
 /// Default base borrow rate: 1% annualized (100 bps).
 pub const DEFAULT_BASE_BORROW_RATE_BPS: i128 = 100;
@@ -140,6 +142,7 @@ pub struct ProtocolLimits {
     pub funding_cut_bps: u32,
     pub adl_pnl_bps: u32,
     pub adl_utilization_bps: u32,
+    pub liquidation_threshold_bps: u32,
 }
 
 /// Borrow rate kink curve and funding rate parameters (all in basis points).

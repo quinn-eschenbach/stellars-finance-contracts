@@ -4,6 +4,7 @@ export { vaultState } from "./vault.js";
 export { protocolConfig } from "./config.js";
 export { trades } from "./trades.js";
 export { vaultEvents } from "./vault-events.js";
+export { vaultLockups } from "./vault-lockups.js";
 export { lpTransfers } from "./lp-transfers.js";
 export { feeEvents } from "./fee-events.js";
 export { oraclePrices } from "./oracle-prices.js";

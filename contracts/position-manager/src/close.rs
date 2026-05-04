@@ -96,7 +96,9 @@ pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symb
 
     let eval = market_tick.evaluate(&pos, pos.size, pos.collateral);
 
-    if eval.health >= 0 {
+    let limits = load_limits(env);
+    let threshold_amount = pos.collateral * (limits.liquidation_threshold_bps as i128) / math::BPS;
+    if eval.health >= threshold_amount {
         panic_with_error!(env, PositionManagerError::HealthFactorOk);
     }
 

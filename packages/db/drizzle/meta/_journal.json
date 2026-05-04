@@ -8,6 +8,13 @@
       "when": 1777853303808,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777859180788,
+      "tag": "0001_lp_lockups_and_liquidation_threshold",
+      "breakpoints": true
     }
   ]
 }

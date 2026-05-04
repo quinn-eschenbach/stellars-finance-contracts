@@ -32,36 +32,62 @@ impl ConfigManager for ConfigManagerContract {
         set_role_member(&env, &admin_role, &admin_address, true);
 
         // Set sensible defaults so PM never panics reading unconfigured values
-        storage::save_fee_splits(
-            &env,
-            &FeeSplits {
-                keeper_bps: shared::DEFAULT_KEEPER_BPS,
-                dev_bps: shared::DEFAULT_DEV_BPS,
-                lp_bps: shared::DEFAULT_LP_BPS,
-            },
-        );
-        storage::save_protocol_limits(
-            &env,
-            &ProtocolLimits {
-                min_collateral: shared::DEFAULT_MIN_COLLATERAL,
-                cooldown_duration: shared::DEFAULT_COOLDOWN_DURATION,
-                min_position_lifetime: shared::DEFAULT_MIN_POSITION_LIFETIME,
-                max_utilization_ratio: shared::DEFAULT_MAX_UTILIZATION_RATIO,
-                funding_cut_bps: shared::DEFAULT_FUNDING_CUT_BPS,
-                adl_pnl_bps: shared::DEFAULT_ADL_PNL_BPS,
-                adl_utilization_bps: shared::DEFAULT_ADL_UTILIZATION_BPS,
-            },
-        );
-        storage::save_borrow_rate_config(
-            &env,
-            &BorrowRateConfig {
-                base_borrow_rate_bps: shared::DEFAULT_BASE_BORROW_RATE_BPS,
-                slope1_bps: shared::DEFAULT_SLOPE1_BPS,
-                slope2_bps: shared::DEFAULT_SLOPE2_BPS,
-                optimal_utilization_bps: shared::DEFAULT_OPTIMAL_UTILIZATION_BPS,
-                base_funding_rate_bps: shared::DEFAULT_BASE_FUNDING_RATE_BPS,
-            },
-        );
+        let fee_splits = FeeSplits {
+            keeper_bps: shared::DEFAULT_KEEPER_BPS,
+            dev_bps: shared::DEFAULT_DEV_BPS,
+            lp_bps: shared::DEFAULT_LP_BPS,
+        };
+        storage::save_fee_splits(&env, &fee_splits);
+
+        let protocol_limits = ProtocolLimits {
+            min_collateral: shared::DEFAULT_MIN_COLLATERAL,
+            cooldown_duration: shared::DEFAULT_COOLDOWN_DURATION,
+            min_position_lifetime: shared::DEFAULT_MIN_POSITION_LIFETIME,
+            max_utilization_ratio: shared::DEFAULT_MAX_UTILIZATION_RATIO,
+            funding_cut_bps: shared::DEFAULT_FUNDING_CUT_BPS,
+            adl_pnl_bps: shared::DEFAULT_ADL_PNL_BPS,
+            adl_utilization_bps: shared::DEFAULT_ADL_UTILIZATION_BPS,
+            liquidation_threshold_bps: shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS,
+        };
+        storage::save_protocol_limits(&env, &protocol_limits);
+
+        let borrow_rate_config = BorrowRateConfig {
+            base_borrow_rate_bps: shared::DEFAULT_BASE_BORROW_RATE_BPS,
+            slope1_bps: shared::DEFAULT_SLOPE1_BPS,
+            slope2_bps: shared::DEFAULT_SLOPE2_BPS,
+            optimal_utilization_bps: shared::DEFAULT_OPTIMAL_UTILIZATION_BPS,
+            base_funding_rate_bps: shared::DEFAULT_BASE_FUNDING_RATE_BPS,
+        };
+        storage::save_borrow_rate_config(&env, &borrow_rate_config);
+
+        // Emit the seeded defaults so off-chain indexers populate
+        // `protocol_config` from ledger 0 — without these, the keeper's
+        // env-var fallback would mask a partially-empty config row.
+        events::FeeSplitsUpdate {
+            keeper_bps: fee_splits.keeper_bps,
+            dev_bps: fee_splits.dev_bps,
+            lp_bps: fee_splits.lp_bps,
+        }
+        .publish(&env);
+        events::LimitsUpdate {
+            min_collateral: protocol_limits.min_collateral,
+            cooldown_duration: protocol_limits.cooldown_duration,
+            min_position_lifetime: protocol_limits.min_position_lifetime,
+            max_utilization_ratio: protocol_limits.max_utilization_ratio,
+            funding_cut_bps: protocol_limits.funding_cut_bps,
+            adl_pnl_bps: protocol_limits.adl_pnl_bps,
+            adl_utilization_bps: protocol_limits.adl_utilization_bps,
+            liquidation_threshold_bps: protocol_limits.liquidation_threshold_bps,
+        }
+        .publish(&env);
+        events::BorrowRateUpdate {
+            base_borrow_rate_bps: borrow_rate_config.base_borrow_rate_bps,
+            slope1_bps: borrow_rate_config.slope1_bps,
+            slope2_bps: borrow_rate_config.slope2_bps,
+            optimal_utilization_bps: borrow_rate_config.optimal_utilization_bps,
+            base_funding_rate_bps: borrow_rate_config.base_funding_rate_bps,
+        }
+        .publish(&env);
 
         storage::set_initialized(&env);
         bump_instance_ttl(&env);
@@ -122,6 +148,9 @@ impl ConfigManager for ConfigManagerContract {
         if limits.adl_utilization_bps < 1 || limits.adl_utilization_bps > 10_000 {
             panic_with_error!(&env, ConfigManagerError::InvalidLimits);
         }
+        if limits.liquidation_threshold_bps > 1_000 {
+            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
+        }
         // Safety ceilings: prevent trapping funds via extreme time parameters
         // 30 days max cooldown, 24 hours max position lifetime
         if limits.cooldown_duration > 2_592_000 {
@@ -139,6 +168,7 @@ impl ConfigManager for ConfigManagerContract {
             funding_cut_bps: limits.funding_cut_bps,
             adl_pnl_bps: limits.adl_pnl_bps,
             adl_utilization_bps: limits.adl_utilization_bps,
+            liquidation_threshold_bps: limits.liquidation_threshold_bps,
         }.publish(&env);
         bump_instance_ttl(&env);
     }

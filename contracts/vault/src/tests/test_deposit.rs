@@ -335,33 +335,19 @@ fn test_max_deposit_when_not_paused_returns_max() {
 }
 
 // ===========================================================================
-// 10. Deposit zero amount
+// 10. Deposit zero amount — must revert with ZeroAmount (#6).
+//
+// Without the guard, anyone can extend a victim's lockup for free by minting
+// 0 shares to them. The wrapper rejects zero-asset deposits before recording
+// the lockup or delegating to OZ Vault::deposit.
 // ===========================================================================
 
 #[test]
-fn test_deposit_zero_amount() {
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_deposit_zero_amount_reverts() {
     let fix = setup();
     let depositor = Address::generate(&fix.env);
-
-    // Deposit 0 USDC -- OZ Vault should handle this gracefully (0 shares returned)
-    let shares = fix.vault_client.deposit(&0i128, &depositor, &depositor, &depositor);
-
-    assert_eq!(
-        shares, 0,
-        "Depositing 0 assets must return 0 shares"
-    );
-
-    assert_eq!(
-        fix.vault_client.total_assets(),
-        0,
-        "total_assets must remain 0 after a zero deposit"
-    );
-
-    assert_eq!(
-        fix.vault_client.total_supply(),
-        0,
-        "total_supply must remain 0 after a zero deposit"
-    );
+    fix.vault_client.deposit(&0i128, &depositor, &depositor, &depositor);
 }
 
 // ===========================================================================

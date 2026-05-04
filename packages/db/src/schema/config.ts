@@ -14,6 +14,7 @@ export const protocolConfig = pgTable("protocol_config", {
   funding_cut_bps: integer().notNull().default(0),
   adl_pnl_bps: integer().notNull().default(0),
   adl_utilization_bps: integer().notNull().default(0),
+  liquidation_threshold_bps: integer().notNull().default(0),
   // Borrow rate config
   base_borrow_rate_bps: numeric().notNull().default("0"),
   slope1_bps: numeric().notNull().default("0"),

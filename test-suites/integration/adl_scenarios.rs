@@ -25,6 +25,7 @@ fn lower_adl_thresholds(f: &Fixture) {
             funding_cut_bps: 500,
             adl_pnl_bps: 1_000,
             adl_utilization_bps: 5_000,
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
@@ -56,6 +57,7 @@ fn test_adl_triggers_via_pnl_ratio() {
             funding_cut_bps: 500,
             adl_pnl_bps: 200,            // 2% of total assets triggers ADL
             adl_utilization_bps: 9_500,   // keep util threshold high (won't trigger)
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
@@ -121,6 +123,7 @@ fn test_adl_triggers_via_utilization() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,          // keep PnL threshold high
             adl_utilization_bps: 3_000,   // low: 30% utilization triggers ADL
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
@@ -169,6 +172,7 @@ fn test_adl_payout_zero_when_health_negative() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 3_000,
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
@@ -210,6 +214,7 @@ fn test_adl_reduces_oi() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 3_000,
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
@@ -269,6 +274,7 @@ fn test_adl_cascade_multiple_positions() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 2_100, // low: 21% — chosen so third ADL at ~200k/1M ≈ 20% fails
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
@@ -337,6 +343,7 @@ fn test_adl_short_position() {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 3_000,
+            liquidation_threshold_bps: 200,
         },
     );
     f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {

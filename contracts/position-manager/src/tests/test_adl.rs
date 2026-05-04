@@ -124,6 +124,7 @@ fn setup_adl<'a>() -> TestFixture<'a> {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 9_500,
+            liquidation_threshold_bps: 200,
         },
     );
 
@@ -271,6 +272,7 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
             adl_utilization_bps: 9_500,
+            liquidation_threshold_bps: 200,
         },
     );
 

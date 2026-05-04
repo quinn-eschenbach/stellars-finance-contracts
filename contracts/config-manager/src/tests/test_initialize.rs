@@ -216,3 +216,65 @@ fn test_initialize_role_member_entry_readable_after_write() {
         "ADMIN role entry must be true after initialize with TTL correctly extended"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Initialize emits seeded-default events so off-chain indexers populate
+// `protocol_config` from ledger 0. Without these, the keeper's env-var
+// fallback would mask a partially-empty config row.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_initialize_emits_seeded_default_events() {
+    use soroban_sdk::{testutils::Events as _, Symbol, TryIntoVal, Val};
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    let cm_id = client.address.clone();
+    let mut saw_feecfg = false;
+    let mut saw_limits = false;
+    let mut saw_rates = false;
+
+    for (contract, topics, data) in env.events().all() {
+        if contract != cm_id {
+            continue;
+        }
+        if topics.len() == 0 {
+            continue;
+        }
+        let topic0: Symbol = match topics.get(0).unwrap().try_into_val(&env) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if topic0 == Symbol::new(&env, "feecfg") {
+            let parsed: Result<(u32, u32, u32), _> = data.try_into_val(&env);
+            let (k, d, l) = parsed.expect("feecfg event must unpack as (u32, u32, u32)");
+            assert_eq!(k, shared::DEFAULT_KEEPER_BPS);
+            assert_eq!(d, shared::DEFAULT_DEV_BPS);
+            assert_eq!(l, shared::DEFAULT_LP_BPS);
+            saw_feecfg = true;
+        } else if topic0 == Symbol::new(&env, "limits") {
+            let parsed: Result<(i128, u64, u64, i128, u32, u32, u32, u32), _> =
+                data.try_into_val(&env);
+            let tup = parsed.expect("limits event must unpack as 8-tuple including liquidation_threshold_bps");
+            assert_eq!(tup.0, shared::DEFAULT_MIN_COLLATERAL);
+            assert_eq!(tup.1, shared::DEFAULT_COOLDOWN_DURATION);
+            assert_eq!(tup.7, shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS);
+            saw_limits = true;
+        } else if topic0 == Symbol::new(&env, "rates") {
+            let parsed: Result<(i128, i128, i128, i128, i128), _> = data.try_into_val(&env);
+            let tup = parsed.expect("rates event must unpack as 5-tuple");
+            assert_eq!(tup.0, shared::DEFAULT_BASE_BORROW_RATE_BPS);
+            saw_rates = true;
+        }
+        let _: Val = topics.get(0).unwrap();
+    }
+
+    assert!(saw_feecfg, "initialize must emit a `feecfg` event with seeded defaults");
+    assert!(saw_limits, "initialize must emit a `limits` event with seeded defaults");
+    assert!(saw_rates, "initialize must emit a `rates` event with seeded defaults");
+}

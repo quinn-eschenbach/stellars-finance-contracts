@@ -28,6 +28,7 @@ fn test_update_protocol_limits_zero_min_collateral_errors() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -54,6 +55,7 @@ fn test_update_protocol_limits_negative_min_collateral_errors() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -80,6 +82,7 @@ fn test_update_protocol_limits_zero_max_utilization_errors() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -106,6 +109,7 @@ fn test_update_protocol_limits_max_utilization_above_10000_errors() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -149,6 +153,7 @@ fn test_update_protocol_limits_max_utilization_exactly_10000_succeeds() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -173,6 +178,7 @@ fn test_update_protocol_limits_min_collateral_of_one_succeeds() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -197,6 +203,7 @@ fn test_update_protocol_limits_i128_min_collateral_errors() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -223,6 +230,7 @@ fn test_update_protocol_limits_funding_cut_at_10000_errors() {
         funding_cut_bps: 10_000,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -249,6 +257,7 @@ fn test_update_protocol_limits_funding_cut_zero_succeeds() {
         funding_cut_bps: 0,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
@@ -284,6 +293,7 @@ fn test_update_protocol_limits_negative_max_utilization_errors() {
         funding_cut_bps: 500,
         adl_pnl_bps: 9_000,
         adl_utilization_bps: 9_500,
+        liquidation_threshold_bps: 200,
     };
 
     let result = client.try_update_protocol_limits(&admin, &limits);
