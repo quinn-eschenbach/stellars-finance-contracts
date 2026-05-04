@@ -219,21 +219,12 @@ invoke --id "$OR_ID" -- set_oracle_config \
   --caller "$ADMIN_ADDR" \
   --config '{"cache_duration":2,"max_deviation_bps":"500","staleness_threshold":600}'
 
-# ---------- Seed oracle prices ----------
-echo ""
-echo "=== Seeding oracle prices ==="
-
-echo "  BTC = 650000000000 (65,000 * 1e7)"
-invoke --id "$ORACLE_ID" -- set_price \
-  --caller "$ADMIN_ADDR" \
-  --symbol BTCUSD \
-  --price 650000000000
-
-echo "  ETH = 35000000000 (3,500 * 1e7)"
-invoke --id "$ORACLE_ID" -- set_price \
-  --caller "$ADMIN_ADDR" \
-  --symbol ETHUSD \
-  --price 35000000000
+# ---------- Mock oracle prices intentionally not seeded ----------
+# The mock-oracle stays registered as a primary source so simulation
+# fixtures can push prices through it, but starting with no price means
+# get_price returns 0 / errors → OracleRouter filters it from the median.
+# Live CEX feeds (binance + kucoin) then drive the median exclusively
+# until the simulation pushes its own prices.
 
 # ---------- Configure markets in PositionManager ----------
 echo ""
