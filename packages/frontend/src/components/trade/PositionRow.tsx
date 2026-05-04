@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { useAddress, useWallet } from "@/wallet/WalletProvider";
 import { positionManager } from "@/contracts/clients";
 import { signAndSendWithWallet } from "@/contracts/sender";
-import { formatPrice, formatUsdc, parsePrice } from "@/lib/utils";
+import { formatPrice, parsePrice } from "@/lib/utils";
 import { unrealizedPnl } from "@/lib/math";
 import { queryKeys } from "@/api/hooks";
 import type { PositionRow as PositionRowData } from "@/api/types";
@@ -85,13 +86,13 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
       </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs md:grid-cols-4">
-        <Stat label="Size" value={`$${formatUsdc(position.size)}`} />
-        <Stat label="Margin" value={`$${formatUsdc(position.collateral)}`} />
-        <Stat label="Entry" value={`$${formatPrice(position.entry_price)}`} />
+        <Stat label="Size" value={<NumberFlowUsd value={position.size} />} />
+        <Stat label="Margin" value={<NumberFlowUsd value={position.collateral} />} />
+        <Stat label="Entry" value={<NumberFlowUsd value={position.entry_price} />} />
         <Stat
           label="PnL"
           value={
-            markPrice ? `${pnl >= 0n ? "+" : "−"}$${formatUsdc(pnl, { abs: true })}` : "—"
+            markPrice ? <NumberFlowUsd value={pnl} signDisplay="exceptZero" /> : "—"
           }
           className={pnlClass}
         />
@@ -101,11 +102,11 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
         <div className="flex gap-4">
           <span>
             <span className="text-muted-foreground">TP </span>
-            <span>{tp > 0n ? `$${formatPrice(tp)}` : "—"}</span>
+            <span>{tp > 0n ? <NumberFlowUsd value={tp} /> : "—"}</span>
           </span>
           <span>
             <span className="text-muted-foreground">SL </span>
-            <span>{sl > 0n ? `$${formatPrice(sl)}` : "—"}</span>
+            <span>{sl > 0n ? <NumberFlowUsd value={sl} /> : "—"}</span>
           </span>
         </div>
         <Button
@@ -138,7 +139,7 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
   );
 }
 
-function Stat({ label, value, className }: { label: string; value: string; className?: string }) {
+function Stat({ label, value, className }: { label: string; value: ReactNode; className?: string }) {
   return (
     <div className="flex flex-col">
       <span className="text-muted-foreground">{label}</span>

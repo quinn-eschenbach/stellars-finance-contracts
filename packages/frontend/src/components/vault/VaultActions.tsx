@@ -3,11 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAddress, useWallet } from "@/wallet/WalletProvider";
 import { mockToken, vault } from "@/contracts/clients";
 import { signAndSendWithWallet } from "@/contracts/sender";
-import { formatUsdc, parseUsdc } from "@/lib/utils";
+import { parseUsdc } from "@/lib/utils";
 import { queryKeys } from "@/api/hooks";
 
 /**
@@ -86,7 +87,7 @@ export function VaultActions() {
     <div className="space-y-4">
       <div className="flex items-center justify-between text-sm font-mono">
         <span className="text-muted-foreground">Wallet USDC</span>
-        <span>${usdcBalance.data ? formatUsdc(usdcBalance.data) : "—"}</span>
+        <span>{usdcBalance.data != null ? <NumberFlowUsd value={usdcBalance.data} /> : "—"}</span>
       </div>
 
       <Tabs defaultValue="deposit">

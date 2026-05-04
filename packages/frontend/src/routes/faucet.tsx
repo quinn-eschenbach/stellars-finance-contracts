@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { useAddress, useWallet } from "@/wallet/WalletProvider";
 import { mockToken } from "@/contracts/clients";
 import { signAndSendWithWallet } from "@/contracts/sender";
-import { formatUsdc, parseUsdc } from "@/lib/utils";
+import { NumberFlowUsd } from "@/components/ui/number-flow";
+import { parseUsdc } from "@/lib/utils";
 import { MOCK_TOKEN_CONTRACT } from "@/lib/constants";
 
 export const Route = createFileRoute("/faucet")({
@@ -78,7 +79,7 @@ function FaucetPage() {
             <>
               <div className="flex items-center justify-between text-sm font-mono">
                 <span className="text-muted-foreground">Current balance</span>
-                <span>${balance.data ? formatUsdc(balance.data) : "—"}</span>
+                <span>{balance.data != null ? <NumberFlowUsd value={balance.data} /> : "—"}</span>
               </div>
               <div className="space-y-2">
                 <label className="text-sm text-muted-foreground">Amount (USDC)</label>

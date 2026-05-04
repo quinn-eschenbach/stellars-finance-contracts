@@ -1,8 +1,9 @@
+import type { ReactNode } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useMarkets, usePrices } from "@/api/hooks";
 import { useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatPrice, formatUsdc } from "@/lib/utils";
+import { NumberFlowUsd } from "@/components/ui/number-flow";
 
 export const Route = createFileRoute("/markets")({
   component: MarketsList,
@@ -35,9 +36,9 @@ function MarketsList() {
                   <CardTitle className="text-base">{m.symbol}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-1 text-sm">
-                  <Row label="Price" value={price ? `$${formatPrice(price)}` : "—"} />
-                  <Row label="Long OI" value={`$${formatUsdc(m.long_open_interest)}`} />
-                  <Row label="Short OI" value={`$${formatUsdc(m.short_open_interest)}`} />
+                  <Row label="Price" value={price ? <NumberFlowUsd value={price} /> : "—"} />
+                  <Row label="Long OI" value={<NumberFlowUsd value={m.long_open_interest} />} />
+                  <Row label="Short OI" value={<NumberFlowUsd value={m.short_open_interest} />} />
                   <Row label="Max leverage" value={`${m.max_leverage || "—"}x`} />
                 </CardContent>
               </Card>
@@ -49,7 +50,7 @@ function MarketsList() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between font-mono">
       <span className="text-muted-foreground">{label}</span>

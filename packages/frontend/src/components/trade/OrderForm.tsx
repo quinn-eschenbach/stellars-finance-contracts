@@ -1,14 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAddress, useWallet } from "@/wallet/WalletProvider";
 import { positionManager } from "@/contracts/clients";
 import { signAndSendWithWallet } from "@/contracts/sender";
-import { formatPrice, formatUsdc, parsePrice, parseUsdc } from "@/lib/utils";
+import { parsePrice, parseUsdc } from "@/lib/utils";
 import { approxLiquidationPrice } from "@/lib/math";
 import { queryKeys } from "@/api/hooks";
 
@@ -185,9 +186,9 @@ export function OrderForm({
       </div>
 
       <div className="space-y-1 rounded-md border border-border bg-secondary/30 p-3 font-mono text-xs">
-        <Row label="Size" value={`$${formatUsdc(sizeScaled)}`} />
-        <Row label="Mark price" value={markPrice ? `$${formatPrice(markPrice)}` : "—"} />
-        <Row label="Est. liq price" value={liq ? `$${formatPrice(liq)}` : "—"} />
+        <Row label="Size" value={<NumberFlowUsd value={sizeScaled} />} />
+        <Row label="Mark price" value={markPrice ? <NumberFlowUsd value={markPrice} /> : "—"} />
+        <Row label="Est. liq price" value={liq ? <NumberFlowUsd value={liq} /> : "—"} />
       </div>
 
       <Button
@@ -238,7 +239,7 @@ function validateSl(markPrice: bigint, sl: bigint, isLong: boolean): string | nu
   return null;
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between">
       <span className="text-muted-foreground">{label}</span>

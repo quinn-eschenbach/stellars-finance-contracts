@@ -1,14 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMarket, usePositions, usePrices } from "@/api/hooks";
 import { useStreamMarket, useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { MarkChart, type ChartPriceLine } from "@/components/trade/MarkChart";
 import { OrderForm } from "@/components/trade/OrderForm";
 import { PositionRow } from "@/components/trade/PositionRow";
 import { useAddress } from "@/wallet/WalletProvider";
 import { approxLiquidationPrice } from "@/lib/math";
-import { formatPrice, formatUsdc, parseUsdc } from "@/lib/utils";
+import { parseUsdc } from "@/lib/utils";
 
 const PRICE_UNIT = 10_000_000;
 
@@ -114,7 +115,9 @@ function TradePage() {
     <div className="space-y-6">
       <div className="flex items-baseline gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">{symbol}</h1>
-        <span className="font-mono text-xl">{markPrice ? `$${formatPrice(markPrice)}` : "—"}</span>
+        <span className="font-mono text-xl">
+          {markPrice ? <NumberFlowUsd value={markPrice} /> : "—"}
+        </span>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -137,10 +140,18 @@ function TradePage() {
             <CardContent className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm md:grid-cols-4">
               {market.data && (
                 <>
-                  <Stat label="Long OI" value={`$${formatUsdc(market.data.long_open_interest)}`} />
-                  <Stat label="Short OI" value={`$${formatUsdc(market.data.short_open_interest)}`} />
+                  <Stat label="Long OI" value={<NumberFlowUsd value={market.data.long_open_interest} />} />
+                  <Stat label="Short OI" value={<NumberFlowUsd value={market.data.short_open_interest} />} />
                   <Stat label="Max leverage" value={`${market.data.max_leverage}x`} />
-                  <Stat label="Mark unrealized" value={`$${formatUsdc(market.data.market_unrealized_pnl)}`} />
+                  <Stat
+                    label="Mark unrealized"
+                    value={
+                      <NumberFlowUsd
+                        value={market.data.market_unrealized_pnl}
+                        signDisplay="exceptZero"
+                      />
+                    }
+                  />
                 </>
               )}
             </CardContent>
@@ -187,7 +198,7 @@ function TradePage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex flex-col font-mono">
       <span className="text-xs text-muted-foreground">{label}</span>

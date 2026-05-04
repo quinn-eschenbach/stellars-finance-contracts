@@ -1,10 +1,11 @@
+import type { ReactNode } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { ArrowRight, Gauge, Layers, ShieldCheck, Zap } from "lucide-react";
 import { useMarkets, usePrices, useVault } from "@/api/hooks";
 import { useStreamPrices } from "@/api/sse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatPrice, formatUsdc } from "@/lib/utils";
+import { NumberFlowPlain, NumberFlowUsd } from "@/components/ui/number-flow";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -98,15 +99,18 @@ function StatsStrip({
   return (
     <section>
       <div className="grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-3">
-        <Stat label="Total value locked" value={tvl ? `$${formatUsdc(tvl, { decimals: 0 })}` : "—"} />
-        <Stat label="Open interest" value={`$${formatUsdc(openInterest, { decimals: 0 })}`} />
-        <Stat label="Live markets" value={marketCount.toString()} />
+        <Stat
+          label="Total value locked"
+          value={tvl ? <NumberFlowUsd value={tvl} decimals={0} /> : "—"}
+        />
+        <Stat label="Open interest" value={<NumberFlowUsd value={openInterest} decimals={0} />} />
+        <Stat label="Live markets" value={<NumberFlowPlain value={marketCount} />} />
       </div>
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="bg-card px-6 py-6">
       <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
@@ -191,10 +195,12 @@ function FeaturedMarkets({
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="font-mono text-2xl tabular-nums">
-                    {price ? `$${formatPrice(price)}` : "—"}
+                    {price ? <NumberFlowUsd value={price} /> : "—"}
                   </div>
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>OI ${formatUsdc(oi.toString(), { decimals: 0 })}</span>
+                    <span>
+                      OI <NumberFlowUsd value={oi.toString()} decimals={0} />
+                    </span>
                     <span>{m.max_leverage || "—"}× max</span>
                   </div>
                 </CardContent>
