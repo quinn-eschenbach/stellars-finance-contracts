@@ -38,6 +38,11 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+      args:
+        # These flow into the frontend's `vite build` step. Coolify maps them
+        # from "Build-time" environment variables on the service.
+        VITE_NETWORK: ${VITE_NETWORK:-local}
+        VITE_API_URL: ${VITE_API_URL:-/api}
     restart: unless-stopped
     env_file:
       - ${ENV_FILE:-.env.local}

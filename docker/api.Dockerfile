@@ -55,6 +55,14 @@ COPY packages/protocol-clients packages/protocol-clients
 COPY packages/protocol-math    packages/protocol-math
 COPY packages/frontend         packages/frontend
 
+# Vite reads VITE_* from the environment during the build. Without these the
+# bundled frontend would default to `local` (see lib/constants.ts) and ship
+# the wrong contract addresses.
+ARG VITE_NETWORK=local
+ARG VITE_API_URL=/api
+ENV VITE_NETWORK=${VITE_NETWORK} \
+    VITE_API_URL=${VITE_API_URL}
+
 RUN pnpm --filter @stellars/frontend build
 
 # ---------- runtime ----------
