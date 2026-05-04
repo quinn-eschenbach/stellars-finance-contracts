@@ -5,13 +5,31 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
-/** USDC has 7 decimals throughout the protocol (matching Stellar's i128 scaling). */
+/**
+ * Protocol scaling — single source of truth for the 10^7 factor that USDC
+ * amounts and oracle prices share throughout the contracts. Anything that
+ * needs to descale or format a scaled value should import from here.
+ */
 export const USDC_DECIMALS = 7;
-const USDC_UNIT = 10_000_000n;
-
-/** Oracle prices and entry prices are scaled by 10^7. */
 export const PRICE_DECIMALS = 7;
-const PRICE_UNIT = 10_000_000n;
+export const USDC_UNIT = 10_000_000n;
+export const PRICE_UNIT = 10_000_000n;
+
+/**
+ * Convert a protocol-scaled value to a JS number. Splits whole / fractional
+ * parts so values past 2^53 raw don't lose the fraction when cast directly.
+ * Returns a plain `number`; precision past ~$9e8 raw will drift but that's
+ * fine for display.
+ */
+export function descale(value: bigint | string | number, unit: bigint = PRICE_UNIT): number {
+  if (typeof value === "number") return value;
+  const big = typeof value === "string" ? BigInt(value) : value;
+  const sign = big < 0n ? -1 : 1;
+  const abs = big < 0n ? -big : big;
+  const whole = abs / unit;
+  const frac = abs % unit;
+  return sign * (Number(whole) + Number(frac) / Number(unit));
+}
 
 /** Format a scaled USDC amount as a display string. */
 export function formatUsdc(scaled: bigint | string, opts: { decimals?: number; abs?: boolean } = {}): string {
@@ -25,6 +43,22 @@ export function formatUsdc(scaled: bigint | string, opts: { decimals?: number; a
   const fracStr = frac.toString().padStart(7, "0").slice(0, dp);
   const wholeStr = whole.toLocaleString("en-US");
   return `${negative ? "-" : ""}${wholeStr}${dp > 0 ? "." + fracStr : ""}`;
+}
+
+/**
+ * Compact USD formatter ("$1.2M", "$890K", "$42"). Used wherever space is at
+ * a premium and exact cents aren't meaningful — leaderboard, KPI strips,
+ * imbalance hints. Single-decimal precision keeps things scannable.
+ */
+export function formatUsdcCompact(scaled: bigint | string, opts: { decimals?: number } = {}): string {
+  const dp = opts.decimals ?? 1;
+  const usd = descale(scaled, USDC_UNIT);
+  const sign = usd < 0 ? "-" : "";
+  const abs = Math.abs(usd);
+  if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(dp)}B`;
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(dp)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(dp)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
 }
 
 /** Format a scaled price (USD per BTC, etc) as a display string. */

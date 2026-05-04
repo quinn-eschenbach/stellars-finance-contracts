@@ -1,5 +1,6 @@
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { apiGet } from "./client";
+import { mockToken, vault } from "@/contracts/clients";
 import type {
   CandleInterval,
   CandleRow,
@@ -7,11 +8,16 @@ import type {
   MarketRow,
   PositionRow,
   PriceRow,
+  ProtocolConfigRow,
   TradeRow,
   VaultStateRow,
 } from "./types";
 
-/** Query keys — exported so SSE hooks can invalidate / setQueryData on the same keys. */
+/**
+ * Query keys — exported so SSE hooks can invalidate / setQueryData on the same
+ * keys, and so mutation handlers can target specific caches without spreading
+ * magic-string keys across components.
+ */
 export const queryKeys = {
   markets: ["markets"] as const,
   market: (symbol: string) => ["markets", symbol] as const,
@@ -22,6 +28,10 @@ export const queryKeys = {
   candles: (symbol: string, interval: CandleInterval) =>
     ["candles", symbol, interval] as const,
   leaderboard: (limit: number) => ["leaderboard", limit] as const,
+  walletBalance: (address: string | null | undefined) =>
+    ["walletBalance", address ?? ""] as const,
+  lockup: (address: string | null | undefined) => ["lockup", address ?? ""] as const,
+  config: ["config"] as const,
 };
 
 export interface TradesFilters {
@@ -114,6 +124,66 @@ export function useLeaderboard(limit = 50, opts?: UseQueryOptions<LeaderboardRow
     queryKey: queryKeys.leaderboard(limit),
     queryFn: () => apiGet<LeaderboardRow[]>(`/leaderboard?limit=${limit}`),
     staleTime: 10_000,
+    ...opts,
+  });
+}
+
+/**
+ * Wallet's mock-USDC balance (scaled bigint). Sourced via a contract simulation
+ * rather than the API — but the seam the rest of the app sees is the same
+ * registered query key. Mutations (mint, deposit, withdraw, open, close) should
+ * `qc.invalidateQueries({ queryKey: queryKeys.walletBalance(address) })` on
+ * success rather than refetching ad-hoc.
+ */
+export function useWalletBalance(
+  address: string | null | undefined,
+  opts?: UseQueryOptions<bigint>,
+) {
+  return useQuery({
+    queryKey: queryKeys.walletBalance(address),
+    queryFn: async () => {
+      if (!address) return 0n;
+      const tx = await mockToken(address).balance({ account: address });
+      return BigInt(tx.result?.toString() ?? "0");
+    },
+    enabled: !!address,
+    refetchInterval: 10_000,
+    ...opts,
+  });
+}
+
+/**
+ * Protocol-wide config singleton — fee splits, limits, BorrowRateConfig, and
+ * last_unpause_time. Reads change rarely (admin-only ops); a 60s staleTime is
+ * fine, with manual invalidation if/when an admin panel ships.
+ */
+export function useProtocolConfig(opts?: UseQueryOptions<ProtocolConfigRow>) {
+  return useQuery({
+    queryKey: queryKeys.config,
+    queryFn: () => apiGet<ProtocolConfigRow>("/config"),
+    staleTime: 60_000,
+    ...opts,
+  });
+}
+
+/**
+ * Per-user LP lockup expiry (unix seconds). Frozen at deposit time and reads
+ * zero before the first deposit, so the queryFn can cheaply default to 0 when
+ * no address is connected.
+ */
+export function useLockup(
+  address: string | null | undefined,
+  opts?: UseQueryOptions<number>,
+) {
+  return useQuery({
+    queryKey: queryKeys.lockup(address),
+    queryFn: async () => {
+      if (!address) return 0;
+      const tx = await vault(address).lockup_expires_at({ user: address });
+      return Number(tx.result ?? 0);
+    },
+    enabled: !!address,
+    staleTime: 5_000,
     ...opts,
   });
 }

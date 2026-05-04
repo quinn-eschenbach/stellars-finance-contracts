@@ -1,18 +1,15 @@
 /**
- * Frontend-side display math. Mirrors a subset of the keeper / contract math
- * used to surface human-readable signals (estimated liquidation price, P&L,
- * effective leverage) without round-tripping through the contract.
- *
- * All values are protocol-scaled bigints unless stated otherwise.
+ * Frontend-only display heuristics. The on-chain math (PnL, fees, indices)
+ * lives in `@stellars/protocol-math`; only formulas that don't have a
+ * protocol counterpart belong here.
  */
-
-const PRECISION = 10_000_000n; // 1e7 — USDC and price scaling
-const BPS = 10_000n;
 
 /**
  * Approximate liquidation price for a brand-new position (ignoring borrow /
- * funding fees). Useful as a rough signal in the order preview; the actual
- * liquidation depends on accrued indices over the position's lifetime.
+ * funding fees). Used in the order preview where exact projection isn't
+ * available — actual liquidation depends on accrued indices over the
+ * position's lifetime, which `MarketTick.project()` can give us once the
+ * full projection seam is wired through.
  *
  * Long:  liq ≈ entry × (1 − 1/leverage)
  * Short: liq ≈ entry × (1 + 1/leverage)
@@ -27,23 +24,3 @@ export function approxLiquidationPrice(
   const adjustment = (entryPrice * collateral) / size;
   return isLong ? entryPrice - adjustment : entryPrice + adjustment;
 }
-
-/** Unrealized PnL on a position at the given mark price. */
-export function unrealizedPnl(
-  size: bigint,
-  entryPrice: bigint,
-  markPrice: bigint,
-  isLong: boolean,
-): bigint {
-  if (size === 0n || entryPrice === 0n) return 0n;
-  const priceDelta = isLong ? markPrice - entryPrice : entryPrice - markPrice;
-  return (size * priceDelta) / entryPrice;
-}
-
-/** Current effective leverage given collateral + size, in BPS (e.g. 5x = 50_000). */
-export function effectiveLeverageBps(collateral: bigint, size: bigint): bigint {
-  if (collateral <= 0n) return 0n;
-  return (size * BPS) / collateral;
-}
-
-export { PRECISION, BPS };

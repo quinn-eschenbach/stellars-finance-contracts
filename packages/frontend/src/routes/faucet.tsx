@@ -1,18 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
 import { Droplet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAddress, useWallet } from "@/wallet/WalletProvider";
+import { useAddress } from "@/wallet/WalletProvider";
 import { mockToken } from "@/contracts/clients";
-import { signAndSendWithWallet } from "@/contracts/sender";
+import { useTxMutation } from "@/contracts/useTxMutation";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { parseUsdc } from "@/lib/utils";
 import { MOCK_TOKEN_CONTRACT } from "@/lib/constants";
-import { txToast } from "@/lib/toast";
+import { queryKeys, useWalletBalance } from "@/api/hooks";
 
 export const Route = createFileRoute("/faucet")({
   component: FaucetPage,
@@ -22,39 +21,19 @@ const PRESETS = ["100", "1000", "10000"];
 
 function FaucetPage() {
   const address = useAddress();
-  const { signTransaction } = useWallet();
   const [amount, setAmount] = useState("1000");
 
-  const balance = useQuery({
-    queryKey: ["mockToken", "balance", address],
-    queryFn: async () => {
-      if (!address) return 0n;
-      const tx = await mockToken(address).balance({ account: address });
-      return BigInt(tx.result?.toString() ?? "0");
-    },
-    enabled: !!address,
-    refetchInterval: 5_000,
-  });
+  const balance = useWalletBalance(address);
 
-  const mint = useMutation({
-    mutationFn: async () => {
+  const mint = useTxMutation({
+    action: "Mint testnet USDC",
+    successDetail: `${amount} USDC minted to your wallet.`,
+    invalidate: [queryKeys.walletBalance(address)],
+    build: async () => {
       if (!address) throw new Error("connect wallet first");
       const scaled = parseUsdc(amount);
-      const t = txToast({
-        action: "Mint testnet USDC",
-        successDetail: `${amount} USDC minted to your wallet.`,
-      });
-      try {
-        const tx = await mockToken(address).mint({ to: address, amount: scaled });
-        const result = await signAndSendWithWallet(tx, signTransaction);
-        t.success();
-        return result.hash;
-      } catch (e) {
-        t.error(e);
-        throw e;
-      }
+      return mockToken(address).mint({ to: address, amount: scaled });
     },
-    onSuccess: () => balance.refetch(),
   });
 
   if (!MOCK_TOKEN_CONTRACT) {

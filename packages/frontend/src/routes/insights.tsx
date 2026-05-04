@@ -4,13 +4,11 @@ import { useStreamPrices } from "@/api/sse";
 import { Card, CardContent } from "@/components/ui/card";
 import { NumberFlowUsd, NumberFlowPlain } from "@/components/ui/number-flow";
 import type { MarketRow } from "@/api/types";
-import { cn } from "@/lib/utils";
+import { cn, descale, formatPrice, formatUsdcCompact, USDC_UNIT } from "@/lib/utils";
 
 export const Route = createFileRoute("/insights")({
   component: InsightsPage,
 });
-
-const PRICE_UNIT = 10_000_000n;
 
 function InsightsPage() {
   const markets = useMarkets();
@@ -66,9 +64,9 @@ function InsightsPage() {
             tone="default"
             sub={
               <span className="font-mono text-[10px] tabular-nums uppercase tracking-[0.16em] text-muted-foreground/60">
-                <span className="text-bull/80">L {formatShort(totalLongOi)}</span>
+                <span className="text-bull/80">L {formatUsdcCompact(totalLongOi)}</span>
                 <span className="mx-1.5 text-muted-foreground/40">/</span>
-                <span className="text-bear/80">S {formatShort(totalShortOi)}</span>
+                <span className="text-bear/80">S {formatUsdcCompact(totalShortOi)}</span>
               </span>
             }
           />
@@ -230,7 +228,7 @@ function InsightsPage() {
             label="LP shares"
             value={
               vault.data ? (
-                <NumberFlowPlain value={Number(vault.data.total_shares) / 10_000_000} />
+                <NumberFlowPlain value={descale(vault.data.total_shares, USDC_UNIT)} />
               ) : (
                 "—"
               )
@@ -395,10 +393,10 @@ function MarketRowDetail({
         <NumberFlowUsd value={market.market_unrealized_pnl} decimals={0} signDisplay="exceptZero" />
       </Td>
       <Td align="right">
-        {long > 0n ? formatPriceScaled(market.global_long_avg_price) : <span className="text-muted-foreground/40">—</span>}
+        {long > 0n ? `$${formatPrice(market.global_long_avg_price)}` : <span className="text-muted-foreground/40">—</span>}
       </Td>
       <Td align="right">
-        {short > 0n ? formatPriceScaled(market.global_short_avg_price) : <span className="text-muted-foreground/40">—</span>}
+        {short > 0n ? `$${formatPrice(market.global_short_avg_price)}` : <span className="text-muted-foreground/40">—</span>}
       </Td>
       <Td align="right">{market.max_leverage}×</Td>
     </tr>
@@ -407,18 +405,6 @@ function MarketRowDetail({
 
 function sumScaled(values: string[]): bigint {
   return values.reduce((acc, v) => acc + BigInt(v), 0n);
-}
-
-function formatShort(scaled: bigint): string {
-  const usd = Number(scaled) / 10_000_000;
-  if (usd >= 1_000_000) return `$${(usd / 1_000_000).toFixed(1)}M`;
-  if (usd >= 1_000) return `$${(usd / 1_000).toFixed(1)}K`;
-  return `$${usd.toFixed(0)}`;
-}
-
-function formatPriceScaled(scaled: string): string {
-  const num = Number(BigInt(scaled)) / Number(PRICE_UNIT);
-  return `$${num.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 function formatIndex(scaled: string): string {

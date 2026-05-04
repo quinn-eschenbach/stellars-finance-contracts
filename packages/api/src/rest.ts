@@ -4,6 +4,7 @@ import {
   type Db,
   markets,
   positions,
+  protocolConfig,
   trades,
   vaultState,
   oraclePrices,
@@ -61,6 +62,28 @@ export function buildRestRoutes(db: Db): Hono {
 
   r.get("/vault", async (c) => {
     const rows = await db.select().from(vaultState).where(eq(vaultState.id, 1)).limit(1);
+    if (rows.length === 0) return c.json({ error: "not_found" }, 404);
+    // Splice in last_unpause_time so the off-chain MarketTick projection has
+    // everything it needs from a single endpoint without a second round-trip.
+    const cfg = await db
+      .select({ last_unpause_time: protocolConfig.last_unpause_time })
+      .from(protocolConfig)
+      .where(eq(protocolConfig.id, 1))
+      .limit(1);
+    return c.json({ ...rows[0], last_unpause_time: cfg[0]?.last_unpause_time ?? "0" });
+  });
+
+  /**
+   * GET /config — protocol-wide config singleton (fee splits, limits, borrow
+   * rate config, last unpause time). Used by the off-chain MarketTick
+   * projection to derive borrow/funding indices forward to `now`.
+   */
+  r.get("/config", async (c) => {
+    const rows = await db
+      .select()
+      .from(protocolConfig)
+      .where(eq(protocolConfig.id, 1))
+      .limit(1);
     if (rows.length === 0) return c.json({ error: "not_found" }, 404);
     return c.json(rows[0]);
   });

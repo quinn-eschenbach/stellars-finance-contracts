@@ -22,6 +22,7 @@
     "@stellars/bindings": "workspace:*",
     "@stellars/config": "workspace:*",
     "@stellars/protocol-clients": "workspace:*",
+    "@stellars/protocol-math": "workspace:*",
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-router": "^1.91.0",
     "class-variance-authority": "^0.7.1",

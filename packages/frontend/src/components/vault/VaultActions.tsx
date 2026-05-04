@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberFlowUsd, NumberFlowPlain } from "@/components/ui/number-flow";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAddress, useWallet } from "@/wallet/WalletProvider";
-import { mockToken, vault } from "@/contracts/clients";
-import { signAndSendWithWallet } from "@/contracts/sender";
+import { useAddress } from "@/wallet/WalletProvider";
+import { vault } from "@/contracts/clients";
+import { useTxMutation } from "@/contracts/useTxMutation";
 import { parseUsdc, cn } from "@/lib/utils";
-import { queryKeys } from "@/api/hooks";
-import { txToast } from "@/lib/toast";
+import { queryKeys, useLockup, useWalletBalance } from "@/api/hooks";
 
 /**
  * Deposit + withdraw forms for the vault. Both use the OZ FungibleVault
@@ -21,33 +19,8 @@ import { txToast } from "@/lib/toast";
  */
 export function VaultActions() {
   const address = useAddress();
-  const { signTransaction } = useWallet();
-  const qc = useQueryClient();
-
-  // USDC + share balances. Not wired to SSE; refetch on tx success.
-  const usdcBalance = useQuery({
-    queryKey: ["mockToken", "balance", address],
-    queryFn: async () => {
-      if (!address) return 0n;
-      const tx = await mockToken(address).balance({ account: address });
-      return BigInt(tx.result?.toString() ?? "0");
-    },
-    enabled: !!address,
-    refetchInterval: 10_000,
-  });
-
-  // Per-user LP lockup expiry. Frozen at deposit time; reads zero before the
-  // first deposit. Refetched after deposit/withdraw mutations succeed.
-  const lockup = useQuery({
-    queryKey: ["vault", "lockupExpiresAt", address],
-    queryFn: async () => {
-      if (!address) return 0;
-      const tx = await vault(address).lockup_expires_at({ user: address });
-      return Number(tx.result ?? 0);
-    },
-    enabled: !!address,
-    staleTime: 5_000,
-  });
+  const usdcBalance = useWalletBalance(address);
+  const lockup = useLockup(address);
 
   const [depositAmt, setDepositAmt] = useState("");
   const [withdrawAmt, setWithdrawAmt] = useState("");
@@ -59,62 +32,46 @@ export function VaultActions() {
   const secondsLeft = useCountdownSeconds(lockupExpiry);
   const isLocked = secondsLeft > 0;
 
-  const deposit = useMutation({
-    mutationFn: async () => {
+  const vaultInvalidations = [
+    queryKeys.walletBalance(address),
+    queryKeys.lockup(address),
+    queryKeys.vault,
+  ];
+
+  const deposit = useTxMutation({
+    action: "Deposit",
+    successDetail: `${depositAmt} USDC added to the vault.`,
+    invalidate: vaultInvalidations,
+    build: async () => {
       if (!address) throw new Error("connect wallet first");
       const assets = parseUsdc(depositAmt);
       if (assets <= 0n) throw new Error("enter a positive amount");
-      const t = txToast({ action: "Deposit", successDetail: `${depositAmt} USDC added to the vault.` });
-      try {
-        const tx = await vault(address).deposit({
-          assets,
-          receiver: address,
-          from: address,
-          operator: address,
-        });
-        const result = await signAndSendWithWallet(tx, signTransaction);
-        t.success();
-        return result.hash;
-      } catch (e) {
-        t.error(e);
-        throw e;
-      }
+      return vault(address).deposit({
+        assets,
+        receiver: address,
+        from: address,
+        operator: address,
+      });
     },
-    onSuccess: () => {
-      usdcBalance.refetch();
-      lockup.refetch();
-      qc.invalidateQueries({ queryKey: queryKeys.vault });
-      setDepositAmt("");
-    },
+    onSuccess: () => setDepositAmt(""),
   });
 
-  const withdraw = useMutation({
-    mutationFn: async () => {
+  const withdraw = useTxMutation({
+    action: "Withdraw",
+    successDetail: `${withdrawAmt} USDC returned to your wallet.`,
+    invalidate: vaultInvalidations,
+    build: async () => {
       if (!address) throw new Error("connect wallet first");
       const assets = parseUsdc(withdrawAmt);
       if (assets <= 0n) throw new Error("enter a positive amount");
-      const t = txToast({ action: "Withdraw", successDetail: `${withdrawAmt} USDC returned to your wallet.` });
-      try {
-        const tx = await vault(address).withdraw({
-          assets,
-          receiver: address,
-          owner: address,
-          operator: address,
-        });
-        const result = await signAndSendWithWallet(tx, signTransaction);
-        t.success();
-        return result.hash;
-      } catch (e) {
-        t.error(e);
-        throw e;
-      }
+      return vault(address).withdraw({
+        assets,
+        receiver: address,
+        owner: address,
+        operator: address,
+      });
     },
-    onSuccess: () => {
-      usdcBalance.refetch();
-      lockup.refetch();
-      qc.invalidateQueries({ queryKey: queryKeys.vault });
-      setWithdrawAmt("");
-    },
+    onSuccess: () => setWithdrawAmt(""),
   });
 
   if (!address) {

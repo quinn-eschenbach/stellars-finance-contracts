@@ -2,9 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Wallet2 } from "lucide-react";
 import { useAddress } from "@/wallet/WalletProvider";
 import { usePositions, usePrices } from "@/api/hooks";
+import { useMarketTick } from "@/api/marketTick";
 import { useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PositionRow } from "@/components/trade/PositionRow";
+import type { PositionRow as PositionRowData } from "@/api/types";
 
 export const Route = createFileRoute("/portfolio")({
   component: PortfolioPage,
@@ -73,11 +75,32 @@ function PortfolioPage() {
           )}
           <div className="space-y-2.5">
             {(positions.data ?? []).map((p) => (
-              <PositionRow key={p.id} position={p} markPrice={priceBySymbol.get(p.symbol)} />
+              <ProjectedPositionRow
+                key={p.id}
+                position={p}
+                markPrice={priceBySymbol.get(p.symbol)}
+              />
             ))}
           </div>
         </CardContent>
       </Card>
     </div>
   );
+}
+
+/**
+ * Wrapper that pulls the projected MarketTick for the position's symbol.
+ * Calling `useMarketTick` once per row keeps the hook contract simple — the
+ * underlying queries are deduplicated by React Query, so n positions on the
+ * same symbol still hit the four backing queries exactly once.
+ */
+function ProjectedPositionRow({
+  position,
+  markPrice,
+}: {
+  position: PositionRowData;
+  markPrice?: string;
+}) {
+  const tick = useMarketTick(position.symbol);
+  return <PositionRow position={position} markPrice={markPrice} tick={tick} />;
 }

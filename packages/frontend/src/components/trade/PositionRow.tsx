@@ -1,67 +1,71 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
-import { useAddress, useWallet } from "@/wallet/WalletProvider";
+import { useAddress } from "@/wallet/WalletProvider";
 import { positionManager } from "@/contracts/clients";
-import { signAndSendWithWallet } from "@/contracts/sender";
+import { useTxMutation } from "@/contracts/useTxMutation";
 import { formatPrice, parsePrice, cn } from "@/lib/utils";
-import { unrealizedPnl } from "@/lib/math";
+import { type MarketTick, calcUnrealizedPnl } from "@stellars/protocol-math";
 import { queryKeys } from "@/api/hooks";
-import { txToast } from "@/lib/toast";
 import type { PositionRow as PositionRowData } from "@/api/types";
 
 interface PositionRowProps {
   position: PositionRowData;
   /** Current mark price for the symbol, scaled (10^7). */
   markPrice?: string;
+  /**
+   * Optional projected MarketTick. When supplied, the row shows fee-adjusted
+   * health and accrued borrow/funding values. When null/undefined the row
+   * falls back to a price-only Unrealized PnL — same shape as before the
+   * projection seam landed, so callers can render rows before any of the
+   * projection inputs (vault, config, market) are loaded.
+   */
+  tick?: MarketTick | null;
 }
 
-export function PositionRow({ position, markPrice }: PositionRowProps) {
+export function PositionRow({ position, markPrice, tick }: PositionRowProps) {
   const address = useAddress();
-  const { signTransaction } = useWallet();
-  const qc = useQueryClient();
-
   const [editing, setEditing] = useState(false);
 
-  const close = useMutation({
-    mutationFn: async () => {
+  const close = useTxMutation({
+    action: `Close ${position.is_long ? "long" : "short"} ${position.symbol}`,
+    successDetail: "Position settled and PnL credited.",
+    invalidate: [queryKeys.positions(address ?? ""), queryKeys.walletBalance(address)],
+    build: async () => {
       if (!address) throw new Error("connect wallet first");
-      const t = txToast({
-        action: `Close ${position.is_long ? "long" : "short"} ${position.symbol}`,
-        successDetail: "Position settled and PnL credited.",
+      return positionManager(address).decrease_position({
+        trader: address,
+        symbol: position.symbol,
+        size_delta: BigInt(position.size),
       });
-      try {
-        const tx = await positionManager(address).decrease_position({
-          trader: address,
-          symbol: position.symbol,
-          size_delta: BigInt(position.size),
-        });
-        const result = await signAndSendWithWallet(tx, signTransaction);
-        t.success();
-        return result.hash;
-      } catch (e) {
-        t.error(e);
-        throw e;
-      }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.positions(address ?? "") });
     },
   });
 
-  const pnl = markPrice
-    ? unrealizedPnl(
-        BigInt(position.size),
-        BigInt(position.entry_price),
-        BigInt(markPrice),
-        position.is_long,
-      )
-    : 0n;
+  const evaluation = tick
+    ? tick.evaluate({
+        is_long: position.is_long,
+        size: BigInt(position.size),
+        collateral: BigInt(position.collateral),
+        entry_price: BigInt(position.entry_price),
+        entry_borrow_index: BigInt(position.entry_borrow_index),
+        entry_funding_index: BigInt(position.entry_funding_index),
+      })
+    : null;
+
+  const pnl =
+    evaluation?.pnl ??
+    (markPrice
+      ? calcUnrealizedPnl(
+          BigInt(position.size),
+          BigInt(position.entry_price),
+          BigInt(markPrice),
+          position.is_long,
+        )
+      : 0n);
   const pnlClass = pnl > 0n ? "text-bull" : pnl < 0n ? "text-bear" : "text-muted-foreground";
   const tp = BigInt(position.take_profit);
   const sl = BigInt(position.stop_loss);
@@ -125,6 +129,47 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
         />
       </div>
 
+      {evaluation && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-border/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+          <span className="flex items-baseline gap-1.5">
+            <span>Borrow</span>
+            <span className="tabular-nums text-foreground/90">
+              <NumberFlowUsd value={evaluation.borrow_fee} />
+            </span>
+          </span>
+          <span className="flex items-baseline gap-1.5">
+            <span>Funding</span>
+            <span
+              className={cn(
+                "tabular-nums",
+                evaluation.funding_fee > 0n
+                  ? "text-bull"
+                  : evaluation.funding_fee < 0n
+                    ? "text-bear"
+                    : "text-foreground/90",
+              )}
+            >
+              <NumberFlowUsd value={evaluation.funding_fee} signDisplay="exceptZero" />
+            </span>
+          </span>
+          <span className="flex items-baseline gap-1.5">
+            <span>Health</span>
+            <span
+              className={cn(
+                "tabular-nums",
+                evaluation.health > BigInt(position.collateral) / 2n
+                  ? "text-bull"
+                  : evaluation.health > 0n
+                    ? "text-foreground/90"
+                    : "text-bear",
+              )}
+            >
+              <NumberFlowUsd value={evaluation.health} />
+            </span>
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between border-t border-border/40 px-4 py-3 text-xs">
         <div className="flex gap-5 font-mono">
           <span className="flex items-baseline gap-1.5">
@@ -186,9 +231,6 @@ interface TpSlEditorProps {
  */
 function TpSlEditor({ symbol, isLong, entryPrice, initialTp, initialSl, onClose }: TpSlEditorProps) {
   const address = useAddress();
-  const { signTransaction } = useWallet();
-  const qc = useQueryClient();
-
   const [tpInput, setTpInput] = useState(scaledToInput(initialTp));
   const [slInput, setSlInput] = useState(scaledToInput(initialSl));
 
@@ -207,30 +249,21 @@ function TpSlEditor({ symbol, isLong, entryPrice, initialTp, initialSl, onClose 
         ? validateSl(entryPrice, slParsed, isLong)
         : null;
 
-  const save = useMutation({
-    mutationFn: async () => {
+  const save = useTxMutation({
+    action: `Update TP/SL · ${symbol}`,
+    successDetail: "Triggers updated.",
+    invalidate: [queryKeys.positions(address ?? "")],
+    build: async () => {
       if (!address) throw new Error("connect wallet first");
       if (tpError || slError) throw new Error(tpError || slError || "invalid TP/SL");
-      const t = txToast({ action: `Update TP/SL · ${symbol}`, successDetail: "Triggers updated." });
-      try {
-        const tx = await positionManager(address).set_tp_sl({
-          trader: address,
-          symbol,
-          take_profit: typeof tpParsed === "bigint" ? tpParsed : 0n,
-          stop_loss: typeof slParsed === "bigint" ? slParsed : 0n,
-        });
-        const result = await signAndSendWithWallet(tx, signTransaction);
-        t.success();
-        return result.hash;
-      } catch (e) {
-        t.error(e);
-        throw e;
-      }
+      return positionManager(address).set_tp_sl({
+        trader: address,
+        symbol,
+        take_profit: typeof tpParsed === "bigint" ? tpParsed : 0n,
+        stop_loss: typeof slParsed === "bigint" ? slParsed : 0n,
+      });
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.positions(address ?? "") });
-      onClose();
-    },
+    onSuccess: () => onClose(),
   });
 
   return (

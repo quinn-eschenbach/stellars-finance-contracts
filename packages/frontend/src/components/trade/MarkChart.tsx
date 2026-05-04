@@ -15,9 +15,7 @@ import {
 import { useCandles } from "@/api/hooks";
 import type { CandleInterval, CandleRow, PriceRow } from "@/api/types";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
-
-const PRICE_UNIT = 10_000_000;
+import { cn, descale } from "@/lib/utils";
 
 const INTERVALS: ReadonlyArray<{ label: string; value: CandleInterval }> = [
   { label: "1m", value: 60 },
@@ -122,9 +120,9 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
     lastBucketRef.current = last
       ? {
           time: last.time,
-          open: scaledToNumber(last.open),
-          high: scaledToNumber(last.high),
-          low: scaledToNumber(last.low),
+          open: descale(last.open),
+          high: descale(last.high),
+          low: descale(last.low),
         }
       : null;
   }, [candles.data]);
@@ -220,17 +218,13 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
   );
 }
 
-function scaledToNumber(scaled: string): number {
-  return Number(scaled) / PRICE_UNIT;
-}
-
 function toCandlestickData(rows: CandleRow[]): CandlestickData<UTCTimestamp>[] {
   return rows.map((r) => ({
     time: r.time as UTCTimestamp,
-    open: scaledToNumber(r.open),
-    high: scaledToNumber(r.high),
-    low: scaledToNumber(r.low),
-    close: scaledToNumber(r.close),
+    open: descale(r.open),
+    high: descale(r.high),
+    low: descale(r.low),
+    close: descale(r.close),
   }));
 }
 
@@ -248,7 +242,7 @@ function applyTick(
   const ts = Number(price.timestamp);
   if (!Number.isFinite(ts)) return;
   const bucket = Math.floor(ts / interval) * interval;
-  const value = scaledToNumber(price.price);
+  const value = descale(price.price);
   const last = lastRef.current;
   if (!last || bucket > last.time) {
     const next = { time: bucket, open: value, high: value, low: value };

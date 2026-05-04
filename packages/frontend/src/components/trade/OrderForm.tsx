@@ -1,19 +1,16 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { Slider } from "@/components/ui/slider";
-import { useAddress, useWallet } from "@/wallet/WalletProvider";
-import { mockToken, positionManager } from "@/contracts/clients";
-import { signAndSendWithWallet } from "@/contracts/sender";
-import { parsePrice, parseUsdc } from "@/lib/utils";
+import { useAddress } from "@/wallet/WalletProvider";
+import { positionManager } from "@/contracts/clients";
+import { useTxMutation } from "@/contracts/useTxMutation";
+import { cn, formatUsdc, parsePrice, parseUsdc } from "@/lib/utils";
 import { approxLiquidationPrice } from "@/lib/math";
-import { queryKeys } from "@/api/hooks";
-import { cn } from "@/lib/utils";
-import { txToast } from "@/lib/toast";
+import { queryKeys, useWalletBalance } from "@/api/hooks";
 
 interface OrderFormProps {
   symbol: string;
@@ -48,21 +45,7 @@ export function OrderForm({
   setLeverage,
 }: OrderFormProps) {
   const address = useAddress();
-  const { signTransaction } = useWallet();
-  const qc = useQueryClient();
-
-  // Wallet USDC balance — read from the mock token contract. Shared queryKey
-  // with VaultActions / faucet so the three views stay in sync via React Query.
-  const balance = useQuery({
-    queryKey: ["mockToken", "balance", address],
-    queryFn: async () => {
-      if (!address) return 0n;
-      const tx = await mockToken(address).balance({ account: address });
-      return BigInt(tx.result?.toString() ?? "0");
-    },
-    enabled: !!address,
-    refetchInterval: 10_000,
-  });
+  const balance = useWalletBalance(address);
 
   const [tpInput, setTpInput] = useState("");
   const [slInput, setSlInput] = useState("");
@@ -78,6 +61,7 @@ export function OrderForm({
 
   const sizeScaled = collateralScaled * BigInt(leverage);
   const isLong = side === "long";
+  const cappedLeverage = Math.min(leverage, Math.max(1, maxLeverage));
   const liq =
     markPrice && collateralScaled > 0n
       ? approxLiquidationPrice(BigInt(markPrice), collateralScaled, sizeScaled, isLong)
@@ -101,40 +85,26 @@ export function OrderForm({
         ? validateSl(BigInt(markPrice), slScaled, isLong)
         : null;
 
-  const open = useMutation({
-    mutationFn: async () => {
+  const open = useTxMutation({
+    action: `Open ${cappedLeverage}× ${isLong ? "long" : "short"} ${symbol}`,
+    successDetail: `Position opened on ${symbol} with ${collateralInput} USDC.`,
+    invalidate: [queryKeys.positions(address ?? ""), queryKeys.walletBalance(address)],
+    build: async () => {
       if (!address) throw new Error("connect wallet first");
       if (collateralScaled <= 0n) throw new Error("enter a positive collateral");
       if (tpError || slError) throw new Error(tpError || slError || "invalid TP/SL");
-      const action = `Open ${cappedLeverage}× ${isLong ? "long" : "short"} ${symbol}`;
-      const t = txToast({
-        action,
-        successDetail: `Position opened on ${symbol} with ${collateralInput} USDC.`,
+      return positionManager(address).increase_position({
+        trader: address,
+        symbol,
+        size: sizeScaled,
+        collateral: collateralScaled,
+        is_long: isLong,
+        take_profit: typeof tpScaled === "bigint" ? tpScaled : 0n,
+        stop_loss: typeof slScaled === "bigint" ? slScaled : 0n,
       });
-      try {
-        const tx = await positionManager(address).increase_position({
-          trader: address,
-          symbol,
-          size: sizeScaled,
-          collateral: collateralScaled,
-          is_long: isLong,
-          take_profit: typeof tpScaled === "bigint" ? tpScaled : 0n,
-          stop_loss: typeof slScaled === "bigint" ? slScaled : 0n,
-        });
-        const result = await signAndSendWithWallet(tx, signTransaction);
-        t.success();
-        return result.hash;
-      } catch (e) {
-        t.error(e);
-        throw e;
-      }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.positions(address ?? "") });
     },
   });
 
-  const cappedLeverage = Math.min(leverage, Math.max(1, maxLeverage));
   const walletBalance = balance.data ?? 0n;
   const exceedsBalance = collateralScaled > 0n && walletBalance > 0n && collateralScaled > walletBalance;
   const submitDisabled =
@@ -355,17 +325,13 @@ function SideButton({
 }
 
 /**
- * Convert a scaled USDC balance back into the decimal string the input expects
- * (e.g. `1234567890n` → `"123.45"` rounded down). Truncating avoids prompting
- * the user to spend a fraction of a cent more than they hold.
+ * Convert a scaled USDC balance back into the decimal string the input
+ * expects. Truncates to 2dp so we never prompt the user to spend a fraction
+ * of a cent more than they hold.
  */
 function formatBalanceInput(scaled: bigint): string {
   if (scaled <= 0n) return "0";
-  const UNIT = 10_000_000n;
-  const whole = scaled / UNIT;
-  const frac = scaled % UNIT;
-  const fracStr = frac.toString().padStart(7, "0").slice(0, 2);
-  return fracStr === "00" ? whole.toString() : `${whole}.${fracStr}`;
+  return formatUsdc(scaled, { decimals: 2 }).replace(/,/g, "").replace(/\.00$/, "");
 }
 
 /** Parse a TP/SL input. Empty → 0n (unset); bad input → "invalid" sentinel. */

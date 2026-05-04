@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMarket, usePositions, usePrices } from "@/api/hooks";
+import { useMarketTick } from "@/api/marketTick";
 import { useStreamMarket, useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
@@ -10,9 +11,7 @@ import { OrderForm } from "@/components/trade/OrderForm";
 import { PositionRow } from "@/components/trade/PositionRow";
 import { useAddress } from "@/wallet/WalletProvider";
 import { approxLiquidationPrice } from "@/lib/math";
-import { parseUsdc } from "@/lib/utils";
-
-const PRICE_UNIT = 10_000_000;
+import { descale, parseUsdc } from "@/lib/utils";
 
 export const Route = createFileRoute("/trade/$symbol")({
   component: TradePage,
@@ -25,6 +24,7 @@ function TradePage() {
   const market = useMarket(symbol);
   const prices = usePrices();
   const positions = usePositions(address);
+  const tick = useMarketTick(symbol);
   useStreamMarket(symbol);
   useStreamPrices();
   useStreamPositions(address);
@@ -60,14 +60,14 @@ function TradePage() {
         const sideLabel = p.is_long ? "Long" : "Short";
         lines.push({
           id: `entry-${p.id}`,
-          price: Number(entry) / PRICE_UNIT,
+          price: descale(entry),
           color: ENTRY_COLOR,
           title: `Entry ${sideLabel}`,
         });
         if (liq && liq > 0n) {
           lines.push({
             id: `liq-${p.id}`,
-            price: Number(liq) / PRICE_UNIT,
+            price: descale(liq),
             color: LIQ_COLOR,
             title: `Liq. ${sideLabel}`,
           });
@@ -75,7 +75,7 @@ function TradePage() {
         if (tp > 0n) {
           lines.push({
             id: `tp-${p.id}`,
-            price: Number(tp) / PRICE_UNIT,
+            price: descale(tp),
             color: TP_COLOR,
             title: `TP ${sideLabel}`,
           });
@@ -83,7 +83,7 @@ function TradePage() {
         if (sl > 0n) {
           lines.push({
             id: `sl-${p.id}`,
-            price: Number(sl) / PRICE_UNIT,
+            price: descale(sl),
             color: SL_COLOR,
             title: `SL ${sideLabel}`,
           });
@@ -106,7 +106,7 @@ function TradePage() {
     return [
       {
         id: "staged-liq",
-        price: Number(liq) / PRICE_UNIT,
+        price: descale(liq),
         color: LIQ_COLOR,
         title: "Liq. (staged)",
       },
@@ -179,7 +179,7 @@ function TradePage() {
                   </p>
                 )}
                 {myPositions.map((p) => (
-                  <PositionRow key={p.id} position={p} markPrice={markPrice} />
+                  <PositionRow key={p.id} position={p} markPrice={markPrice} tick={tick} />
                 ))}
               </CardContent>
             </Card>

@@ -51,6 +51,41 @@ export interface VaultStateRow {
   net_global_trader_pnl: string;
   free_liquidity: string;
   is_paused: boolean;
+  /** Spliced in from protocol_config so the MarketTick projection has it. Unix seconds. */
+  last_unpause_time: string;
+  updated_at_ledger: number;
+  updated_at: string;
+}
+
+/**
+ * Protocol-wide config singleton from `/config`. The `BorrowRateConfig` slice
+ * (base/slope/optimal/funding) is what `MarketTick.project()` consumes; the
+ * fee/limit fields are exposed for completeness so future UI (admin panels,
+ * insights drilldowns) doesn't need a second endpoint.
+ */
+export interface ProtocolConfigRow {
+  id: number;
+  // Fee splits (bps; sum to 10_000)
+  keeper_bps: number;
+  dev_bps: number;
+  lp_bps: number;
+  // Protocol limits (scaled bigints as strings)
+  min_collateral: string;
+  cooldown_duration: string;
+  min_position_lifetime: string;
+  max_utilization_ratio: string;
+  funding_cut_bps: number;
+  adl_pnl_bps: number;
+  adl_utilization_bps: number;
+  liquidation_threshold_bps: number;
+  // Borrow / funding rate config (BPS as strings to mirror the contract i128)
+  base_borrow_rate_bps: string;
+  slope1_bps: string;
+  slope2_bps: string;
+  optimal_utilization_bps: string;
+  base_funding_rate_bps: string;
+  // Last on-chain unpause time (unix seconds)
+  last_unpause_time: string;
   updated_at_ledger: number;
   updated_at: string;
 }
