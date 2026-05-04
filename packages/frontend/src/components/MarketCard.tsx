@@ -46,7 +46,7 @@ export function MarketCard({ market, price, style, className }: MarketCardProps)
         </div>
         <div className="relative z-10 px-5 pb-5 pt-4">
           <div className="font-mono text-[32px] leading-none tabular-nums tracking-tight text-foreground">
-            {price ? <NumberFlowUsd value={price} /> : "—"}
+            {price ? <NumberFlowUsd value={price} decimals="adaptive" /> : "—"}
           </div>
           <BiasBar
             longOi={market.long_open_interest}

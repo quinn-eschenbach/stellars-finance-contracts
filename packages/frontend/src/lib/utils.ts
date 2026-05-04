@@ -61,6 +61,20 @@ export function formatUsdcCompact(scaled: bigint | string, opts: { decimals?: nu
   return `${sign}$${abs.toFixed(0)}`;
 }
 
+/**
+ * Decimal places to show for a price, adapted to its magnitude. Mirrors
+ * what major exchanges do: BTC at $95k uses 2dp, XLM at $0.16 uses 4dp,
+ * meme coins at $0.000012 use 8dp. Saves us from showing "0.16" when the
+ * meaningful precision is "0.1635".
+ */
+export function priceDecimals(value: bigint | string | number): number {
+  const abs = Math.abs(descale(value));
+  if (abs >= 1) return 2;
+  if (abs >= 0.01) return 4;
+  if (abs >= 0.0001) return 6;
+  return 8;
+}
+
 /** Format a scaled price (USD per BTC, etc) as a display string. */
 export function formatPrice(scaled: bigint | string, decimals = 2): string {
   const v = typeof scaled === "string" ? BigInt(scaled) : scaled;

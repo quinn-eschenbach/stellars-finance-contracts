@@ -15,7 +15,7 @@ import {
 import { useCandles } from "@/api/hooks";
 import type { CandleInterval, CandleRow, PriceRow } from "@/api/types";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, descale } from "@/lib/utils";
+import { cn, descale, priceDecimals } from "@/lib/utils";
 
 const INTERVALS: ReadonlyArray<{ label: string; value: CandleInterval }> = [
   { label: "1m", value: 60 },
@@ -109,7 +109,10 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
   }, []);
 
   // Push the backfilled candles into the series whenever the query updates
-  // (initial load, interval change, refetch).
+  // (initial load, interval change, refetch). Also reset the series'
+  // priceFormat to match the symbol's magnitude — lightweight-charts caps at
+  // 2dp by default, which renders XLM ($0.16) as a flat band of "0.16"
+  // labels without any meaningful precision.
   useEffect(() => {
     const series = seriesRef.current;
     if (!series || !candles.data) return;
@@ -117,6 +120,12 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
     series.setData(data);
     chartRef.current?.timeScale().fitContent();
     const last = candles.data[candles.data.length - 1];
+    if (last) {
+      const precision = priceDecimals(last.close);
+      series.applyOptions({
+        priceFormat: { type: "price", precision, minMove: Math.pow(10, -precision) },
+      });
+    }
     lastBucketRef.current = last
       ? {
           time: last.time,

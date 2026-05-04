@@ -232,10 +232,13 @@ export function OrderForm({
       {/* Order summary */}
       <div className="space-y-1.5 rounded-xl border border-border/40 bg-background/30 p-3.5">
         <Row label="Size" value={<NumberFlowUsd value={sizeScaled} />} />
-        <Row label="Mark price" value={markPrice ? <NumberFlowUsd value={markPrice} /> : "—"} />
+        <Row
+          label="Mark price"
+          value={markPrice ? <NumberFlowUsd value={markPrice} decimals="adaptive" /> : "—"}
+        />
         <Row
           label="Est. liq. price"
-          value={liq ? <NumberFlowUsd value={liq} /> : "—"}
+          value={liq ? <NumberFlowUsd value={liq} decimals="adaptive" /> : "—"}
           tone="warn"
         />
       </div>

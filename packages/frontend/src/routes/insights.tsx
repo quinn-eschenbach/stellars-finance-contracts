@@ -4,7 +4,7 @@ import { useStreamPrices } from "@/api/sse";
 import { Card, CardContent } from "@/components/ui/card";
 import { NumberFlowUsd, NumberFlowPlain } from "@/components/ui/number-flow";
 import type { MarketRow } from "@/api/types";
-import { cn, descale, formatPrice, formatUsdcCompact, USDC_UNIT } from "@/lib/utils";
+import { cn, descale, formatPrice, formatUsdcCompact, priceDecimals, USDC_UNIT } from "@/lib/utils";
 
 export const Route = createFileRoute("/insights")({
   component: InsightsPage,
@@ -379,7 +379,7 @@ function MarketRowDetail({
           {market.symbol}
         </span>
       </Td>
-      <Td align="right">{markPrice ? <NumberFlowUsd value={markPrice} /> : "—"}</Td>
+      <Td align="right">{markPrice ? <NumberFlowUsd value={markPrice} decimals="adaptive" /> : "—"}</Td>
       <Td align="right">
         <NumberFlowUsd value={market.long_open_interest} decimals={0} />
       </Td>
@@ -393,10 +393,18 @@ function MarketRowDetail({
         <NumberFlowUsd value={market.market_unrealized_pnl} decimals={0} signDisplay="exceptZero" />
       </Td>
       <Td align="right">
-        {long > 0n ? `$${formatPrice(market.global_long_avg_price)}` : <span className="text-muted-foreground/40">—</span>}
+        {long > 0n ? (
+          `$${formatPrice(market.global_long_avg_price, priceDecimals(market.global_long_avg_price))}`
+        ) : (
+          <span className="text-muted-foreground/40">—</span>
+        )}
       </Td>
       <Td align="right">
-        {short > 0n ? `$${formatPrice(market.global_short_avg_price)}` : <span className="text-muted-foreground/40">—</span>}
+        {short > 0n ? (
+          `$${formatPrice(market.global_short_avg_price, priceDecimals(market.global_short_avg_price))}`
+        ) : (
+          <span className="text-muted-foreground/40">—</span>
+        )}
       </Td>
       <Td align="right">{market.max_leverage}×</Td>
     </tr>

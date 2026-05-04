@@ -145,7 +145,7 @@ function Hero({ priceBySymbol }: { priceBySymbol: Map<string, string> }) {
                   {symbol}
                 </span>
                 <span className="font-mono text-xs tabular-nums text-foreground/95">
-                  <NumberFlowUsd value={price} />
+                  <NumberFlowUsd value={price} decimals="adaptive" />
                 </span>
               </Link>
             ))}

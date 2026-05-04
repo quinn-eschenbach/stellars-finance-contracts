@@ -126,7 +126,7 @@ function TradePage() {
               {symbol}
             </h1>
             <span className="font-mono text-3xl tabular-nums tracking-tight text-foreground/95 md:text-4xl">
-              {markPrice ? <NumberFlowUsd value={markPrice} /> : "—"}
+              {markPrice ? <NumberFlowUsd value={markPrice} decimals="adaptive" /> : "—"}
             </span>
           </div>
         </div>

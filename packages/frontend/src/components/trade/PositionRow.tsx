@@ -119,7 +119,10 @@ export function PositionRow({ position, markPrice, tick }: PositionRowProps) {
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-border/40 px-4 py-3.5 md:grid-cols-4">
         <Stat label="Size" value={<NumberFlowUsd value={position.size} />} />
         <Stat label="Margin" value={<NumberFlowUsd value={position.collateral} />} />
-        <Stat label="Entry" value={<NumberFlowUsd value={position.entry_price} />} />
+        <Stat
+          label="Entry"
+          value={<NumberFlowUsd value={position.entry_price} decimals="adaptive" />}
+        />
         <Stat
           label="Unrealized"
           value={
@@ -174,11 +177,11 @@ export function PositionRow({ position, markPrice, tick }: PositionRowProps) {
         <div className="flex gap-5 font-mono">
           <span className="flex items-baseline gap-1.5">
             <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">TP</span>
-            <span className="tabular-nums">{tp > 0n ? <NumberFlowUsd value={tp} /> : <span className="text-muted-foreground/40">—</span>}</span>
+            <span className="tabular-nums">{tp > 0n ? <NumberFlowUsd value={tp} decimals="adaptive" /> : <span className="text-muted-foreground/40">—</span>}</span>
           </span>
           <span className="flex items-baseline gap-1.5">
             <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">SL</span>
-            <span className="tabular-nums">{sl > 0n ? <NumberFlowUsd value={sl} /> : <span className="text-muted-foreground/40">—</span>}</span>
+            <span className="tabular-nums">{sl > 0n ? <NumberFlowUsd value={sl} decimals="adaptive" /> : <span className="text-muted-foreground/40">—</span>}</span>
           </span>
         </div>
         <Button
