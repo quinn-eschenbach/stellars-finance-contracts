@@ -1,27 +1,14 @@
 import type { Db } from "@stellars/db";
-import {
-  MarketTick,
-  BPS,
-  type BorrowRateConfig,
-  type MarketState,
-  type PositionState,
-  type VaultLiquidity,
-} from "@stellars/protocol-math";
+import { BPS } from "@stellars/protocol-math";
 import type { Executor } from "./executor.js";
 import type { KeeperConfig } from "./config.js";
 import type { TtlDedup } from "./dedup.js";
 import type { Serialize } from "./serializer.js";
 import {
-  getAllPositions,
-  getMarkets,
-  getLatestPrices,
-  getVaultState,
-  getProtocolConfig,
-  getIndexerCursor,
+  loadKeeperWorld,
+  toPositionState,
+  type KeeperWorld,
   type PositionRow,
-  type MarketRow,
-  type VaultStateRow,
-  type ProtocolConfigRow,
 } from "./scanner.js";
 
 export const DEDUP_TTL_MS = 60_000;
@@ -40,28 +27,15 @@ function toBigInt(value: string | null | undefined): bigint {
 }
 
 /**
- * Indexer staleness check. Returns lag in seconds; Infinity if the cursor
- * row is missing or has never recorded a close time (cold-start).
- */
-async function getIndexerLagSec(db: Db): Promise<number> {
-  const cursor = await getIndexerCursor(db);
-  if (!cursor) return Number.POSITIVE_INFINITY;
-  const closeTime = Number(cursor.last_ledger_close_time);
-  if (!closeTime) return Number.POSITIVE_INFINITY;
-  return Math.floor(Date.now() / 1000) - closeTime;
-}
-
-/**
  * Three-state staleness gate. `skip:true` means the loop must not act this
- * tick. `alert:true` means lag exceeds the soft threshold; the loop should
- * still act but operators should know.
+ * tick. Operators are warned at the soft threshold but the tick still runs.
  */
-async function checkStaleness(
-  db: Db,
+function checkStaleness(
+  world: KeeperWorld,
   config: KeeperConfig,
   loopName: string,
-): Promise<{ skip: boolean; lagSec: number }> {
-  const lagSec = await getIndexerLagSec(db);
+): { skip: boolean; lagSec: number } {
+  const lagSec = world.indexerLagSec;
   if (lagSec > config.staleHardSkipSec) {
     console.warn(`[${loopName}] indexer lag=${lagSec}s exceeds hard skip threshold; skipping`);
     return { skip: true, lagSec };
@@ -72,75 +46,6 @@ async function checkStaleness(
   return { skip: false, lagSec };
 }
 
-/** Adapt a markets row to the structural type protocol-math expects. */
-function toMarketState(m: MarketRow): MarketState {
-  return {
-    acc_borrow_index: toBigInt(m.acc_borrow_index),
-    acc_funding_index: toBigInt(m.acc_funding_index),
-    last_index_update: toBigInt(m.last_index_update),
-    long_open_interest: toBigInt(m.long_open_interest),
-    short_open_interest: toBigInt(m.short_open_interest),
-  };
-}
-
-function toVaultLiquidity(v: VaultStateRow | undefined): VaultLiquidity {
-  return {
-    reserved_usdc: toBigInt(v?.reserved_usdc),
-    total_assets: toBigInt(v?.total_assets),
-  };
-}
-
-function toBorrowRateConfig(c: ProtocolConfigRow | undefined): BorrowRateConfig {
-  return {
-    base_borrow_rate_bps: toBigInt(c?.base_borrow_rate_bps),
-    slope1_bps: toBigInt(c?.slope1_bps),
-    slope2_bps: toBigInt(c?.slope2_bps),
-    optimal_utilization_bps: toBigInt(c?.optimal_utilization_bps),
-    base_funding_rate_bps: toBigInt(c?.base_funding_rate_bps),
-  };
-}
-
-function toPositionState(p: PositionRow): PositionState {
-  return {
-    is_long: p.is_long,
-    size: toBigInt(p.size),
-    collateral: toBigInt(p.collateral),
-    entry_price: toBigInt(p.entry_price),
-    entry_borrow_index: toBigInt(p.entry_borrow_index),
-    entry_funding_index: toBigInt(p.entry_funding_index),
-  };
-}
-
-/**
- * Build a Map<symbol, MarketTick> by projecting each market forward to `now`.
- * Symbols without a current price are skipped — callers handle missing ticks
- * the same way they handle missing positions.
- */
-function buildTicks(
-  allMarkets: MarketRow[],
-  prices: Map<string, string>,
-  vault: VaultLiquidity,
-  rate_config: BorrowRateConfig,
-  last_unpause_time: bigint,
-  now: bigint,
-): Map<string, MarketTick> {
-  const ticks = new Map<string, MarketTick>();
-  for (const m of allMarkets) {
-    const priceStr = prices.get(m.symbol);
-    if (!priceStr) continue;
-    const tick = MarketTick.project({
-      market: toMarketState(m),
-      mark_price: toBigInt(priceStr),
-      vault,
-      rate_config,
-      now,
-      last_unpause_time,
-    });
-    ticks.set(m.symbol, tick);
-  }
-  return ticks;
-}
-
 // -- Liquidation candidate scanning ------------------------------------------
 
 interface LiquidationCandidate {
@@ -148,38 +53,20 @@ interface LiquidationCandidate {
   health: bigint;
 }
 
-async function scanLiquidationCandidates(
-  db: Db,
+function scanLiquidationCandidates(
+  world: KeeperWorld,
   config: KeeperConfig,
-): Promise<LiquidationCandidate[]> {
-  const nowUnix = BigInt(Math.floor(Date.now() / 1000));
-
-  const [allPositions, allMarkets, prices, vault, protoCfg] = await Promise.all([
-    getAllPositions(db),
-    getMarkets(db),
-    getLatestPrices(db),
-    getVaultState(db),
-    getProtocolConfig(db),
-  ]);
-
-  const ticks = buildTicks(
-    allMarkets,
-    prices,
-    toVaultLiquidity(vault),
-    toBorrowRateConfig(protoCfg),
-    toBigInt(protoCfg?.last_unpause_time),
-    nowUnix,
-  );
-
+): LiquidationCandidate[] {
   // Read the threshold from on-chain config (mirrored by the indexer into
   // protocol_config). Env var is a cold-start fallback before the indexer has
   // ingested the first LimitsUpdate event.
   const thresholdBps = BigInt(
-    protoCfg?.liquidation_threshold_bps ?? config.liquidationSafetyMarginBps,
+    world.protocolConfig?.liquidation_threshold_bps ?? config.liquidationSafetyMarginBps,
   );
+
   const candidates: LiquidationCandidate[] = [];
-  for (const pos of allPositions) {
-    const tick = ticks.get(pos.symbol);
+  for (const pos of world.positions) {
+    const tick = world.ticks.get(pos.symbol);
     if (!tick) continue;
 
     const collateral = toBigInt(pos.collateral);
@@ -209,13 +96,14 @@ export async function runHotLoop(
     let workDone = false;
 
     try {
-      const { skip } = await checkStaleness(db, config, "hot");
+      const world = await loadKeeperWorld(db);
+      const { skip } = checkStaleness(world, config, "hot");
       if (skip) {
         await sleep(config.liquidationIdleMs);
         continue;
       }
 
-      const candidates = await scanLiquidationCandidates(db, config);
+      const candidates = scanLiquidationCandidates(world, config);
       if (candidates.length === 0) {
         await sleep(config.liquidationIdleMs);
         continue;
@@ -254,47 +142,32 @@ async function runColdTick(
   dedup: TtlDedup,
   serialize: Serialize,
 ): Promise<void> {
-  const nowUnix = BigInt(Math.floor(Date.now() / 1000));
-
-  const [allPositions, allMarkets, prices, vault, protoCfg] = await Promise.all([
-    getAllPositions(db),
-    getMarkets(db),
-    getLatestPrices(db),
-    getVaultState(db),
-    getProtocolConfig(db),
-  ]);
-
-  const ticks = buildTicks(
-    allMarkets,
-    prices,
-    toVaultLiquidity(vault),
-    toBorrowRateConfig(protoCfg),
-    toBigInt(protoCfg?.last_unpause_time),
-    nowUnix,
-  );
+  const world = await loadKeeperWorld(db);
+  const { skip } = checkStaleness(world, config, "cold");
+  if (skip) return;
 
   // Step 1: Update stale indices. Indices have no per-(trader, symbol) dedup
   // key — the executor's sim gate rejects redundant updates cheaply.
-  for (const market of allMarkets) {
-    if (vault?.is_paused) break;
+  for (const market of world.markets) {
+    if (world.vault?.is_paused) break;
     const lastUpdate = toBigInt(market.last_index_update);
-    const elapsed = nowUnix - lastUpdate;
+    const elapsed = world.now - lastUpdate;
     if (elapsed > BigInt(config.indexUpdateThresholdSec)) {
       await serialize(() => executor.updateIndices(market.symbol));
     }
   }
 
   // Step 2: TP/SL order execution.
-  const minLifetime = toBigInt(protoCfg?.min_position_lifetime);
-  for (const pos of allPositions) {
+  const minLifetime = toBigInt(world.protocolConfig?.min_position_lifetime);
+  for (const pos of world.positions) {
     const tp = toBigInt(pos.take_profit);
     const sl = toBigInt(pos.stop_loss);
     if (tp === 0n && sl === 0n) continue;
 
-    const tick = ticks.get(pos.symbol);
+    const tick = world.ticks.get(pos.symbol);
     if (!tick) continue;
 
-    const age = nowUnix - toBigInt(pos.last_increased_time);
+    const age = world.now - toBigInt(pos.last_increased_time);
     if (age < minLifetime) continue;
 
     const triggered =
@@ -308,19 +181,19 @@ async function runColdTick(
   }
 
   // Step 3: ADL check.
-  if (vault && protoCfg) {
-    const totalAssets = toBigInt(vault.total_assets);
+  if (world.vault && world.protocolConfig) {
+    const totalAssets = toBigInt(world.vault.total_assets);
     if (totalAssets > 0n) {
-      const netPnl = toBigInt(vault.net_global_trader_pnl);
-      const reserved = toBigInt(vault.reserved_usdc);
-      const adlPnlBps = BigInt(protoCfg.adl_pnl_bps);
-      const adlUtilBps = BigInt(protoCfg.adl_utilization_bps);
+      const netPnl = toBigInt(world.vault.net_global_trader_pnl);
+      const reserved = toBigInt(world.vault.reserved_usdc);
+      const adlPnlBps = BigInt(world.protocolConfig.adl_pnl_bps);
+      const adlUtilBps = BigInt(world.protocolConfig.adl_utilization_bps);
 
       const pnlTrigger = netPnl > 0n && (netPnl * BPS) / totalAssets > adlPnlBps;
       const utilTrigger = (reserved * BPS) / totalAssets > adlUtilBps;
 
       if (pnlTrigger || utilTrigger) {
-        const target = findAdlTarget(allPositions, ticks);
+        const target = findAdlTarget(world);
         if (target) {
           const key = posKey(target.trader, target.symbol);
           if (dedup.claim(key, DEDUP_TTL_MS)) {
@@ -346,10 +219,7 @@ export async function runColdLoop(
   while (isRunning()) {
     const tickStart = Date.now();
     try {
-      const { skip } = await checkStaleness(db, config, "cold");
-      if (!skip) {
-        await runColdTick(db, executor, config, dedup, serialize);
-      }
+      await runColdTick(db, executor, config, dedup, serialize);
     } catch (err) {
       console.error("[cold] tick error:", err);
     }
@@ -364,10 +234,7 @@ export async function runColdLoop(
 
 // -- ADL targeting ----------------------------------------------------------
 
-function findAdlTarget(
-  positions: PositionRow[],
-  ticks: Map<string, MarketTick>,
-): PositionRow | null {
+function findAdlTarget(world: KeeperWorld): PositionRow | null {
   // Mirrors the BitMEX/Bybit/dYdX ADL ranking: profitable positions are
   // ordered by `unrealizedPnl × leverage`, where leverage = size / collateral.
   // High-leverage winners deleverage before low-leverage whales who happen
@@ -375,8 +242,8 @@ function findAdlTarget(
   let best: PositionRow | null = null;
   let bestScore = 0n;
 
-  for (const pos of positions) {
-    const tick = ticks.get(pos.symbol);
+  for (const pos of world.positions) {
+    const tick = world.ticks.get(pos.symbol);
     if (!tick) continue;
 
     const collateral = toBigInt(pos.collateral);
