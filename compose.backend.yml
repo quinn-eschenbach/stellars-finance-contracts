@@ -1,0 +1,85 @@
+# compose.backend.yml — production-style backend stack: Postgres + the
+# three off-chain services + frontend served by api.
+#
+#   docker compose -f compose.backend.yml --env-file .env.local up
+#
+# `--env-file` populates the ${...} substitutions below; the per-service
+# `env_file:` directive then loads the same file's contents *into* each
+# container. We override DATABASE_URL via `environment:` so services find
+# Postgres at its compose hostname (`postgres`) regardless of what the
+# shell .env says about localhost.
+#
+# Runtime stack here is intentionally separate from `docker-compose.yml`
+# (which spins up stellar-quickstart for local chain). The chain is treated
+# as an external dependency — local quickstart, testnet, mainnet, all the
+# same to this compose.
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stellars
+      POSTGRES_PASSWORD: stellars
+      POSTGRES_DB: stellars
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stellars"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    # No host port mapping by default — services reach it via the compose
+    # network. Uncomment to expose for psql debugging.
+    # ports:
+    #   - "5432:5432"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-.env.local}
+    environment:
+      # Override DB URL so the service uses the compose hostname even if
+      # the source .env points at localhost.
+      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+      API_PORT: "3030"
+      API_CORS_ORIGINS: "*"
+      STATIC_ROOT: /app/public
+    ports:
+      - "${API_PORT:-3030}:3030"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  indexer:
+    build:
+      context: .
+      dockerfile: docker/indexer.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-.env.local}
+    environment:
+      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+      HEALTH_PORT: "3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  keeper:
+    build:
+      context: .
+      dockerfile: docker/keeper.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-.env.local}
+    environment:
+      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

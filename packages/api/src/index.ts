@@ -1,6 +1,9 @@
 import "dotenv/config";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { serveStatic } from "hono/bun";
 import { getDb } from "@stellars/db";
 import { loadConfig } from "./config.js";
 import { Broadcaster } from "./broadcaster.js";
@@ -17,9 +20,26 @@ async function main() {
   const app = new Hono();
   app.use("*", cors({ origin: config.corsOrigins }));
 
-  app.get("/healthz", (c) => c.json({ ok: true }));
-  app.route("/", buildRestRoutes(db));
-  app.route("/stream", buildSseRoutes(db, broadcaster));
+  // All API routes live under /api so the same server can serve the SPA at
+  // /. In dev the vite proxy passes `/api/*` straight through; the dev path
+  // and prod path now share semantics.
+  app.get("/api/healthz", (c) => c.json({ ok: true }));
+  app.route("/api", buildRestRoutes(db));
+  app.route("/api/stream", buildSseRoutes(db, broadcaster));
+
+  // Static frontend — only when STATIC_ROOT points at a real directory
+  // (production image bakes the dist there). In dev the file doesn't exist
+  // and we let vite handle the SPA.
+  const staticRoot = process.env.STATIC_ROOT
+    ? resolve(process.env.STATIC_ROOT)
+    : null;
+  if (staticRoot && existsSync(staticRoot)) {
+    console.log(`[api] serving static frontend from ${staticRoot}`);
+    app.use("/*", serveStatic({ root: staticRoot }));
+    // SPA fallback: any unmatched GET returns index.html so client-side
+    // routing works on hard reloads / direct URLs.
+    app.get("*", serveStatic({ path: `${staticRoot}/index.html` }));
+  }
 
   console.log(`[api] listening on :${config.port}`);
   console.log(`[api] cors origins: ${config.corsOrigins.join(", ")}`);

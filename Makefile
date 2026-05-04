@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy deploy-testnet upgrade-local upgrade-testnet provision-keys provision-keys-testnet db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex
+.PHONY: build optimize test clean up down deploy deploy-testnet upgrade-local upgrade-testnet provision-keys provision-keys-testnet db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex backend-build backend-up backend-down backend-logs
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -160,3 +160,25 @@ sim-cleanup:
 local: up db-migrate provision-keys deploy cex-oracles
 	@echo ""
 	@echo "Local environment ready! Run 'make server' to start the off-chain stack, then 'make sim'."
+
+# ---- Backend stack (postgres + api + indexer + keeper) ----
+# Production-style compose. The api image bakes the built frontend and
+# serves /api/* + the SPA on a single port. Bindings must be generated
+# on the host first (`make bind`) — they're a prerequisite, not a build
+# step inside the image (avoids dragging Rust + stellar CLI into runtime
+# images).
+#
+# ENV_FILE selects which .env.<network> to feed each service. Defaults
+# to .env.local for parity with `make local`. For testnet:
+#   ENV_FILE=.env.testnet make backend-up
+backend-build: bind
+	docker compose -f compose.backend.yml build
+
+backend-up:
+	ENV_FILE="$${ENV_FILE:-.env.local}" docker compose -f compose.backend.yml up -d
+
+backend-down:
+	docker compose -f compose.backend.yml down
+
+backend-logs:
+	docker compose -f compose.backend.yml logs -f --tail=200

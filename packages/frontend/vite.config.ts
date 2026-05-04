@@ -16,10 +16,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // No path rewrite: api routes are mounted under /api server-side too,
+      // so dev and prod share the same URL shape (browser hits /api/markets,
+      // backend handles /api/markets).
       "/api": {
         target: process.env.VITE_API_URL ?? "http://localhost:3030",
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ""),
       },
     },
   },

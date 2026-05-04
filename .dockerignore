@@ -1,0 +1,43 @@
+# Keep image build context lean. Most of the heavyweight directories below
+# are either generated inside the image (node_modules, dist) or have no
+# business in a runtime image (target/, .git/, test snapshots).
+
+# Rust build output is huge and never needed in any docker image.
+target/
+
+# Workspace node_modules — pnpm reinstalls inside the deps stage.
+**/node_modules/
+
+# Frontend / indexer dist are produced inside the image. Host copies are
+# stale at best.
+packages/frontend/dist/
+packages/indexer/dist/
+packages/keeper/dist/
+packages/api/dist/
+
+# `packages/bindings/**` IS generated on the host (`make bind`) and the
+# images need its `dist/`, so we deliberately do NOT exclude it here. If
+# you skip `make bind` first, the container build will fail on missing
+# binding modules.
+
+# Editor + git
+.git/
+.gitignore
+.DS_Store
+.vscode/
+.idea/
+
+# Local env / secrets — never bake into images. compose `env_file:` reads
+# them from the host at runtime.
+.env
+.env.*
+
+# Test snapshots
+test-suites/test_snapshots/
+contracts/*/test_snapshots/
+
+# Local sim state
+packages/simulation/state/
+
+# Frontend dev artefacts that don't belong in any image
+packages/frontend/.vite/
