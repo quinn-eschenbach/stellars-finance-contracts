@@ -29,6 +29,13 @@
       "when": 1777908021113,
       "tag": "0003_latest_oracle_prices_view",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777908100000,
+      "tag": "0004_notification_triggers",
+      "breakpoints": true
     }
   ]
 }

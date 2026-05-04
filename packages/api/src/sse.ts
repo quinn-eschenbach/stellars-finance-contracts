@@ -3,11 +3,12 @@ import { streamSSE } from "hono/streaming";
 import { eq } from "drizzle-orm";
 import {
   type Db,
+  CHANNELS,
   markets,
-  positions,
   vaultState,
   oraclePrices,
   trades,
+  type ChannelPayloads,
 } from "@stellars/db";
 import type { Broadcaster, Notification } from "./broadcaster.js";
 
@@ -27,10 +28,10 @@ export function buildSseRoutes(db: Db, br: Broadcaster): Hono {
   r.get("/prices", (c) =>
     streamSSE(c, async (s) => {
       const queue = makeQueue<Notification>();
-      const unsub = await br.subscribe("oracle_prices_changed", (n) => queue.push(n));
+      const unsub = await br.subscribe(CHANNELS.oraclePrices, (n) => queue.push(n));
       try {
         for await (const n of queue) {
-          const id = (n.payload as { id?: number } | null)?.id;
+          const id = (n.payload as ChannelPayloads["oraclePrices"] | null)?.id;
           if (id == null) continue;
           const rows = await db.select().from(oraclePrices).where(eq(oraclePrices.id, id)).limit(1);
           if (rows.length === 0) continue;
@@ -46,8 +47,8 @@ export function buildSseRoutes(db: Db, br: Broadcaster): Hono {
     streamSSE(c, async (s) => {
       const symbol = c.req.param("symbol");
       const queue = makeQueue<Notification>();
-      const unsub = await br.subscribe("markets_changed", (n) => {
-        if ((n.payload as { symbol?: string } | null)?.symbol === symbol) queue.push(n);
+      const unsub = await br.subscribe(CHANNELS.markets, (n) => {
+        if ((n.payload as ChannelPayloads["markets"] | null)?.symbol === symbol) queue.push(n);
       });
       try {
         for await (const _ of queue) {
@@ -69,12 +70,12 @@ export function buildSseRoutes(db: Db, br: Broadcaster): Hono {
     streamSSE(c, async (s) => {
       const symbol = c.req.param("symbol");
       const queue = makeQueue<Notification>();
-      const unsub = await br.subscribe("trades_changed", (n) => {
-        if ((n.payload as { symbol?: string } | null)?.symbol === symbol) queue.push(n);
+      const unsub = await br.subscribe(CHANNELS.trades, (n) => {
+        if ((n.payload as ChannelPayloads["trades"] | null)?.symbol === symbol) queue.push(n);
       });
       try {
         for await (const n of queue) {
-          const id = (n.payload as { id?: number } | null)?.id;
+          const id = (n.payload as ChannelPayloads["trades"] | null)?.id;
           if (id == null) continue;
           const rows = await db.select().from(trades).where(eq(trades.id, id)).limit(1);
           if (rows.length === 0) continue;
@@ -89,13 +90,14 @@ export function buildSseRoutes(db: Db, br: Broadcaster): Hono {
   r.get("/positions", (c) =>
     streamSSE(c, async (s) => {
       const queue = makeQueue<Notification>();
-      const unsub = await br.subscribe("positions_changed", (n) => queue.push(n));
+      const unsub = await br.subscribe(CHANNELS.positions, (n) => queue.push(n));
       try {
         for await (const n of queue) {
           // For DELETE we only have OLD info; payload already contains it.
+          const payload = n.payload as ChannelPayloads["positions"] | null;
           await s.writeSSE({
             event: "position",
-            id: `position:${(n.payload as { id?: number } | null)?.id ?? "?"}`,
+            id: `position:${payload?.id ?? "?"}`,
             data: JSON.stringify(n.payload),
           });
         }
@@ -108,7 +110,7 @@ export function buildSseRoutes(db: Db, br: Broadcaster): Hono {
   r.get("/vault", (c) =>
     streamSSE(c, async (s) => {
       const queue = makeQueue<Notification>();
-      const unsub = await br.subscribe("vault_state_changed", (n) => queue.push(n));
+      const unsub = await br.subscribe(CHANNELS.vaultState, (n) => queue.push(n));
       try {
         for await (const _ of queue) {
           const rows = await db.select().from(vaultState).where(eq(vaultState.id, 1)).limit(1);

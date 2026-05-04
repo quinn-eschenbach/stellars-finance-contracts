@@ -13,7 +13,6 @@ async function main() {
   const broadcaster = new Broadcaster(config.databaseUrl);
 
   await broadcaster.connect();
-  await broadcaster.installTriggers();
 
   const app = new Hono();
   app.use("*", cors({ origin: config.corsOrigins }));
