@@ -52,36 +52,36 @@
     ],
     "contracts": {
       "vault": {
-        "address": "",
-        "startLedger": 0
+        "address": "CBGUMVXETE4KQCIAYVH6XVJGU4JIGUMXUH3FICWEGWVUVBVPYG2IIJ7I",
+        "startLedger": 2386056
       },
       "positionManager": {
-        "address": "",
-        "startLedger": 0
+        "address": "CC7LKQXFIW3VM74IX3WFM5FKDOS4DJL5Q2BNLYJZO6MMOT2ZHCZO34P4",
+        "startLedger": 2386058
       },
       "configManager": {
-        "address": "",
-        "startLedger": 0
+        "address": "CDOX7YU6NXB4ALYVPBQMJETJUDOMQMINJKEFKYFYXNPKLBRDA5ZJ4CUB",
+        "startLedger": 2386046
       },
       "oracleRouter": {
-        "address": "",
-        "startLedger": 0
+        "address": "CCDAJO7NWQSUYJ5TO6JEAJKKXCTZSAEUHS2WBWIXI3XAXPAFQRVCH7WC",
+        "startLedger": 2386048
       },
       "oracle": {
-        "address": "",
-        "startLedger": 0
+        "address": "CAIRXHIINS3IGSBXTVK3U4V2UY67XX2ZT3SALORSJQCOH7XTOEPEIGBU",
+        "startLedger": 2386050
       },
       "binanceOracle": {
-        "address": "",
-        "startLedger": 0
+        "address": "CBNU3IHEPS4QF3UKGHKUWPFZDPOWTUF5QWRXMVJSXFJYMJ7IN6C4ZUJO",
+        "startLedger": 2386241
       },
       "kucoinOracle": {
-        "address": "",
-        "startLedger": 0
+        "address": "CASHCX4WQFFB5CFPQJGF2CQ5UZJVWPJ2VMTEQUS7Q7EV5JL7O5OQBYCG",
+        "startLedger": 2386242
       },
       "mockToken": {
-        "address": "",
-        "startLedger": 0
+        "address": "CB2WJV6F57FHFUTYJGIGQZYH7JOUTQGPXZVI5NCFGHO4HW7UE74DPNXV",
+        "startLedger": 2386053
       }
     }
   },
