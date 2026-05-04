@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy deploy-testnet upgrade-local upgrade-testnet provision-keys provision-keys-testnet db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex backend-build backend-up backend-down backend-logs
+.PHONY: build optimize test clean up down deploy deploy-testnet upgrade-local upgrade-testnet provision-keys provision-keys-testnet add-market db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex backend-build backend-up backend-down backend-logs
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -79,6 +79,14 @@ upgrade-testnet: build
 
 grant-keepers:
 	bash scripts/grant-keepers.sh
+
+# Incrementally add a new market (oracle source + max leverage) to a
+# live deployment, no contract redeploys. Usage:
+#   make add-market SYMBOL=XLMUSD
+#   NETWORK_KEY=testnet MAX_LEVERAGE=20 make add-market SYMBOL=XLMUSD
+add-market:
+	@if [ -z "$(SYMBOL)" ]; then echo "❌ usage: make add-market SYMBOL=XLMUSD"; exit 1; fi
+	bash scripts/add-market.sh $(SYMBOL)
 
 db-migrate:
 	pnpm --filter @stellars/db migrate

@@ -4,7 +4,8 @@
     "networkPassphrase": "Standalone Network ; February 2017",
     "tickers": [
       "BTCUSD",
-      "ETHUSD"
+      "ETHUSD",
+      "XLMUSD"
     ],
     "contracts": {
       "vault": {
@@ -46,7 +47,8 @@
     "networkPassphrase": "Test SDF Network ; September 2015",
     "tickers": [
       "BTCUSD",
-      "ETHUSD"
+      "ETHUSD",
+      "XLMUSD"
     ],
     "contracts": {
       "vault": {
@@ -88,7 +90,8 @@
     "networkPassphrase": "Public Global Stellar Network ; September 2015",
     "tickers": [
       "BTCUSD",
-      "ETHUSD"
+      "ETHUSD",
+      "XLMUSD"
     ],
     "contracts": {
       "vault": {
