@@ -39,22 +39,7 @@ clean:
 # ---- Local dev environment ----
 
 up:
-	docker compose up -d
-	@echo "Waiting for Stellar RPC (port 8000)..."
-	@i=0; until curl -sf http://localhost:8000 >/dev/null 2>&1; do \
-	  i=$$((i+1)); printf "."; sleep 2; \
-	  if [ $$i -ge 60 ]; then echo " timed out after 120s"; exit 1; fi; \
-	done; echo " ready"
-	@# Friendbot returns HTTP 400 ("addr is required") on a no-arg probe once
-	@# the service is listening. Probe for that instead of trying to fund a
-	@# hardcoded account — that has side effects and breaks on re-runs.
-	@echo "Waiting for friendbot..."
-	@i=0; until [ "$$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 'http://localhost:8000/friendbot')" = "400" ]; do \
-	  i=$$((i+1)); printf "."; sleep 2; \
-	  if [ $$i -ge 90 ]; then echo " timed out after 180s"; exit 1; fi; \
-	done; echo " ready"
-	@echo "Waiting for Postgres..."
-	@until docker exec stellars-postgres pg_isready -U stellars >/dev/null 2>&1; do sleep 1; done
+	docker compose up -d --wait
 	@echo "Local services ready."
 
 down:
