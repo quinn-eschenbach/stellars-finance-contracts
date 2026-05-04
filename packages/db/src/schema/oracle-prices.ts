@@ -1,14 +1,25 @@
-import { pgTable, pgView, text, numeric, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, pgView, text, numeric, integer, timestamp, primaryKey, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const oraclePrices = pgTable("oracle_prices", {
-  id: integer().primaryKey().generatedAlwaysAsIdentity(),
-  ledger: integer().notNull(),
-  timestamp: numeric().notNull(),
-  symbol: text().notNull(),
-  price: numeric().notNull(),
-  created_at: timestamp().defaultNow().notNull(),
-});
+export const oraclePrices = pgTable(
+  "oracle_prices",
+  {
+    id: integer().generatedAlwaysAsIdentity(),
+    ledger: integer().notNull(),
+    timestamp: numeric().notNull(),
+    symbol: text().notNull(),
+    price: numeric().notNull(),
+    created_at: timestamp().defaultNow().notNull(),
+  },
+  // Hypertable: partition column (created_at) must appear in every UNIQUE
+  // constraint, so the PK is composite. Lookups by id alone (SSE point
+  // fetch) get a separate btree — the IDENTITY sequence keeps id unique
+  // in practice, so non-unique is enough.
+  (t) => [
+    primaryKey({ columns: [t.id, t.created_at] }),
+    index("oracle_prices_id_idx").on(t.id),
+  ],
+);
 
 /**
  * One row per symbol carrying the most recently inserted price observation

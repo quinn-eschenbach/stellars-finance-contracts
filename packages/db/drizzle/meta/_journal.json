@@ -36,6 +36,13 @@
       "when": 1777908100000,
       "tag": "0004_notification_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777908200000,
+      "tag": "0005_timescale_oracle_prices",
+      "breakpoints": true
     }
   ]
 }
