@@ -1,7 +1,96 @@
 import { eq, and, sql } from "drizzle-orm";
 import { type Db, positions, markets, trades, pauseEvents, protocolConfig } from "@stellars/db";
 import type { ParsedEvent } from "../spec-parser.js";
-import { toNumericString, unixSeconds } from "../spec-parser.js";
+import { toNumericString, unixSeconds } from "../convert.js";
+
+// Per-event data shapes. Field names mirror the #[contractevent] structs in
+// contracts/position-manager/src/events.rs.
+
+interface IncreasePositionData {
+  trader: string;
+  symbol: string;
+  size_delta: bigint;
+  collateral: bigint;
+  entry_price: bigint;
+  is_long: boolean;
+  tp: bigint;
+  sl: bigint;
+  new_total_size: bigint;
+  new_total_collateral: bigint;
+  entry_borrow_index: bigint;
+  entry_funding_index: bigint;
+  last_increased_time: bigint;
+}
+
+interface DecreasePositionData {
+  trader: string;
+  symbol: string;
+  size_delta: bigint;
+  pnl: bigint;
+  borrow_fee: bigint;
+  funding_fee: bigint;
+  mark_price: bigint;
+  is_full_close: boolean;
+}
+
+interface LiquidateData {
+  trader: string;
+  symbol: string;
+  size: bigint;
+  collateral: bigint;
+  pnl: bigint;
+  borrow_fee: bigint;
+  funding_fee: bigint;
+  mark_price: bigint;
+  keeper: string;
+}
+
+interface ExecuteOrderData {
+  trader: string;
+  symbol: string;
+  size: bigint;
+  pnl: bigint;
+  mark_price: bigint;
+  is_tp: boolean;
+  keeper: string;
+}
+
+interface AdlData {
+  trader: string;
+  symbol: string;
+  size: bigint;
+  pnl: bigint;
+  mark_price: bigint;
+}
+
+interface UpdateIndicesData {
+  symbol: string;
+  acc_borrow_index: bigint;
+  acc_funding_index: bigint;
+  timestamp: bigint;
+}
+
+interface SetTpSlData {
+  trader: string;
+  symbol: string;
+  take_profit: bigint;
+  stop_loss: bigint;
+}
+
+interface SetMaxLeverageData {
+  symbol: string;
+  max_leverage: bigint;
+}
+
+interface MarketPnlUpdateData {
+  symbol: string;
+  unrealized_pnl: bigint;
+}
+
+interface PauseData {
+  is_paused: boolean;
+  caller: string;
+}
 
 async function refreshMarketAggregates(db: Db, symbol: string, ledger: number) {
   const result = await db.execute<{
@@ -80,13 +169,12 @@ export async function handlePositionManagerEvent(db: Db, event: ParsedEvent) {
 }
 
 async function handleIncrease(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const trader = String(data.trader);
+  const d = event.data as IncreasePositionData;
 
   const existing = await db
     .select()
     .from(positions)
-    .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)))
+    .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)))
     .limit(1);
 
   const ts = unixSeconds(event.timestamp);
@@ -94,31 +182,31 @@ async function handleIncrease(db: Db, event: ParsedEvent) {
     await db
       .update(positions)
       .set({
-        size: toNumericString(data.new_total_size),
-        collateral: toNumericString(data.new_total_collateral),
-        entry_price: toNumericString(data.entry_price),
-        is_long: data.is_long,
-        take_profit: toNumericString(data.tp),
-        stop_loss: toNumericString(data.sl),
+        size: toNumericString(d.new_total_size),
+        collateral: toNumericString(d.new_total_collateral),
+        entry_price: toNumericString(d.entry_price),
+        is_long: d.is_long,
+        take_profit: toNumericString(d.tp),
+        stop_loss: toNumericString(d.sl),
         last_increased_time: ts,
         updated_at_ledger: event.ledger,
         updated_at_tx: event.txHash,
         updated_at: new Date(),
       })
-      .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)));
+      .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
   } else {
     await db.insert(positions).values({
-      trader,
-      symbol: data.symbol,
-      collateral: toNumericString(data.new_total_collateral),
-      size: toNumericString(data.new_total_size),
-      entry_price: toNumericString(data.entry_price),
-      entry_borrow_index: data.entry_borrow_index != null ? toNumericString(data.entry_borrow_index) : "0",
-      entry_funding_index: data.entry_funding_index != null ? toNumericString(data.entry_funding_index) : "0",
-      is_long: data.is_long,
-      last_increased_time: data.last_increased_time != null ? toNumericString(data.last_increased_time) : ts,
-      take_profit: toNumericString(data.tp),
-      stop_loss: toNumericString(data.sl),
+      trader: d.trader,
+      symbol: d.symbol,
+      collateral: toNumericString(d.new_total_collateral),
+      size: toNumericString(d.new_total_size),
+      entry_price: toNumericString(d.entry_price),
+      entry_borrow_index: d.entry_borrow_index != null ? toNumericString(d.entry_borrow_index) : "0",
+      entry_funding_index: d.entry_funding_index != null ? toNumericString(d.entry_funding_index) : "0",
+      is_long: d.is_long,
+      last_increased_time: d.last_increased_time != null ? toNumericString(d.last_increased_time) : ts,
+      take_profit: toNumericString(d.tp),
+      stop_loss: toNumericString(d.sl),
       updated_at_ledger: event.ledger,
       updated_at_tx: event.txHash,
     });
@@ -128,35 +216,34 @@ async function handleIncrease(db: Db, event: ParsedEvent) {
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: ts,
-    trader,
-    symbol: data.symbol,
+    trader: d.trader,
+    symbol: d.symbol,
     event_type: "increase",
-    size_delta: toNumericString(data.size_delta),
-    collateral_delta: toNumericString(data.collateral),
-    entry_price: toNumericString(data.entry_price),
-    is_long: data.is_long,
+    size_delta: toNumericString(d.size_delta),
+    collateral_delta: toNumericString(d.collateral),
+    entry_price: toNumericString(d.entry_price),
+    is_long: d.is_long,
   });
-  await refreshMarketAggregates(db, data.symbol, event.ledger);
+  await refreshMarketAggregates(db, d.symbol, event.ledger);
 }
 
 async function handleDecrease(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const trader = String(data.trader);
+  const d = event.data as DecreasePositionData;
 
-  if (data.is_full_close) {
+  if (d.is_full_close) {
     await db
       .delete(positions)
-      .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)));
+      .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
   } else {
     const existing = await db
       .select()
       .from(positions)
-      .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)))
+      .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)))
       .limit(1);
     if (existing.length > 0) {
       const pos = existing[0];
       const oldSize = BigInt(pos.size);
-      const delta = BigInt(toNumericString(data.size_delta));
+      const delta = BigInt(toNumericString(d.size_delta));
       const newSize = oldSize - delta;
       const newCollateral = oldSize > 0n
         ? (BigInt(pos.collateral) * newSize) / oldSize
@@ -170,7 +257,7 @@ async function handleDecrease(db: Db, event: ParsedEvent) {
           updated_at_tx: event.txHash,
           updated_at: new Date(),
         })
-        .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)));
+        .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
     }
   }
 
@@ -178,113 +265,109 @@ async function handleDecrease(db: Db, event: ParsedEvent) {
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    trader,
-    symbol: data.symbol,
+    trader: d.trader,
+    symbol: d.symbol,
     event_type: "decrease",
-    size_delta: toNumericString(data.size_delta),
-    mark_price: toNumericString(data.mark_price),
-    pnl: toNumericString(data.pnl),
-    borrow_fee: toNumericString(data.borrow_fee),
-    funding_fee: toNumericString(data.funding_fee),
-    is_full_close: data.is_full_close,
+    size_delta: toNumericString(d.size_delta),
+    mark_price: toNumericString(d.mark_price),
+    pnl: toNumericString(d.pnl),
+    borrow_fee: toNumericString(d.borrow_fee),
+    funding_fee: toNumericString(d.funding_fee),
+    is_full_close: d.is_full_close,
   });
-  await refreshMarketAggregates(db, data.symbol, event.ledger);
+  await refreshMarketAggregates(db, d.symbol, event.ledger);
 }
 
 async function handleLiquidation(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const trader = String(data.trader);
+  const d = event.data as LiquidateData;
 
   await db
     .delete(positions)
-    .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)));
+    .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
 
   await db.insert(trades).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    trader,
-    symbol: data.symbol,
+    trader: d.trader,
+    symbol: d.symbol,
     event_type: "liquidation",
-    size_delta: toNumericString(data.size),
-    collateral_delta: toNumericString(data.collateral),
-    mark_price: toNumericString(data.mark_price),
-    pnl: toNumericString(data.pnl),
-    borrow_fee: toNumericString(data.borrow_fee),
-    funding_fee: toNumericString(data.funding_fee),
+    size_delta: toNumericString(d.size),
+    collateral_delta: toNumericString(d.collateral),
+    mark_price: toNumericString(d.mark_price),
+    pnl: toNumericString(d.pnl),
+    borrow_fee: toNumericString(d.borrow_fee),
+    funding_fee: toNumericString(d.funding_fee),
     is_full_close: true,
-    keeper: String(data.keeper),
+    keeper: d.keeper,
   });
-  await refreshMarketAggregates(db, data.symbol, event.ledger);
+  await refreshMarketAggregates(db, d.symbol, event.ledger);
 }
 
 async function handleExecuteOrder(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const trader = String(data.trader);
+  const d = event.data as ExecuteOrderData;
 
   await db
     .delete(positions)
-    .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)));
+    .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
 
   await db.insert(trades).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    trader,
-    symbol: data.symbol,
+    trader: d.trader,
+    symbol: d.symbol,
     event_type: "order",
-    size_delta: toNumericString(data.size),
-    mark_price: toNumericString(data.mark_price),
-    pnl: toNumericString(data.pnl),
+    size_delta: toNumericString(d.size),
+    mark_price: toNumericString(d.mark_price),
+    pnl: toNumericString(d.pnl),
     is_full_close: true,
-    is_tp: data.is_tp,
-    keeper: String(data.keeper),
+    is_tp: d.is_tp,
+    keeper: d.keeper,
   });
-  await refreshMarketAggregates(db, data.symbol, event.ledger);
+  await refreshMarketAggregates(db, d.symbol, event.ledger);
 }
 
 async function handleAdl(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const trader = String(data.trader);
+  const d = event.data as AdlData;
 
   await db
     .delete(positions)
-    .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)));
+    .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
 
   await db.insert(trades).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    trader,
-    symbol: data.symbol,
+    trader: d.trader,
+    symbol: d.symbol,
     event_type: "adl",
-    size_delta: toNumericString(data.size),
-    mark_price: toNumericString(data.mark_price),
-    pnl: toNumericString(data.pnl),
+    size_delta: toNumericString(d.size),
+    mark_price: toNumericString(d.mark_price),
+    pnl: toNumericString(d.pnl),
     is_full_close: true,
   });
-  await refreshMarketAggregates(db, data.symbol, event.ledger);
+  await refreshMarketAggregates(db, d.symbol, event.ledger);
 }
 
 async function handleIndices(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const symbol = String(data.symbol);
+  const d = event.data as UpdateIndicesData;
 
   await db
     .insert(markets)
     .values({
-      symbol,
-      acc_borrow_index: toNumericString(data.acc_borrow_index),
-      acc_funding_index: toNumericString(data.acc_funding_index),
-      last_index_update: toNumericString(data.timestamp),
+      symbol: d.symbol,
+      acc_borrow_index: toNumericString(d.acc_borrow_index),
+      acc_funding_index: toNumericString(d.acc_funding_index),
+      last_index_update: toNumericString(d.timestamp),
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: markets.symbol,
       set: {
-        acc_borrow_index: toNumericString(data.acc_borrow_index),
-        acc_funding_index: toNumericString(data.acc_funding_index),
-        last_index_update: toNumericString(data.timestamp),
+        acc_borrow_index: toNumericString(d.acc_borrow_index),
+        acc_funding_index: toNumericString(d.acc_funding_index),
+        last_index_update: toNumericString(d.timestamp),
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -292,36 +375,34 @@ async function handleIndices(db: Db, event: ParsedEvent) {
 }
 
 async function handleTpSl(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const trader = String(data.trader);
+  const d = event.data as SetTpSlData;
 
   await db
     .update(positions)
     .set({
-      take_profit: toNumericString(data.take_profit),
-      stop_loss: toNumericString(data.stop_loss),
+      take_profit: toNumericString(d.take_profit),
+      stop_loss: toNumericString(d.stop_loss),
       updated_at_ledger: event.ledger,
       updated_at_tx: event.txHash,
       updated_at: new Date(),
     })
-    .where(and(eq(positions.trader, trader), eq(positions.symbol, data.symbol)));
+    .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
 }
 
 async function handleMaxLeverage(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const symbol = String(data.symbol);
+  const d = event.data as SetMaxLeverageData;
 
   await db
     .insert(markets)
     .values({
-      symbol,
-      max_leverage: toNumericString(data.max_leverage),
+      symbol: d.symbol,
+      max_leverage: toNumericString(d.max_leverage),
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: markets.symbol,
       set: {
-        max_leverage: toNumericString(data.max_leverage),
+        max_leverage: toNumericString(d.max_leverage),
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -329,19 +410,18 @@ async function handleMaxLeverage(db: Db, event: ParsedEvent) {
 }
 
 async function handleMarketPnl(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const symbol = String(data.symbol);
+  const d = event.data as MarketPnlUpdateData;
   await db
     .insert(markets)
     .values({
-      symbol,
-      market_unrealized_pnl: toNumericString(data.unrealized_pnl),
+      symbol: d.symbol,
+      market_unrealized_pnl: toNumericString(d.unrealized_pnl),
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: markets.symbol,
       set: {
-        market_unrealized_pnl: toNumericString(data.unrealized_pnl),
+        market_unrealized_pnl: toNumericString(d.unrealized_pnl),
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -349,21 +429,21 @@ async function handleMarketPnl(db: Db, event: ParsedEvent) {
 }
 
 async function handlePause(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as PauseData;
   const ts = unixSeconds(event.timestamp);
   await db.insert(pauseEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: ts,
     contract: "position_manager",
-    is_paused: data.is_paused,
-    caller: String(data.caller),
+    is_paused: d.is_paused,
+    caller: d.caller,
   });
 
   // Mirror PositionManager's on-chain LastUnpauseTime so off-chain MarketTick
   // projection can clamp `effective_start = max(last_index_update, last_unpause_time)`.
   // Insert with id=1 so the upsert hits the singleton row (matches getProtocolConfig).
-  if (!data.is_paused) {
+  if (!d.is_paused) {
     await db
       .insert(protocolConfig)
       .values({ id: 1, last_unpause_time: ts, updated_at_ledger: event.ledger })

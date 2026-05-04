@@ -1,9 +1,82 @@
 import { eq, sql } from "drizzle-orm";
 import { type Db, vaultState, vaultEvents, vaultLockups, feeEvents, payProfitEvents, pauseEvents, lpTransfers } from "@stellars/db";
 import type { ParsedEvent } from "../spec-parser.js";
-import { toNumericString, unixSeconds } from "../spec-parser.js";
+import { toNumericString, unixSeconds } from "../convert.js";
 
 const SINGLETON_ID = 1;
+
+// Per-event data shapes. Most events come from contracts/vault/src/events.rs;
+// `deposit`/`withdraw` come from OZ stellar_tokens::vault::Vault and `transfer`
+// from OZ FungibleToken (auto-emitted on LP share movement).
+
+interface DepositData {
+  receiver: string;
+  assets: bigint;
+  shares: bigint;
+}
+
+interface WithdrawData {
+  owner: string;
+  assets: bigint;
+  shares: bigint;
+}
+
+interface TransferData {
+  from: string;
+  to: string;
+  to_muxed_id?: bigint | null;
+  amount: bigint;
+}
+
+interface PayProfitData {
+  trader: string;
+  amount: bigint;
+}
+
+interface AbsorbedCollateralData {
+  trader: string;
+  amount: bigint;
+}
+
+interface ReserveData {
+  amount: bigint;
+  new_total: bigint;
+}
+
+interface ReleaseData {
+  amount: bigint;
+  new_total: bigint;
+}
+
+interface AccrueFeesData {
+  amount: bigint;
+  new_total: bigint;
+}
+
+interface ClaimFeesData {
+  amount: bigint;
+  recipient: string;
+}
+
+interface UpdateNetPnlData {
+  pnl: bigint;
+}
+
+interface ClaimFeesToData {
+  amount: bigint;
+  new_total: bigint;
+  recipient: string;
+}
+
+interface PauseData {
+  is_paused: boolean;
+  caller: string;
+}
+
+interface LockupData {
+  user: string;
+  expires_at: bigint;
+}
 
 async function recomputeFreeLiquidity(db: Db, ledger: number) {
   const rows = await db.select().from(vaultState).where(eq(vaultState.id, SINGLETON_ID)).limit(1);
@@ -59,13 +132,12 @@ export async function handleVaultEvent(db: Db, event: ParsedEvent) {
 }
 
 async function handleLockup(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const user = String(data.user);
-  const expiresAt = toNumericString(data.expires_at);
+  const d = event.data as LockupData;
+  const expiresAt = toNumericString(d.expires_at);
   await db
     .insert(vaultLockups)
     .values({
-      user,
+      user: d.user,
       expires_at: expiresAt,
       updated_at_ledger: event.ledger,
     })
@@ -80,18 +152,18 @@ async function handleLockup(db: Db, event: ParsedEvent) {
 }
 
 async function handleDeposit(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as DepositData;
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
     event_type: "deposit",
-    user: String(data.receiver),
-    assets: toNumericString(data.assets),
-    shares: toNumericString(data.shares),
+    user: d.receiver,
+    assets: toNumericString(d.assets),
+    shares: toNumericString(d.shares),
   });
-  const assets = toNumericString(data.assets);
-  const shares = toNumericString(data.shares);
+  const assets = toNumericString(d.assets);
+  const shares = toNumericString(d.shares);
   await db
     .insert(vaultState)
     .values({ id: SINGLETON_ID, total_assets: assets, total_shares: shares, updated_at_ledger: event.ledger })
@@ -108,18 +180,18 @@ async function handleDeposit(db: Db, event: ParsedEvent) {
 }
 
 async function handleWithdraw(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as WithdrawData;
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
     event_type: "withdraw",
-    user: String(data.owner),
-    assets: toNumericString(data.assets),
-    shares: toNumericString(data.shares),
+    user: d.owner,
+    assets: toNumericString(d.assets),
+    shares: toNumericString(d.shares),
   });
-  const assets = toNumericString(data.assets);
-  const shares = toNumericString(data.shares);
+  const assets = toNumericString(d.assets);
+  const shares = toNumericString(d.shares);
   await db
     .update(vaultState)
     .set({
@@ -133,15 +205,15 @@ async function handleWithdraw(db: Db, event: ParsedEvent) {
 }
 
 async function handleTransfer(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as TransferData;
   await db.insert(lpTransfers).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    from: String(data.from),
-    to: String(data.to),
-    to_muxed_id: data.to_muxed_id != null ? toNumericString(data.to_muxed_id) : null,
-    amount: toNumericString(data.amount),
+    from: d.from,
+    to: d.to,
+    to_muxed_id: d.to_muxed_id != null ? toNumericString(d.to_muxed_id) : null,
+    amount: toNumericString(d.amount),
   });
 }
 
@@ -152,14 +224,14 @@ async function handleTransfer(db: Db, event: ParsedEvent) {
  * so the DB stays in lockstep with the on-chain balance.
  */
 async function handleAbsorbedCollateral(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const amount = toNumericString(data.amount);
+  const d = event.data as AbsorbedCollateralData;
+  const amount = toNumericString(d.amount);
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
     event_type: "absorbed",
-    user: String(data.trader),
+    user: d.trader,
     assets: amount,
     shares: "0",
   });
@@ -180,13 +252,13 @@ async function handleAbsorbedCollateral(db: Db, event: ParsedEvent) {
  * handleAbsorbedCollateral (ADR-0001).
  */
 async function handlePayProfit(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const amount = toNumericString(data.amount);
+  const d = event.data as PayProfitData;
+  const amount = toNumericString(d.amount);
   await db.insert(payProfitEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    trader: String(data.trader),
+    trader: d.trader,
     amount,
   });
   await db
@@ -201,18 +273,19 @@ async function handlePayProfit(db: Db, event: ParsedEvent) {
 }
 
 async function handleReserve(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as ReserveData;
+  const newTotal = toNumericString(d.new_total);
   await db
     .insert(vaultState)
     .values({
       id: SINGLETON_ID,
-      reserved_usdc: toNumericString(data.new_total),
+      reserved_usdc: newTotal,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        reserved_usdc: toNumericString(data.new_total),
+        reserved_usdc: newTotal,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -221,11 +294,11 @@ async function handleReserve(db: Db, event: ParsedEvent) {
 }
 
 async function handleRelease(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as ReleaseData;
   await db
     .update(vaultState)
     .set({
-      reserved_usdc: toNumericString(data.new_total),
+      reserved_usdc: toNumericString(d.new_total),
       updated_at_ledger: event.ledger,
       updated_at: new Date(),
     })
@@ -234,18 +307,19 @@ async function handleRelease(db: Db, event: ParsedEvent) {
 }
 
 async function handleAccrueFees(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as AccrueFeesData;
+  const newTotal = toNumericString(d.new_total);
   await db
     .insert(vaultState)
     .values({
       id: SINGLETON_ID,
-      unclaimed_fees: toNumericString(data.new_total),
+      unclaimed_fees: newTotal,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        unclaimed_fees: toNumericString(data.new_total),
+        unclaimed_fees: newTotal,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -256,14 +330,14 @@ async function handleAccrueFees(db: Db, event: ParsedEvent) {
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
     event_type: "accrue",
-    amount: toNumericString(data.amount),
+    amount: toNumericString(d.amount),
   });
   await recomputeFreeLiquidity(db, event.ledger);
 }
 
 async function handleClaimFees(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const amount = toNumericString(data.amount);
+  const d = event.data as ClaimFeesData;
+  const amount = toNumericString(d.amount);
   await db
     .update(vaultState)
     .set({
@@ -280,24 +354,25 @@ async function handleClaimFees(db: Db, event: ParsedEvent) {
     timestamp: unixSeconds(event.timestamp),
     event_type: "claim",
     amount,
-    recipient: String(data.recipient),
+    recipient: d.recipient,
   });
   await recomputeFreeLiquidity(db, event.ledger);
 }
 
 async function handleNetPnl(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as UpdateNetPnlData;
+  const pnl = toNumericString(d.pnl);
   await db
     .insert(vaultState)
     .values({
       id: SINGLETON_ID,
-      net_global_trader_pnl: toNumericString(data.pnl),
+      net_global_trader_pnl: pnl,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        net_global_trader_pnl: toNumericString(data.pnl),
+        net_global_trader_pnl: pnl,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -306,12 +381,12 @@ async function handleNetPnl(db: Db, event: ParsedEvent) {
 }
 
 async function handleClaimFeesTo(db: Db, event: ParsedEvent) {
-  const { data } = event;
-  const amount = toNumericString(data.amount);
+  const d = event.data as ClaimFeesToData;
+  const amount = toNumericString(d.amount);
   await db
     .update(vaultState)
     .set({
-      unclaimed_fees: toNumericString(data.new_total),
+      unclaimed_fees: toNumericString(d.new_total),
       total_assets: sql`${vaultState.total_assets}::numeric - ${amount}::numeric`,
       updated_at_ledger: event.ledger,
       updated_at: new Date(),
@@ -323,24 +398,24 @@ async function handleClaimFeesTo(db: Db, event: ParsedEvent) {
     timestamp: unixSeconds(event.timestamp),
     event_type: "claim_to",
     amount,
-    recipient: String(data.recipient),
+    recipient: d.recipient,
   });
   await recomputeFreeLiquidity(db, event.ledger);
 }
 
 async function handlePause(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as PauseData;
   await db
     .insert(vaultState)
     .values({
       id: SINGLETON_ID,
-      is_paused: data.is_paused,
+      is_paused: d.is_paused,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        is_paused: data.is_paused,
+        is_paused: d.is_paused,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
@@ -351,7 +426,7 @@ async function handlePause(db: Db, event: ParsedEvent) {
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
     contract: "vault",
-    is_paused: data.is_paused,
-    caller: String(data.caller),
+    is_paused: d.is_paused,
+    caller: d.caller,
   });
 }

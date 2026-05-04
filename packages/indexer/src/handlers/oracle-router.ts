@@ -1,6 +1,22 @@
 import { type Db, oraclePrices, oracleConfigEvents } from "@stellars/db";
 import type { ParsedEvent } from "../spec-parser.js";
-import { toNumericString, unixSeconds } from "../spec-parser.js";
+import { toNumericString, unixSeconds } from "../convert.js";
+
+// Per-event data shapes. Cast `event.data` at the top of each handler so the
+// rest of the function gets typed field access. Field names mirror the
+// #[contractevent] structs in contracts/oracle-router/src/events.rs.
+
+interface PriceFetchData {
+  symbol: string;
+  price: bigint;
+  timestamp: bigint;
+}
+
+interface OracleConfigUpdateData {
+  staleness: bigint;
+  deviation: bigint;
+  cache_duration: bigint;
+}
 
 export async function handleOracleRouterEvent(db: Db, event: ParsedEvent) {
   switch (event.topic0) {
@@ -14,23 +30,23 @@ export async function handleOracleRouterEvent(db: Db, event: ParsedEvent) {
 }
 
 async function handlePrice(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as PriceFetchData;
   await db.insert(oraclePrices).values({
     ledger: event.ledger,
-    timestamp: toNumericString(data.timestamp),
-    symbol: String(data.symbol),
-    price: toNumericString(data.price),
+    timestamp: toNumericString(d.timestamp),
+    symbol: d.symbol,
+    price: toNumericString(d.price),
   });
 }
 
 async function handleOracleConfig(db: Db, event: ParsedEvent) {
-  const { data } = event;
+  const d = event.data as OracleConfigUpdateData;
   await db.insert(oracleConfigEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    staleness: toNumericString(data.staleness),
-    deviation: toNumericString(data.deviation),
-    cache_duration: toNumericString(data.cache_duration),
+    staleness: toNumericString(d.staleness),
+    deviation: toNumericString(d.deviation),
+    cache_duration: toNumericString(d.cache_duration),
   });
 }
