@@ -16,6 +16,7 @@
     "@stellars/db": "workspace:*",
     "@stellars/bindings": "workspace:*",
     "@stellars/protocol-math": "workspace:*",
+    "@stellars/protocol-clients": "workspace:*",
     "@stellar/stellar-sdk": "^14.1.1",
     "drizzle-orm": "^0.38.0",
     "pg": "^8.13.0",

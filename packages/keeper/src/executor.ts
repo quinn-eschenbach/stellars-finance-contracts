@@ -1,6 +1,6 @@
-import { Keypair } from "@stellar/stellar-sdk";
-import { basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { Client as PositionManagerClient } from "@stellars/bindings/position-manager";
+import { client } from "@stellars/protocol-clients";
+import { keypairSigner } from "@stellars/protocol-clients/node";
 import type { KeeperConfig } from "./config.js";
 
 /**
@@ -49,19 +49,15 @@ function classify(err: unknown): { expected: boolean; reason: string } {
 type SignAndSendable = { signAndSend: () => Promise<unknown> };
 
 export function createExecutor(config: KeeperConfig): Executor {
-  const kp = Keypair.fromSecret(config.keeperSecret);
-  const publicKey = kp.publicKey();
-  const { signTransaction, signAuthEntry } = basicNodeSigner(kp, config.networkPassphrase);
+  const signer = keypairSigner(config.keeperSecret, config.networkPassphrase);
+  const publicKey = signer.publicKey;
 
-  const client = new PositionManagerClient({
-    contractId: config.contracts.positionManager.address,
-    networkPassphrase: config.networkPassphrase,
-    rpcUrl: config.rpcUrl,
-    publicKey,
-    signTransaction,
-    signAuthEntry,
-    allowHttp: config.rpcUrl.startsWith("http://"),
-  });
+  const pmClient = client(
+    PositionManagerClient,
+    { rpcUrl: config.rpcUrl, networkPassphrase: config.networkPassphrase },
+    config.contracts.positionManager.address,
+    signer,
+  );
 
   /**
    * Build (which simulates), then sign and send. Two failure points:
@@ -104,25 +100,25 @@ export function createExecutor(config: KeeperConfig): Executor {
 
     updateIndices(symbol) {
       return submitWithSim(`update_indices(${symbol})`, () =>
-        client.update_indices({ caller: publicKey, symbol }),
+        pmClient.update_indices({ caller: publicKey, symbol }),
       );
     },
 
     liquidatePosition(trader, symbol) {
       return submitWithSim(`liquidate(${trader.slice(0, 8)}…, ${symbol})`, () =>
-        client.liquidate_position({ caller: publicKey, trader, symbol }),
+        pmClient.liquidate_position({ caller: publicKey, trader, symbol }),
       );
     },
 
     executeOrder(trader, symbol) {
       return submitWithSim(`execute_order(${trader.slice(0, 8)}…, ${symbol})`, () =>
-        client.execute_order({ caller: publicKey, trader, symbol }),
+        pmClient.execute_order({ caller: publicKey, trader, symbol }),
       );
     },
 
     deleveragePosition(trader, symbol) {
       return submitWithSim(`adl(${trader.slice(0, 8)}…, ${symbol})`, () =>
-        client.deleverage_position({ caller: publicKey, trader, symbol }),
+        pmClient.deleverage_position({ caller: publicKey, trader, symbol }),
       );
     },
   };

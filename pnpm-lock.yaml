@@ -109,6 +109,9 @@ importers:
       '@stellars/config':
         specifier: workspace:*
         version: link:../config
+      '@stellars/protocol-clients':
+        specifier: workspace:*
+        version: link:../protocol-clients
       '@tanstack/react-query':
         specifier: ^5.62.0
         version: 5.100.6(react@19.2.5)
@@ -188,6 +191,9 @@ importers:
       '@stellars/db':
         specifier: workspace:*
         version: link:../db
+      '@stellars/protocol-clients':
+        specifier: workspace:*
+        version: link:../protocol-clients
       dotenv:
         specifier: ^16.4.0
         version: 16.6.1
@@ -219,6 +225,9 @@ importers:
       '@stellars/db':
         specifier: workspace:*
         version: link:../db
+      '@stellars/protocol-clients':
+        specifier: workspace:*
+        version: link:../protocol-clients
       '@stellars/protocol-math':
         specifier: workspace:*
         version: link:../protocol-math
@@ -250,6 +259,9 @@ importers:
       '@stellars/config':
         specifier: workspace:*
         version: link:../config
+      '@stellars/protocol-clients':
+        specifier: workspace:*
+        version: link:../protocol-clients
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -306,6 +318,16 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/protocol-clients:
+    dependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^14.1.1
+        version: 14.6.1
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/protocol-math:
     devDependencies:
       '@types/bun':
@@ -323,6 +345,9 @@ importers:
       '@stellars/db':
         specifier: workspace:*
         version: link:../db
+      '@stellars/protocol-clients':
+        specifier: workspace:*
+        version: link:../protocol-clients
       buffer:
         specifier: 6.0.3
         version: 6.0.3

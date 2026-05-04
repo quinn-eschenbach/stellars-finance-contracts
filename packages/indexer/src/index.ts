@@ -1,11 +1,11 @@
 import "dotenv/config";
-import { rpc } from "@stellar/stellar-sdk";
 import { eq } from "drizzle-orm";
 import { getDb, indexerCursor } from "@stellars/db";
 import { Client as VaultClient } from "@stellars/bindings/vault";
 import { Client as PMClient } from "@stellars/bindings/position-manager";
 import { Client as CMClient } from "@stellars/bindings/config-manager";
 import { Client as ORClient } from "@stellars/bindings/oracle-router";
+import { client, rpcServer } from "@stellars/protocol-clients";
 import { loadConfig } from "./config.js";
 import { fetchEvents } from "./rpc.js";
 import { buildContractSpecMaps, parseEvent } from "./spec-parser.js";
@@ -13,28 +13,11 @@ import { buildRoutes } from "./handlers/index.js";
 import { startHealthServer, updateHealth } from "./health.js";
 import { runOraclePoller } from "./oracle-poller.js";
 
-/**
- * Construct a binding Client to access its embedded contract spec.
- * No network calls — the constructor only stores the spec and options.
- */
-function makeClient<T extends { spec: import("@stellar/stellar-sdk/contract").Spec }>(
-  ClientClass: new (options: { contractId: string; networkPassphrase: string; rpcUrl: string; allowHttp?: boolean }) => T,
-  contractId: string,
-  networkPassphrase: string,
-  rpcUrl: string,
-): T {
-  return new ClientClass({
-    contractId,
-    networkPassphrase,
-    rpcUrl,
-    allowHttp: rpcUrl.startsWith("http://"),
-  });
-}
-
 async function main() {
   const config = loadConfig();
   const db = getDb();
-  const server = new rpc.Server(config.rpcUrl, { allowHttp: config.rpcUrl.startsWith("http://") });
+  const env = { rpcUrl: config.rpcUrl, networkPassphrase: config.networkPassphrase };
+  const server = rpcServer(env);
   const routes = buildRoutes(config.contracts);
 
   const deployedContracts = Object.values(config.contracts).filter((c) => c.address);
@@ -47,13 +30,17 @@ async function main() {
     process.exit(1);
   }
 
-  // Build spec maps from binding clients for spec-driven event parsing
-  const { networkPassphrase, rpcUrl } = config;
+  // Build spec maps from binding clients for spec-driven event parsing.
+  // Spec-only clients — no signer, just constructed for their `.spec` property.
   const specMaps = buildContractSpecMaps([
-    { contractId: config.contracts.vault.address, spec: makeClient(VaultClient, config.contracts.vault.address, networkPassphrase, rpcUrl).spec },
-    { contractId: config.contracts.positionManager.address, spec: makeClient(PMClient, config.contracts.positionManager.address, networkPassphrase, rpcUrl).spec },
-    { contractId: config.contracts.configManager.address, spec: makeClient(CMClient, config.contracts.configManager.address, networkPassphrase, rpcUrl).spec },
-    { contractId: config.contracts.oracleRouter.address, spec: makeClient(ORClient, config.contracts.oracleRouter.address, networkPassphrase, rpcUrl).spec },
+    { contractId: config.contracts.vault.address,
+      spec: client(VaultClient, env, config.contracts.vault.address).spec },
+    { contractId: config.contracts.positionManager.address,
+      spec: client(PMClient, env, config.contracts.positionManager.address).spec },
+    { contractId: config.contracts.configManager.address,
+      spec: client(CMClient, env, config.contracts.configManager.address).spec },
+    { contractId: config.contracts.oracleRouter.address,
+      spec: client(ORClient, env, config.contracts.oracleRouter.address).spec },
   ]);
 
   startHealthServer(config.healthPort);

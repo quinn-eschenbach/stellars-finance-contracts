@@ -1,6 +1,6 @@
-import { Keypair } from "@stellar/stellar-sdk";
-import { basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { Client as OracleClient } from "@stellars/bindings/oracle";
+import { client } from "@stellars/protocol-clients";
+import { keypairSigner } from "@stellars/protocol-clients/node";
 import type { OracleEnv } from "./config.js";
 
 /** Contract-side fixed-point scaling: prices stored as i128 = floor(usd * 1e7). */
@@ -13,25 +13,19 @@ export interface OraclePublisher {
 }
 
 export function createPublisher(env: OracleEnv): OraclePublisher {
-  const kp = Keypair.fromSecret(env.oracleSecret);
-  const publicKey = kp.publicKey();
-  const { signTransaction, signAuthEntry } = basicNodeSigner(kp, env.networkPassphrase);
-
-  const client = new OracleClient({
-    contractId: env.oracleContract,
-    networkPassphrase: env.networkPassphrase,
-    rpcUrl: env.rpcUrl,
-    publicKey,
-    signTransaction,
-    signAuthEntry,
-    allowHttp: env.rpcUrl.startsWith("http://"),
-  });
+  const signer = keypairSigner(env.oracleSecret, env.networkPassphrase);
+  const oracleClient = client(
+    OracleClient,
+    { rpcUrl: env.rpcUrl, networkPassphrase: env.networkPassphrase },
+    env.oracleContract,
+    signer,
+  );
 
   return {
-    publicKey,
+    publicKey: signer.publicKey,
     async setPrice(symbol, scaledPrice) {
-      const tx = await client.set_price({
-        caller: publicKey,
+      const tx = await oracleClient.set_price({
+        caller: signer.publicKey,
         symbol,
         price: scaledPrice,
       });

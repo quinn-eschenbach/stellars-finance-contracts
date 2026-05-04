@@ -1,5 +1,5 @@
 import { Keypair, xdr, scValToNative } from "@stellar/stellar-sdk";
-import type { ContractClientOptions } from "@stellar/stellar-sdk/contract";
+import { client } from "@stellars/protocol-clients";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -328,13 +328,12 @@ export class Fixture {
     this.env = env;
     this.adminKp = adminKp;
 
-    const adminOpts = this.clientOpts(adminKp, env.vaultContract);
-    this.vault = new VaultClient({ ...adminOpts, contractId: env.vaultContract });
-    this.positionManager = new PositionManagerClient({ ...adminOpts, contractId: env.pmContract });
-    this.configManager = new ConfigManagerClient({ ...adminOpts, contractId: env.cmContract });
-    this.oracleRouter = new OracleRouterClient({ ...adminOpts, contractId: env.orContract });
-    this.oracle = new OracleClient({ ...adminOpts, contractId: env.oracleContract });
-    this.mockToken = new MockTokenClient({ ...adminOpts, contractId: env.mockTokenContract });
+    this.vault = this.clientFor(VaultClient, adminKp, env.vaultContract);
+    this.positionManager = this.clientFor(PositionManagerClient, adminKp, env.pmContract);
+    this.configManager = this.clientFor(ConfigManagerClient, adminKp, env.cmContract);
+    this.oracleRouter = this.clientFor(OracleRouterClient, adminKp, env.orContract);
+    this.oracle = this.clientFor(OracleClient, adminKp, env.oracleContract);
+    this.mockToken = this.clientFor(MockTokenClient, adminKp, env.mockTokenContract);
   }
 
   static load(): Fixture {
@@ -353,32 +352,32 @@ export class Fixture {
   // Client helpers
   // ---------------------------------------------------------------------------
 
-  private clientOpts(kp: Keypair, contractId: string): ContractClientOptions {
-    const signer = createSigner(kp);
-    return {
+  private clientFor<C>(
+    ClientClass: new (opts: any) => C,
+    kp: Keypair,
+    contractId: string,
+  ): C {
+    return client(
+      ClientClass,
+      { rpcUrl: this.env?.rpcUrl ?? DEFAULT_RPC_URL, networkPassphrase: NETWORK_PASSPHRASE },
       contractId,
-      networkPassphrase: NETWORK_PASSPHRASE,
-      rpcUrl: this.env?.rpcUrl ?? DEFAULT_RPC_URL,
-      publicKey: signer.publicKey,
-      signTransaction: signer.signTransaction,
-      signAuthEntry: signer.signAuthEntry,
-      allowHttp: true,
-    };
+      createSigner(kp),
+    );
   }
 
   /** Create a PositionManager client signed by the given keypair. */
   pmFor(kp: Keypair): PositionManagerClient {
-    return new PositionManagerClient(this.clientOpts(kp, this.env.pmContract));
+    return this.clientFor(PositionManagerClient, kp, this.env.pmContract);
   }
 
   /** Create a Vault client signed by the given keypair. */
   vaultFor(kp: Keypair): VaultClient {
-    return new VaultClient(this.clientOpts(kp, this.env.vaultContract));
+    return this.clientFor(VaultClient, kp, this.env.vaultContract);
   }
 
   /** Create a MockToken client signed by the given keypair. */
   tokenFor(kp: Keypair): MockTokenClient {
-    return new MockTokenClient(this.clientOpts(kp, this.env.mockTokenContract));
+    return this.clientFor(MockTokenClient, kp, this.env.mockTokenContract);
   }
 
   // ---------------------------------------------------------------------------

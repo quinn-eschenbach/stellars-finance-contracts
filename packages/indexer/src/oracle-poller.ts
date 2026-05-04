@@ -1,6 +1,7 @@
 import { rpc } from "@stellar/stellar-sdk";
 import { type Db, oraclePrices } from "@stellars/db";
 import { Client as OracleRouterClient } from "@stellars/bindings/oracle-router";
+import { client, readOnlySigner } from "@stellars/protocol-clients";
 import type { IndexerConfig } from "./config.js";
 
 /**
@@ -40,13 +41,12 @@ export async function runOraclePoller(
       "[poller] ADMIN_ADDRESS env var is required for read-only simulations — re-run 'make deploy' to populate .env.local",
     );
   }
-  const client = new OracleRouterClient({
-    contractId: config.contracts.oracleRouter.address,
-    networkPassphrase: config.networkPassphrase,
-    rpcUrl: config.rpcUrl,
-    publicKey: sourceAccount,
-    allowHttp: config.rpcUrl.startsWith("http://"),
-  });
+  const oracleClient = client(
+    OracleRouterClient,
+    { rpcUrl: config.rpcUrl, networkPassphrase: config.networkPassphrase },
+    config.contracts.oracleRouter.address,
+    readOnlySigner(sourceAccount),
+  );
 
   const lastPrice = new Map<string, bigint>();
 
@@ -57,7 +57,7 @@ export async function runOraclePoller(
     for (const symbol of TICKERS) {
       if (!isRunning()) break;
       try {
-        const tx = await client.get_price({ symbol });
+        const tx = await oracleClient.get_price({ symbol });
         const price = tx.result;
 
         // The SDK's AssembledTransaction.result getter swallows contract
