@@ -7,6 +7,7 @@ import {
   trades,
   vaultState,
   oraclePrices,
+  latestOraclePrices,
 } from "@stellars/db";
 
 export function buildRestRoutes(db: Db): Hono {
@@ -66,21 +67,18 @@ export function buildRestRoutes(db: Db): Hono {
 
   /**
    * GET /prices — current oracle price per symbol (latest insert wins).
-   * Cheap query against the existing oracle_prices table; no separate
-   * "current price" table needed.
+   * Reads from the `latest_oracle_prices` view so the "latest per symbol"
+   * rule lives at the database, not in app code.
    */
   r.get("/prices", async (c) => {
     const rows = await db
       .select({
-        symbol: oraclePrices.symbol,
-        price: oraclePrices.price,
-        ledger: oraclePrices.ledger,
-        timestamp: oraclePrices.timestamp,
+        symbol: latestOraclePrices.symbol,
+        price: latestOraclePrices.price,
+        ledger: latestOraclePrices.ledger,
+        timestamp: latestOraclePrices.timestamp,
       })
-      .from(oraclePrices)
-      .where(
-        sql`${oraclePrices.id} IN (SELECT MAX(id) FROM oracle_prices GROUP BY symbol)`,
-      );
+      .from(latestOraclePrices);
     return c.json(rows);
   });
 

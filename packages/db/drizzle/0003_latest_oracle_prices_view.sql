@@ -1,0 +1,1 @@
+CREATE VIEW "public"."latest_oracle_prices" AS (SELECT id, ledger, timestamp, symbol, price FROM oracle_prices WHERE id IN (SELECT MAX(id) FROM oracle_prices GROUP BY symbol));

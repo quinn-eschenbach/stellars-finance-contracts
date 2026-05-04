@@ -1,10 +1,10 @@
-import { eq, desc, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   positions,
   markets,
   vaultState,
   protocolConfig,
-  oraclePrices,
+  latestOraclePrices,
   indexerCursor,
   type Db,
 } from "@stellars/db";
@@ -26,15 +26,10 @@ export async function getMarkets(db: Db): Promise<MarketRow[]> {
 export async function getLatestPrices(db: Db): Promise<Map<string, string>> {
   const rows = await db
     .select({
-      symbol: oraclePrices.symbol,
-      price: oraclePrices.price,
+      symbol: latestOraclePrices.symbol,
+      price: latestOraclePrices.price,
     })
-    .from(oraclePrices)
-    .where(
-      sql`${oraclePrices.id} IN (
-        SELECT MAX(id) FROM oracle_prices GROUP BY symbol
-      )`,
-    );
+    .from(latestOraclePrices);
 
   const map = new Map<string, string>();
   for (const row of rows) {
