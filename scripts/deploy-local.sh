@@ -194,7 +194,7 @@ echo ""
 echo "=== Setting local protocol limits (zero cooldowns) ==="
 invoke --id "$CM_ID" -- update_protocol_limits \
   --caller "$ADMIN_ADDR" \
-  --limits '{"min_collateral":"10000000","cooldown_duration":0,"min_position_lifetime":0,"max_utilization_ratio":"8500","funding_cut_bps":500,"adl_pnl_bps":9000,"adl_utilization_bps":9500}'
+  --limits '{"min_collateral":"10000000","cooldown_duration":0,"min_position_lifetime":0,"max_utilization_ratio":"8500","funding_cut_bps":500,"adl_pnl_bps":9000,"adl_utilization_bps":9500,"liquidation_threshold_bps":200}'
 
 # ---------- Wire oracle ----------
 echo ""
