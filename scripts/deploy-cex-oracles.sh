@@ -25,8 +25,12 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 # Tickers come from addresses.json so the script, the oracle publishers,
-# the indexer poller, and the frontend symbol picker all agree.
-mapfile -t TICKERS < <(jq -r --arg net "$NETWORK_KEY" '.[$net].tickers[]' "$ADDRESSES_FILE")
+# the indexer poller, and the frontend symbol picker all agree. mapfile
+# would be cleaner but it's bash 4+ and macOS ships bash 3.2.
+TICKERS=()
+while IFS= read -r ticker; do
+  [ -n "$ticker" ] && TICKERS+=("$ticker")
+done < <(jq -r --arg net "$NETWORK_KEY" '.[$net].tickers[]' "$ADDRESSES_FILE")
 if [ "${#TICKERS[@]}" -eq 0 ]; then
   echo "❌ No tickers configured for network '$NETWORK_KEY' in $ADDRESSES_FILE"
   exit 1
