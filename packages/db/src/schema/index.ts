@@ -7,7 +7,7 @@ export { vaultEvents } from "./vault-events.js";
 export { lpTransfers } from "./lp-transfers.js";
 export { feeEvents } from "./fee-events.js";
 export { oraclePrices } from "./oracle-prices.js";
-export { settleEvents } from "./settle-events.js";
+export { payProfitEvents } from "./pay-profit-events.js";
 export { oracleConfigEvents } from "./oracle-config-events.js";
 export { roleEvents } from "./role-events.js";
 export { pauseEvents } from "./pause-events.js";

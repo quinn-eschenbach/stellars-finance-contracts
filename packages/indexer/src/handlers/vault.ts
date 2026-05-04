@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { type Db, vaultState, vaultEvents, feeEvents, settleEvents, pauseEvents, lpTransfers } from "@stellars/db";
+import { type Db, vaultState, vaultEvents, feeEvents, payProfitEvents, pauseEvents, lpTransfers } from "@stellars/db";
 import type { ParsedEvent } from "../spec-parser.js";
 import { toNumericString, unixSeconds } from "../spec-parser.js";
 
@@ -33,10 +33,10 @@ export async function handleVaultEvent(db: Db, event: ParsedEvent) {
     // OZ FungibleToken auto-emits "transfer" when LP shares move user-to-user.
     case "transfer":
       return handleTransfer(db, event);
-    case "settle":
-      return handleSettle(db, event);
-    case "absorb":
-      return handleAbsorb(db, event);
+    case "pay_profit":
+      return handlePayProfit(db, event);
+    case "absorbed":
+      return handleAbsorbedCollateral(db, event);
     case "reserve":
       return handleReserve(db, event);
     case "release":
@@ -124,18 +124,18 @@ async function handleTransfer(db: Db, event: ParsedEvent) {
 
 /**
  * Direct collateral inflow from PositionManager during liquidation /
- * loss-settlement paths that bypass settle_pnl. The vault has already
- * received the tokens; we just bump our tracked total_assets so the DB
- * stays in lockstep with the on-chain balance.
+ * loss-settlement paths that bypass pay_profit (see ADR-0001). The vault
+ * has already received the tokens; we just bump our tracked total_assets
+ * so the DB stays in lockstep with the on-chain balance.
  */
-async function handleAbsorb(db: Db, event: ParsedEvent) {
+async function handleAbsorbedCollateral(db: Db, event: ParsedEvent) {
   const { data } = event;
   const amount = toNumericString(data.amount);
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
-    event_type: "absorb",
+    event_type: "absorbed",
     user: String(data.trader),
     assets: amount,
     shares: "0",
@@ -151,24 +151,25 @@ async function handleAbsorb(db: Db, event: ParsedEvent) {
   await recomputeFreeLiquidity(db, event.ledger);
 }
 
-async function handleSettle(db: Db, event: ParsedEvent) {
+/**
+ * Vault paid `amount` to `trader` to settle a profitable close. Always
+ * decrements vault total_assets — the loss path is handled separately by
+ * handleAbsorbedCollateral (ADR-0001).
+ */
+async function handlePayProfit(db: Db, event: ParsedEvent) {
   const { data } = event;
-  await db.insert(settleEvents).values({
+  const amount = toNumericString(data.amount);
+  await db.insert(payProfitEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
     timestamp: unixSeconds(event.timestamp),
     trader: String(data.trader),
-    amount: toNumericString(data.amount),
-    reserved_delta: toNumericString(data.reserved_delta),
-    is_profit: data.is_profit,
+    amount,
   });
-  const amount = toNumericString(data.amount);
   await db
     .update(vaultState)
     .set({
-      total_assets: data.is_profit
-        ? sql`${vaultState.total_assets}::numeric - ${amount}::numeric`
-        : sql`${vaultState.total_assets}::numeric + ${amount}::numeric`,
+      total_assets: sql`${vaultState.total_assets}::numeric - ${amount}::numeric`,
       updated_at_ledger: event.ledger,
       updated_at: new Date(),
     })

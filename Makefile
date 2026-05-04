@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex
+.PHONY: build optimize test clean up down deploy db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -61,6 +61,15 @@ deploy: build
 grant-keepers:
 	bash scripts/grant-keepers.sh
 
+db-migrate:
+	pnpm --filter @stellars/db migrate
+
+# Generate a new migration from the current schema. Usage: `make db-generate NAME=add_foo`.
+db-generate:
+	cd packages/db && pnpm exec tsc && pnpm exec drizzle-kit generate --name $(NAME)
+
+# Direct schema push — bypasses migrations. Use only for local exploration;
+# never against shared environments. Real changes must go through db-migrate.
 db-push:
 	pnpm --filter @stellars/db push
 
@@ -128,6 +137,6 @@ sim-cleanup:
 # Full local bootstrap (on-chain only): services → schema → core contracts →
 # CEX oracle contracts. After this, `make server` brings up all off-chain
 # processes (indexer, keeper, api, frontend, oracle publishers) in parallel.
-local: up db-push deploy cex-oracles
+local: up db-migrate deploy cex-oracles
 	@echo ""
 	@echo "Local environment ready! Run 'make server' to start the off-chain stack, then 'make sim'."
