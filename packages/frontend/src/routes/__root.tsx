@@ -1,5 +1,6 @@
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { Header } from "@/components/Header";
+import { Toaster } from "@/components/ui/toaster";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -13,6 +14,7 @@ function RootLayout() {
         <Outlet />
       </main>
       <Footer />
+      <Toaster />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { signAndSendWithWallet } from "@/contracts/sender";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { parseUsdc } from "@/lib/utils";
 import { MOCK_TOKEN_CONTRACT } from "@/lib/constants";
+import { txToast } from "@/lib/toast";
 
 export const Route = createFileRoute("/faucet")({
   component: FaucetPage,
@@ -39,9 +40,19 @@ function FaucetPage() {
     mutationFn: async () => {
       if (!address) throw new Error("connect wallet first");
       const scaled = parseUsdc(amount);
-      const tx = await mockToken(address).mint({ to: address, amount: scaled });
-      const result = await signAndSendWithWallet(tx, signTransaction);
-      return result.hash;
+      const t = txToast({
+        action: "Mint testnet USDC",
+        successDetail: `${amount} USDC minted to your wallet.`,
+      });
+      try {
+        const tx = await mockToken(address).mint({ to: address, amount: scaled });
+        const result = await signAndSendWithWallet(tx, signTransaction);
+        t.success();
+        return result.hash;
+      } catch (e) {
+        t.error(e);
+        throw e;
+      }
     },
     onSuccess: () => balance.refetch(),
   });
@@ -137,12 +148,6 @@ function FaucetPage() {
               >
                 {mint.isPending ? "Minting…" : `Mint ${amount} USDC`}
               </Button>
-              {mint.isSuccess && (
-                <p className="font-mono text-[11px] text-bull">tx ok: {mint.data?.slice(0, 12)}…</p>
-              )}
-              {mint.error && (
-                <p className="text-xs text-destructive">{(mint.error as Error).message}</p>
-              )}
             </>
           )}
         </CardContent>

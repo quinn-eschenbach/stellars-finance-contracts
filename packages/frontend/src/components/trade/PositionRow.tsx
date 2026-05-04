@@ -12,6 +12,7 @@ import { signAndSendWithWallet } from "@/contracts/sender";
 import { formatPrice, parsePrice, cn } from "@/lib/utils";
 import { unrealizedPnl } from "@/lib/math";
 import { queryKeys } from "@/api/hooks";
+import { txToast } from "@/lib/toast";
 import type { PositionRow as PositionRowData } from "@/api/types";
 
 interface PositionRowProps {
@@ -30,13 +31,23 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
   const close = useMutation({
     mutationFn: async () => {
       if (!address) throw new Error("connect wallet first");
-      const tx = await positionManager(address).decrease_position({
-        trader: address,
-        symbol: position.symbol,
-        size_delta: BigInt(position.size),
+      const t = txToast({
+        action: `Close ${position.is_long ? "long" : "short"} ${position.symbol}`,
+        successDetail: "Position settled and PnL credited.",
       });
-      const result = await signAndSendWithWallet(tx, signTransaction);
-      return result.hash;
+      try {
+        const tx = await positionManager(address).decrease_position({
+          trader: address,
+          symbol: position.symbol,
+          size_delta: BigInt(position.size),
+        });
+        const result = await signAndSendWithWallet(tx, signTransaction);
+        t.success();
+        return result.hash;
+      } catch (e) {
+        t.error(e);
+        throw e;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.positions(address ?? "") });
@@ -146,12 +157,6 @@ export function PositionRow({ position, markPrice }: PositionRowProps) {
           onClose={() => setEditing(false)}
         />
       )}
-
-      {close.error && (
-        <p className="border-t border-border/40 px-4 py-2 text-xs text-destructive">
-          {(close.error as Error).message?.slice(0, 200) ?? "error"}
-        </p>
-      )}
     </div>
   );
 }
@@ -206,14 +211,21 @@ function TpSlEditor({ symbol, isLong, entryPrice, initialTp, initialSl, onClose 
     mutationFn: async () => {
       if (!address) throw new Error("connect wallet first");
       if (tpError || slError) throw new Error(tpError || slError || "invalid TP/SL");
-      const tx = await positionManager(address).set_tp_sl({
-        trader: address,
-        symbol,
-        take_profit: typeof tpParsed === "bigint" ? tpParsed : 0n,
-        stop_loss: typeof slParsed === "bigint" ? slParsed : 0n,
-      });
-      const result = await signAndSendWithWallet(tx, signTransaction);
-      return result.hash;
+      const t = txToast({ action: `Update TP/SL · ${symbol}`, successDetail: "Triggers updated." });
+      try {
+        const tx = await positionManager(address).set_tp_sl({
+          trader: address,
+          symbol,
+          take_profit: typeof tpParsed === "bigint" ? tpParsed : 0n,
+          stop_loss: typeof slParsed === "bigint" ? slParsed : 0n,
+        });
+        const result = await signAndSendWithWallet(tx, signTransaction);
+        t.success();
+        return result.hash;
+      } catch (e) {
+        t.error(e);
+        throw e;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.positions(address ?? "") });
@@ -255,11 +267,6 @@ function TpSlEditor({ symbol, isLong, entryPrice, initialTp, initialSl, onClose 
           {save.isPending ? "Saving…" : "Save"}
         </Button>
       </div>
-      {save.error && (
-        <p className="mt-2 text-[11px] text-destructive">
-          {(save.error as Error).message?.slice(0, 200) ?? "error"}
-        </p>
-      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +7,13 @@ import { Label } from "@/components/ui/label";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { Slider } from "@/components/ui/slider";
 import { useAddress, useWallet } from "@/wallet/WalletProvider";
-import { positionManager } from "@/contracts/clients";
+import { mockToken, positionManager } from "@/contracts/clients";
 import { signAndSendWithWallet } from "@/contracts/sender";
 import { parsePrice, parseUsdc } from "@/lib/utils";
 import { approxLiquidationPrice } from "@/lib/math";
 import { queryKeys } from "@/api/hooks";
 import { cn } from "@/lib/utils";
+import { txToast } from "@/lib/toast";
 
 interface OrderFormProps {
   symbol: string;
@@ -49,6 +50,19 @@ export function OrderForm({
   const address = useAddress();
   const { signTransaction } = useWallet();
   const qc = useQueryClient();
+
+  // Wallet USDC balance — read from the mock token contract. Shared queryKey
+  // with VaultActions / faucet so the three views stay in sync via React Query.
+  const balance = useQuery({
+    queryKey: ["mockToken", "balance", address],
+    queryFn: async () => {
+      if (!address) return 0n;
+      const tx = await mockToken(address).balance({ account: address });
+      return BigInt(tx.result?.toString() ?? "0");
+    },
+    enabled: !!address,
+    refetchInterval: 10_000,
+  });
 
   const [tpInput, setTpInput] = useState("");
   const [slInput, setSlInput] = useState("");
@@ -92,17 +106,28 @@ export function OrderForm({
       if (!address) throw new Error("connect wallet first");
       if (collateralScaled <= 0n) throw new Error("enter a positive collateral");
       if (tpError || slError) throw new Error(tpError || slError || "invalid TP/SL");
-      const tx = await positionManager(address).increase_position({
-        trader: address,
-        symbol,
-        size: sizeScaled,
-        collateral: collateralScaled,
-        is_long: isLong,
-        take_profit: typeof tpScaled === "bigint" ? tpScaled : 0n,
-        stop_loss: typeof slScaled === "bigint" ? slScaled : 0n,
+      const action = `Open ${cappedLeverage}× ${isLong ? "long" : "short"} ${symbol}`;
+      const t = txToast({
+        action,
+        successDetail: `Position opened on ${symbol} with ${collateralInput} USDC.`,
       });
-      const result = await signAndSendWithWallet(tx, signTransaction);
-      return result.hash;
+      try {
+        const tx = await positionManager(address).increase_position({
+          trader: address,
+          symbol,
+          size: sizeScaled,
+          collateral: collateralScaled,
+          is_long: isLong,
+          take_profit: typeof tpScaled === "bigint" ? tpScaled : 0n,
+          stop_loss: typeof slScaled === "bigint" ? slScaled : 0n,
+        });
+        const result = await signAndSendWithWallet(tx, signTransaction);
+        t.success();
+        return result.hash;
+      } catch (e) {
+        t.error(e);
+        throw e;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.positions(address ?? "") });
@@ -110,22 +135,45 @@ export function OrderForm({
   });
 
   const cappedLeverage = Math.min(leverage, Math.max(1, maxLeverage));
+  const walletBalance = balance.data ?? 0n;
+  const exceedsBalance = collateralScaled > 0n && walletBalance > 0n && collateralScaled > walletBalance;
   const submitDisabled =
-    !address || open.isPending || collateralScaled <= 0n || !!tpError || !!slError;
+    !address ||
+    open.isPending ||
+    collateralScaled <= 0n ||
+    !!tpError ||
+    !!slError ||
+    exceedsBalance;
 
   return (
     <div className="space-y-5">
-      {/* Side toggle — bull/bear segmented control */}
-      <div className="grid grid-cols-2 gap-1 rounded-full border border-border/50 bg-card/40 p-1 backdrop-blur-md">
-        <SideButton active={isLong} kind="long" onClick={() => setSide("long")} />
-        <SideButton active={!isLong} kind="short" onClick={() => setSide("short")} />
-      </div>
+      {/* Side toggle — sliding bull/bear segmented control */}
+      <SideToggle isLong={isLong} setSide={setSide} />
 
       {/* Collateral with quick-amount chips */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label>Collateral</Label>
-          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground/70">USDC</span>
+          {address ? (
+            <button
+              type="button"
+              onClick={() => walletBalance > 0n && setCollateralInput(formatBalanceInput(walletBalance))}
+              className={cn(
+                "font-mono text-[11px] tracking-tight transition-colors",
+                exceedsBalance
+                  ? "text-bear"
+                  : "text-muted-foreground/80 hover:text-foreground",
+              )}
+              title={walletBalance > 0n ? "Use full balance" : undefined}
+            >
+              <span className="uppercase tracking-[0.18em] text-muted-foreground/60">Bal</span>{" "}
+              <NumberFlowUsd value={walletBalance} />
+            </button>
+          ) : (
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground/70">
+              USDC
+            </span>
+          )}
         </div>
         <Input
           type="text"
@@ -133,7 +181,7 @@ export function OrderForm({
           value={collateralInput}
           onChange={(e) => setCollateralInput(e.target.value)}
           placeholder="0.00"
-          className="h-12 text-lg"
+          className={cn("h-12 text-lg", exceedsBalance && "border-bear/60")}
         />
         <div className="flex gap-1.5">
           {QUICK_AMOUNTS.map((amt) => (
@@ -233,17 +281,40 @@ export function OrderForm({
           ? "Connect wallet"
           : open.isPending
             ? "Submitting…"
-            : `Open ${cappedLeverage}× ${isLong ? "Long" : "Short"}`}
+            : exceedsBalance
+              ? "Insufficient USDC balance"
+              : `Open ${cappedLeverage}× ${isLong ? "Long" : "Short"}`}
       </Button>
+    </div>
+  );
+}
 
-      {open.isSuccess && (
-        <p className="font-mono text-[11px] text-bull">opened ✓ tx {open.data?.slice(0, 12)}…</p>
-      )}
-      {open.error && (
-        <p className="text-xs text-destructive">
-          {(open.error as Error).message?.slice(0, 200) ?? "error"}
-        </p>
-      )}
+function SideToggle({
+  isLong,
+  setSide,
+}: {
+  isLong: boolean;
+  setSide: (s: "long" | "short") => void;
+}) {
+  return (
+    <div className="relative grid grid-cols-2 gap-1 rounded-full border border-border/50 bg-card/40 p-1 backdrop-blur-md">
+      <span
+        aria-hidden
+        className="pointer-events-none absolute top-1 bottom-1 z-0 rounded-full transition-[transform,background-color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0.2,1)]"
+        style={{
+          left: "0.25rem",
+          width: "calc(50% - 0.375rem)",
+          transform: isLong ? "translateX(0)" : "translateX(calc(100% + 0.25rem))",
+          backgroundColor: isLong
+            ? "hsl(var(--bull) / 0.20)"
+            : "hsl(var(--bear) / 0.20)",
+          boxShadow: isLong
+            ? "inset 0 0 0 1px hsl(var(--bull) / 0.4), 0 0 24px -8px hsl(var(--bull) / 0.5)"
+            : "inset 0 0 0 1px hsl(var(--bear) / 0.4), 0 0 24px -8px hsl(var(--bear) / 0.5)",
+        }}
+      />
+      <SideButton kind="long" active={isLong} onClick={() => setSide("long")} />
+      <SideButton kind="short" active={!isLong} onClick={() => setSide("short")} />
     </div>
   );
 }
@@ -263,17 +334,17 @@ function SideButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative flex h-9 items-center justify-center gap-1.5 rounded-full text-xs font-medium tracking-tight transition-all",
+        "relative z-10 flex h-9 items-center justify-center gap-1.5 rounded-full text-xs font-medium tracking-tight transition-colors duration-200",
         active
           ? isLong
-            ? "bg-bull/20 text-bull shadow-[inset_0_0_0_1px_hsl(var(--bull)/0.4),0_0_24px_-8px_hsl(var(--bull)/0.5)]"
-            : "bg-bear/20 text-bear shadow-[inset_0_0_0_1px_hsl(var(--bear)/0.4),0_0_24px_-8px_hsl(var(--bear)/0.5)]"
+            ? "text-bull"
+            : "text-bear"
           : "text-muted-foreground hover:text-foreground",
       )}
     >
       <span
         className={cn(
-          "h-1.5 w-1.5 rounded-full",
+          "h-1.5 w-1.5 rounded-full transition-opacity",
           isLong ? "bg-bull" : "bg-bear",
           !active && "opacity-50",
         )}
@@ -281,6 +352,20 @@ function SideButton({
       {isLong ? "Long" : "Short"}
     </button>
   );
+}
+
+/**
+ * Convert a scaled USDC balance back into the decimal string the input expects
+ * (e.g. `1234567890n` → `"123.45"` rounded down). Truncating avoids prompting
+ * the user to spend a fraction of a cent more than they hold.
+ */
+function formatBalanceInput(scaled: bigint): string {
+  if (scaled <= 0n) return "0";
+  const UNIT = 10_000_000n;
+  const whole = scaled / UNIT;
+  const frac = scaled % UNIT;
+  const fracStr = frac.toString().padStart(7, "0").slice(0, 2);
+  return fracStr === "00" ? whole.toString() : `${whole}.${fracStr}`;
 }
 
 /** Parse a TP/SL input. Empty → 0n (unset); bad input → "invalid" sentinel. */
