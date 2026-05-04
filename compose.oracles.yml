@@ -1,0 +1,37 @@
+# compose.oracles.yml — production CEX oracle bundle. Runs the Binance and
+# KuCoin price publishers as separate long-running processes that fetch CEX
+# tickers and call `publish_price` on their respective Oracle contracts.
+#
+#   ENV_FILE=.env.testnet docker compose -f compose.oracles.yml up -d
+#
+# Why split from compose.backend.yml? Per the project's deploy split, the
+# server bundle (api+indexer+keeper+db) and the oracle publishers run as
+# independent stacks — different blast radius, different failure modes,
+# different rotation cadence for the ROLE_ORACLE secrets.
+#
+# Each service needs:
+#   - NETWORK (looked up in addresses.json by @stellars/config)
+#   - BINANCE_ORACLE_SECRET / KUCOIN_ORACLE_SECRET (Stellar secret key
+#     for the publisher identity created by provision-keys.sh and granted
+#     ROLE_ORACLE by deploy-cex-oracles.sh)
+
+services:
+  oracle-binance:
+    build:
+      context: .
+      dockerfile: docker/oracle.Dockerfile
+      args:
+        ORACLE_PACKAGE: oracle-binance
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-.env.local}
+
+  oracle-kucoin:
+    build:
+      context: .
+      dockerfile: docker/oracle.Dockerfile
+      args:
+        ORACLE_PACKAGE: oracle-kucoin
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-.env.local}

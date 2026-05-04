@@ -8,7 +8,7 @@ SOURCE        ?= admin
 DEPLOY_CONTRACTS = config-manager oracle-router vault position-manager
 ENV_FILE      = .env.local
 
-.PHONY: build optimize test clean up down deploy deploy-testnet upgrade-local upgrade-testnet provision-keys provision-keys-testnet add-market db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex backend-build backend-up backend-down backend-logs
+.PHONY: build optimize test clean up down deploy deploy-testnet upgrade-local upgrade-testnet provision-keys provision-keys-testnet add-market db-migrate db-generate db-push sim sim-one sim-cleanup grant-keepers indexer keeper api frontend server oracles cex-oracles oracle-binance oracle-kucoin oracles-cex backend-build backend-up backend-down backend-logs oracles-build oracles-up oracles-down oracles-logs
 
 build:
 	cargo build --target wasm32v1-none --release \
@@ -190,3 +190,20 @@ backend-down:
 
 backend-logs:
 	docker compose -f compose.backend.yml logs -f --tail=200
+
+# ---- Oracles bundle (binance + kucoin publishers) ----
+# Separate from the server bundle — different blast radius and rotation
+# cadence for ROLE_ORACLE secrets. Pre-req: `make cex-oracles` has run
+# against the target network so addresses.json carries the per-source
+# Oracle contract addresses.
+oracles-build: bind
+	docker compose -f compose.oracles.yml build
+
+oracles-up:
+	ENV_FILE="$${ENV_FILE:-.env.local}" docker compose -f compose.oracles.yml up -d
+
+oracles-down:
+	docker compose -f compose.oracles.yml down
+
+oracles-logs:
+	docker compose -f compose.oracles.yml logs -f --tail=200
