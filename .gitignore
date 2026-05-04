@@ -1,7 +1,11 @@
 /target
 node_modules/
 packages/*/dist/
-packages/bindings/
+# packages/bindings/ is NOT gitignored — the docker images expect the
+# generated TS to be present without dragging Rust + the stellar CLI into
+# the build context. Run `make bind` after any contract change and commit
+# the resulting drift; per-binding dist/ folders sit one level deeper than
+# the `packages/*/dist/` glob, so they're tracked alongside src/.
 *.tgz
 .env
 .env.*
