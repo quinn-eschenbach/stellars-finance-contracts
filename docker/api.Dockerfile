@@ -11,11 +11,14 @@
 # live under packages/bindings/ which is gitignored, so we COPY them as-is.
 
 ARG BUN_VERSION=1.1.42
+ARG NODE_VERSION=22
 
 # ---------- deps ----------
-FROM oven/bun:${BUN_VERSION} AS deps
+# Node-based deps stage: vite (in build) needs Node on PATH, and Node ships
+# corepack so we get pnpm without an extra install dance. The bun runtime
+# down below is what actually serves traffic — Node is only needed at build.
+FROM node:${NODE_VERSION}-slim AS deps
 WORKDIR /app
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git \
     && rm -rf /var/lib/apt/lists/* \

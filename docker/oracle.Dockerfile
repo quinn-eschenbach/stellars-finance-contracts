@@ -13,9 +13,12 @@
 # Pre-req on host: bindings must already be generated (`make bind`).
 
 ARG BUN_VERSION=1.1.42
+ARG NODE_VERSION=22
 
 # ---------- deps ----------
-FROM oven/bun:${BUN_VERSION} AS deps
+# Node-based deps so corepack is available; runtime stays on bun below
+# since the publisher runs `bun src/index.ts` directly.
+FROM node:${NODE_VERSION}-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git \

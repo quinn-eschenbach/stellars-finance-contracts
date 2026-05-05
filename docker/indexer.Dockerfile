@@ -4,11 +4,11 @@
 # package builds via tsc), so we get a smaller final image than the
 # bun-based services.
 
-ARG BUN_VERSION=1.1.42
 ARG NODE_VERSION=22
 
-# ---------- deps (bun for fast pnpm install) ----------
-FROM oven/bun:${BUN_VERSION} AS deps
+# ---------- deps ----------
+# tsc (in build) needs Node on PATH; Node ships corepack so we get pnpm for free.
+FROM node:${NODE_VERSION}-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git \
