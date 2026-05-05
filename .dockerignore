@@ -8,12 +8,12 @@ target/
 # Workspace node_modules — pnpm reinstalls inside the deps stage.
 **/node_modules/
 
-# Frontend / indexer dist are produced inside the image. Host copies are
-# stale at best.
-packages/frontend/dist/
-packages/indexer/dist/
-packages/keeper/dist/
-packages/api/dist/
+# All workspace `dist/` outputs are produced inside the image. Host copies
+# are stale at best and risk shipping a build that doesn't match the source
+# in the image. The glob hits one level deep only — `packages/bindings/<X>/dist/`
+# is two levels deep and stays included (those dists are committed to git
+# so the images don't need stellar CLI to regenerate them).
+packages/*/dist/
 
 # `packages/bindings/**` IS generated on the host (`make bind`) and the
 # images need its `dist/`, so we deliberately do NOT exclude it here. If

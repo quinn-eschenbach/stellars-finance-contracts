@@ -35,6 +35,24 @@ COPY packages/simulation/package.json         packages/simulation/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
+# ---------- build (workspace libs) ----------
+# Keeper runs from src via bun, but its imports (@stellars/db etc.) resolve
+# through package.json's `main: dist/index.js` — those dists must exist or
+# runtime fails. We build only the libs (not keeper itself).
+FROM deps AS build
+WORKDIR /app
+COPY packages/db                packages/db
+COPY packages/config            packages/config
+COPY packages/bindings          packages/bindings
+COPY packages/protocol-clients  packages/protocol-clients
+COPY packages/protocol-math     packages/protocol-math
+COPY packages/keeper            packages/keeper
+RUN pnpm --filter "@stellars/db" \
+         --filter "@stellars/config" \
+         --filter "@stellars/protocol-clients" \
+         --filter "@stellars/protocol-math" \
+         build
+
 # ---------- runtime ----------
 FROM oven/bun:${BUN_VERSION}-slim AS runtime
 WORKDIR /app
@@ -42,17 +60,17 @@ ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=deps /app/node_modules            /app/node_modules
-COPY --from=deps /app/package.json            /app/package.json
-COPY --from=deps /app/pnpm-workspace.yaml     /app/pnpm-workspace.yaml
-COPY --from=deps /app/tsconfig.base.json      /app/tsconfig.base.json
+COPY --from=build /app/node_modules            /app/node_modules
+COPY --from=build /app/package.json            /app/package.json
+COPY --from=build /app/pnpm-workspace.yaml     /app/pnpm-workspace.yaml
+COPY --from=build /app/tsconfig.base.json      /app/tsconfig.base.json
 
-COPY packages/keeper            packages/keeper
-COPY packages/db                packages/db
-COPY packages/config            packages/config
-COPY packages/bindings          packages/bindings
-COPY packages/protocol-clients  packages/protocol-clients
-COPY packages/protocol-math     packages/protocol-math
+COPY --from=build /app/packages/keeper            packages/keeper
+COPY --from=build /app/packages/db                packages/db
+COPY --from=build /app/packages/config            packages/config
+COPY --from=build /app/packages/bindings          packages/bindings
+COPY --from=build /app/packages/protocol-clients  packages/protocol-clients
+COPY --from=build /app/packages/protocol-math     packages/protocol-math
 
 WORKDIR /app/packages/keeper
 # Keeper has no HTTP healthcheck endpoint; docker watches the process.

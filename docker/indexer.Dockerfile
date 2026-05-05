@@ -43,7 +43,15 @@ COPY packages/config           packages/config
 COPY packages/bindings         packages/bindings
 COPY packages/protocol-clients packages/protocol-clients
 
-RUN pnpm --filter @stellars/indexer build
+# Build the workspace libs first — tsc resolves `@stellars/db` via
+# dist/index.d.ts, so they must exist before indexer's tsc runs. Pnpm's
+# `...<pkg>` topological filter doesn't reliably pick up the deps in a
+# single run, so we list the libs explicitly.
+RUN pnpm --filter "@stellars/db" \
+         --filter "@stellars/config" \
+         --filter "@stellars/protocol-clients" \
+         build \
+    && pnpm --filter "@stellars/indexer" build
 
 # ---------- runtime ----------
 FROM node:${NODE_VERSION}-slim AS runtime

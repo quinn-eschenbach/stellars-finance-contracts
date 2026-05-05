@@ -44,6 +44,22 @@ COPY packages/simulation/package.json         packages/simulation/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
+# ---------- build (workspace libs) ----------
+# Both publishers run from src via bun, but their imports resolve through
+# package.json `main: dist/index.js`. Pre-build the libs both share.
+FROM deps AS build
+WORKDIR /app
+COPY packages/oracle-base       packages/oracle-base
+COPY packages/oracle-binance    packages/oracle-binance
+COPY packages/oracle-kucoin     packages/oracle-kucoin
+COPY packages/bindings          packages/bindings
+COPY packages/config            packages/config
+COPY packages/protocol-clients  packages/protocol-clients
+RUN pnpm --filter "@stellars/config" \
+         --filter "@stellars/protocol-clients" \
+         --filter "@stellars/oracle-base" \
+         build
+
 # ---------- runtime ----------
 FROM oven/bun:${BUN_VERSION}-slim AS runtime
 ARG ORACLE_PACKAGE
@@ -53,20 +69,17 @@ ENV NODE_ENV=production \
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=deps /app/node_modules            /app/node_modules
-COPY --from=deps /app/package.json            /app/package.json
-COPY --from=deps /app/pnpm-workspace.yaml     /app/pnpm-workspace.yaml
-COPY --from=deps /app/tsconfig.base.json      /app/tsconfig.base.json
+COPY --from=build /app/node_modules            /app/node_modules
+COPY --from=build /app/package.json            /app/package.json
+COPY --from=build /app/pnpm-workspace.yaml     /app/pnpm-workspace.yaml
+COPY --from=build /app/tsconfig.base.json      /app/tsconfig.base.json
 
-# Both oracle packages depend on oracle-base + bindings + protocol-clients +
-# config; copy the full set so workspace symlinks resolve at runtime
-# regardless of which publisher this image will run.
-COPY packages/oracle-base       packages/oracle-base
-COPY packages/oracle-binance    packages/oracle-binance
-COPY packages/oracle-kucoin     packages/oracle-kucoin
-COPY packages/bindings          packages/bindings
-COPY packages/config            packages/config
-COPY packages/protocol-clients  packages/protocol-clients
+COPY --from=build /app/packages/oracle-base       packages/oracle-base
+COPY --from=build /app/packages/oracle-binance    packages/oracle-binance
+COPY --from=build /app/packages/oracle-kucoin     packages/oracle-kucoin
+COPY --from=build /app/packages/bindings          packages/bindings
+COPY --from=build /app/packages/config            packages/config
+COPY --from=build /app/packages/protocol-clients  packages/protocol-clients
 
 WORKDIR /app/packages/${ORACLE_PACKAGE}
 # No HTTP healthcheck — the publisher is a long-running loop. Compose

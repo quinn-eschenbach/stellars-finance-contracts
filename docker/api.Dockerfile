@@ -66,7 +66,15 @@ ARG VITE_API_URL=/api
 ENV VITE_NETWORK=${VITE_NETWORK} \
     VITE_API_URL=${VITE_API_URL}
 
-RUN pnpm --filter @stellars/frontend build
+# Build the workspace libs first — vite/tsc resolve `@stellars/protocol-math`
+# etc. via package.json's `main: dist/index.js`, so dists must exist before
+# the frontend bundle. Explicit list because the `...<pkg>` filter doesn't
+# reliably build deps in one pass.
+RUN pnpm --filter "@stellars/config" \
+         --filter "@stellars/protocol-clients" \
+         --filter "@stellars/protocol-math" \
+         build \
+    && pnpm --filter "@stellars/frontend" build
 
 # ---------- runtime ----------
 FROM oven/bun:${BUN_VERSION}-slim AS runtime
