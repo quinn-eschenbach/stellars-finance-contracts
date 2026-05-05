@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -36,9 +36,20 @@ async function main() {
   if (staticRoot && existsSync(staticRoot)) {
     console.log(`[api] serving static frontend from ${staticRoot}`);
     app.use("/*", serveStatic({ root: staticRoot }));
-    // SPA fallback: any unmatched GET returns index.html so client-side
-    // routing works on hard reloads / direct URLs.
-    app.get("*", serveStatic({ path: `${staticRoot}/index.html` }));
+    // SPA fallback. hono's serveStatic returns 404 directly when a file is
+    // missing instead of calling next(), so a `app.get("*", serveStatic(...))`
+    // handler underneath never fires — we hook hono's notFound instead so
+    // any HTML-route navigation resolves to index.html. /api/* keeps its
+    // normal 404 (JSON) since those are real misses, not SPA routes. The
+    // index body is read once at startup so each fallback is a buffer copy,
+    // not a disk read.
+    const indexHtml = readFileSync(`${staticRoot}/index.html`, "utf-8");
+    app.notFound((c) => {
+      if (new URL(c.req.url).pathname.startsWith("/api")) {
+        return c.json({ error: "not_found" }, 404);
+      }
+      return c.html(indexHtml);
+    });
   }
 
   console.log(`[api] listening on :${config.port}`);
