@@ -34,6 +34,26 @@ services:
     # ports:
     #   - "5432:5432"
 
+  # One-shot drizzle migration runner. Reuses the indexer's `build` stage
+  # (which has pnpm + drizzle-kit + the migrations under packages/db/drizzle).
+  # `restart: "no"` so the container exits after migrations apply; downstream
+  # services gate on `service_completed_successfully`. drizzle migrations are
+  # idempotent so re-running on an already-up DB is a no-op.
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/indexer.Dockerfile
+      target: build
+    restart: "no"
+    env_file:
+      - ${ENV_FILE:-.env.local}
+    environment:
+      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["pnpm", "--filter", "@stellars/db", "migrate"]
+
   api:
     build:
       context: .
@@ -58,6 +78,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   indexer:
     build:
@@ -72,6 +94,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   keeper:
     build:
@@ -85,6 +109,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

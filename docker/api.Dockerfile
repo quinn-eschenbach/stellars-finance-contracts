@@ -68,9 +68,10 @@ ENV VITE_NETWORK=${VITE_NETWORK} \
 
 # Build the workspace libs first — vite/tsc resolve `@stellars/protocol-math`
 # etc. via package.json's `main: dist/index.js`, so dists must exist before
-# the frontend bundle. Explicit list because the `...<pkg>` filter doesn't
-# reliably build deps in one pass.
-RUN pnpm --filter "@stellars/config" \
+# the frontend bundle. The api itself runs `bun src/index.ts` (no compile)
+# but imports @stellars/db at runtime — that needs its dist too.
+RUN pnpm --filter "@stellars/db" \
+         --filter "@stellars/config" \
          --filter "@stellars/protocol-clients" \
          --filter "@stellars/protocol-math" \
          build \
