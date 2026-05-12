@@ -1,6 +1,7 @@
 /target
 node_modules/
 packages/*/dist/
+packages/*/coverage/
 # packages/bindings/ is NOT gitignored — the docker images expect the
 # generated TS to be present without dragging Rust + the stellar CLI into
 # the build context. Run `make bind` after any contract change and commit

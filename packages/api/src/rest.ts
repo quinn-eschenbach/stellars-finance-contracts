@@ -1,17 +1,19 @@
 import { Hono } from "hono";
 import { eq, desc, and, lt, sql } from "drizzle-orm";
 import {
-  type Db,
+  type QueryRunner,
   markets,
   positions,
   protocolConfig,
   trades,
   vaultState,
-  oraclePrices,
   latestOraclePrices,
 } from "@stellars/db";
 
-export function buildRestRoutes(db: Db): Hono {
+// The routes use a narrow `QueryRunner` slice of drizzle's `Db` — `select`
+// + `execute`. That keeps the routes' actual drizzle dependency visible at
+// the seam, and lets tests pass an in-memory fake without lying through `any`.
+export function buildRestRoutes(db: QueryRunner): Hono {
   const r = new Hono();
 
   r.get("/markets", async (c) => {

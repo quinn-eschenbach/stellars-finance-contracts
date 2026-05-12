@@ -18,7 +18,18 @@ export type Notification = {
 
 type Subscriber = (n: Notification) => void;
 
-export class Broadcaster {
+/**
+ * The slice of the broadcaster that consumers (the SSE routes) actually need:
+ * subscribe to a channel, get back an unsubscribe function. Promoting this to
+ * a named interface keeps the `buildSseRoutes` parameter narrow and turns the
+ * test fake into a real second adapter at this seam instead of a class-shaped
+ * lookalike that needed `as any` to satisfy `Broadcaster`'s full surface.
+ */
+export interface Subscribable {
+  subscribe(channel: string, fn: Subscriber): Promise<() => void>;
+}
+
+export class Broadcaster implements Subscribable {
   private client: pg.Client;
   private subscribers: Map<string, Set<Subscriber>> = new Map();
   private listening: Set<string> = new Set();
