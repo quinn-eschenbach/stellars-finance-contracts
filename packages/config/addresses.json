@@ -9,35 +9,35 @@
     ],
     "contracts": {
       "vault": {
-        "address": "CCLBWFWCMY3YO6AL56ZOOVYRKN7XIK2D334YAVO66FETKFDYKEVBBQ3Q",
+        "address": "CDUI6RQZBV4NJ6ED32ZBTKONYV6VBQLQXBGRV32ELLJEPT3KMMFTEF3I",
         "startLedger": 131
       },
       "positionManager": {
-        "address": "CAFSBEKWBALKXTXXJLL4PNOYXHMS3U7AVHJWCOOTAYKRD7PE4TD6CNSV",
-        "startLedger": 133
+        "address": "CBNLPI4F2JI3K5UXSKA4DCASJCKTPIGPFYSXTFCX5TY3QMW56FFMTF6O",
+        "startLedger": 135
       },
       "configManager": {
-        "address": "CBTORKKUA4TWTGFN4562CL2KOOAUUYPVJBAMWVX2XDOMRPEPTPPAYOGT",
+        "address": "CDB6BRQJUTUG24WBMFXBVTP5OSWJDSVZ4R64F5RR27OTRK2RDUY3UWD3",
         "startLedger": 119
       },
       "oracleRouter": {
-        "address": "CCXOOM7SFBIJXQKFE6ZY3UNLBGPGNO7PC5DHBBRTUM2VUECEFQPRLGKY",
-        "startLedger": 121
+        "address": "CAY236MGVIBMY7FW2DDMLT44M2HD3ALX7X7LCSHV2FXELSSZHOKLNAMC",
+        "startLedger": 123
       },
       "oracle": {
-        "address": "CA5UWBW5DV4ZI4TUIYJBKPV5WHN35WLQDGBX3ENYN5KCCIME6UFOCPV6",
+        "address": "CDG3YOMHM6REOB7JHIV352DJQZTTLF3UFZJSEJYN7ZX6RSMI6RIDZMRK",
         "startLedger": 125
       },
       "binanceOracle": {
-        "address": "CBVBPOQQFF3GWX6R2VPINXY77PXCEI5S626L5TB35TJFI6FQHEESI7W6",
-        "startLedger": 165
+        "address": "CD6VTI6MS7E4WPJ36LAYK7UIFSXKLY2IFG7KMTBHJ3DODEQBSX4XEZXO",
+        "startLedger": 169
       },
       "kucoinOracle": {
-        "address": "CDPJAXWA62AHIOZLJKPZB3FHD7QEBCB2RJCABJNUMSCQDLKVP4XWSHM3",
-        "startLedger": 166
+        "address": "CA5DIBLHDYE5CCLMA5J2A6QSLNR7T7QIUNEOBEQUAVUKNWWMPNCAGXPD",
+        "startLedger": 172
       },
       "mockToken": {
-        "address": "CCKAT6VXTZQHUYSLBQYMDRJQGLLIEPH2LX2J4MX7CNVG4EE525KU7NUZ",
+        "address": "CAUQEPIEB24TZ5KVA75IBEU32BZABEOMELKEVTNHVSDYSC6RZJ66CIAL",
         "startLedger": 127
       }
     }
