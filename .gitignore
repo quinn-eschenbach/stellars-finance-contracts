@@ -19,4 +19,9 @@ packages/simulation/state/
 test-suites/test_snapshots/
 contracts/*/test_snapshots/
 
+# Playwright artifacts — regenerated per run, sometimes large (videos,
+# traces, screenshots). The HTML reporter writes to playwright-report/.
+packages/frontend/test-results/
+packages/frontend/playwright-report/
+
 .DS_Store

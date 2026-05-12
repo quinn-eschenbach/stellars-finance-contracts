@@ -5,7 +5,7 @@ import {
   signTx,
   signAuth,
   type FreighterStatus,
-} from "./freighter";
+} from "@/wallet/freighter";
 
 interface WalletContextValue {
   status: FreighterStatus;
