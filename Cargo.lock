@@ -879,6 +879,7 @@ version = "0.1.0"
 dependencies = [
  "shared",
  "soroban-sdk",
+ "stellar-contract-utils",
 ]
 
 [[package]]

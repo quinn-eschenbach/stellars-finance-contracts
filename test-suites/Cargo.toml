@@ -14,7 +14,7 @@ config-manager = { path = "../contracts/config-manager", features = ["testutils"
 oracle-router = { path = "../contracts/oracle-router", features = ["testutils"] }
 mock-token = { path = "../mocks/mock-token", features = ["testutils"] }
 mock-oracle = { path = "../mocks/mock-oracle", features = ["testutils"] }
-shared = { path = "../shared" }
+shared = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"
