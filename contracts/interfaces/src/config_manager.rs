@@ -1,5 +1,5 @@
 use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
-use soroban_sdk::{contractclient, Address, Env, Symbol};
+use soroban_sdk::{contractclient, Address, BytesN, Env, Symbol};
 
 /// ConfigManager contract interface.
 /// Manages protocol roles, fee splits, limits, and borrow rate configuration.
@@ -41,6 +41,35 @@ pub trait ConfigManager {
     /// Returns the current borrow rate configuration.
     fn get_borrow_rate_config(env: Env) -> BorrowRateConfig;
 
-    /// Transfer the DEFAULT_ADMIN_ROLE from `caller` to `new_admin`.
-    fn transfer_admin(env: Env, caller: Address, new_admin: Address);
+    /// Propose `new_admin` as the next admin. Stored as PendingAdmin until
+    /// `new_admin` calls `accept_admin`. Callable only by current admin.
+    /// Rejects `caller == new_admin` with `InvalidAdminProposal`.
+    fn propose_admin(env: Env, caller: Address, new_admin: Address);
+
+    /// Accept a pending admin proposal — completes the role transition.
+    /// Caller must be the pending admin and provide `require_auth`.
+    fn accept_admin(env: Env, new_admin: Address);
+
+    /// Cancel a pending admin proposal. Callable only by current admin. No-op
+    /// when nothing is pending.
+    fn cancel_admin_proposal(env: Env, caller: Address);
+
+    /// Returns `Some(addr)` if an admin proposal is in flight, else `None`.
+    fn get_pending_admin(env: Env) -> Option<Address>;
+
+    /// Set the configurable upgrade timelock (seconds). Floor enforced at
+    /// `shared::constants::MIN_UPGRADE_TIMELOCK`. Callable only by admin.
+    fn set_upgrade_timelock(env: Env, caller: Address, seconds: u64);
+
+    /// Returns the current upgrade timelock in seconds.
+    fn get_upgrade_timelock(env: Env) -> u64;
+
+    /// Propose a WASM upgrade. Stores `{wasm_hash, eta: now + timelock}` as
+    /// pending. `upgrade(new_wasm_hash, operator)` then requires the pending
+    /// slot to exist, `eta` to have elapsed, and `new_wasm_hash` to match
+    /// the stored hash. UPGRADER role only.
+    fn propose_upgrade(env: Env, caller: Address, wasm_hash: BytesN<32>);
+
+    /// Cancel a pending upgrade — PAUSER veto.
+    fn cancel_upgrade(env: Env, caller: Address);
 }

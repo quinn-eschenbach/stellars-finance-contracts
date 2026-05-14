@@ -1,4 +1,4 @@
-use soroban_sdk::{contractclient, Address, Env, Symbol};
+use soroban_sdk::{contractclient, Address, BytesN, Env, Symbol};
 
 use crate::types::{MarketInfo, Position};
 
@@ -15,7 +15,10 @@ pub trait PositionManager {
         oracle_router: Address,
     );
 
-    /// Open or add to a leveraged position.
+    /// Open or add to a leveraged position. `acceptable_price` bounds the
+    /// mark price the open is willing to execute at — pass `0` to skip the
+    /// slippage check. For longs, revert if `mark_price > acceptable_price`;
+    /// for shorts, revert if `mark_price < acceptable_price`.
     fn increase_position(
         env: Env,
         trader: Address,
@@ -25,6 +28,7 @@ pub trait PositionManager {
         is_long: bool,
         take_profit: i128,
         stop_loss: i128,
+        acceptable_price: i128,
     );
 
     /// Close or reduce a position and realize PnL.
@@ -55,10 +59,28 @@ pub trait PositionManager {
     fn unpause(env: Env, caller: Address);
 
     /// Set the maximum leverage for a market. ADMIN only.
+    /// Floor enforced at `shared::constants::MIN_LEVERAGE` — use
+    /// `disable_market` to take a market offline.
     fn set_max_leverage(env: Env, caller: Address, symbol: Symbol, max_leverage: i128);
 
     /// Get the maximum leverage for a market.
     fn get_max_leverage(env: Env, symbol: Symbol) -> i128;
+
+    /// Disable trading for `symbol` — opens are rejected, closes still work.
+    /// PAUSER only. Distinct from a global pause; emits MarketDisabled.
+    fn disable_market(env: Env, caller: Address, symbol: Symbol);
+
+    /// Re-enable a previously disabled market. PAUSER only.
+    fn enable_market(env: Env, caller: Address, symbol: Symbol);
+
+    /// Returns true if `symbol` is currently disabled for opens.
+    fn is_market_disabled(env: Env, symbol: Symbol) -> bool;
+
+    /// Propose a WASM upgrade. UPGRADER role only.
+    fn propose_upgrade(env: Env, caller: Address, wasm_hash: BytesN<32>);
+
+    /// PAUSER veto of a pending upgrade.
+    fn cancel_upgrade(env: Env, caller: Address);
 
     /// Read-only: get a trader's position for a symbol.
     fn get_position(env: Env, trader: Address, symbol: Symbol) -> Position;

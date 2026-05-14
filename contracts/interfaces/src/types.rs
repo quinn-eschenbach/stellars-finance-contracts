@@ -1,18 +1,23 @@
-use soroban_sdk::contracttype;
+use soroban_sdk::{contracttype, BytesN};
 
-/// Global safety thresholds for price validation and caching.
+/// Global safety thresholds for price validation.
+///
+/// OracleRouter has no cache — every `get_price` call queries sources fresh,
+/// so there is no separate cache-freshness knob.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct OracleConfig {
-    /// Maximum allowed spread between primary oracle sources in basis points
-    /// (e.g., 100 = 1%). If exceeded, trading for that asset is paused.
+    /// Maximum allowed spread between oracle sources in basis points
+    /// (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
     pub max_deviation_bps: i128,
     /// Maximum age of an external SEP-40 price feed before it is rejected
     /// as stale (in seconds).
     pub staleness_threshold: u64,
-    /// Duration the internal price cache is valid before a fresh cross-contract
-    /// call to external oracles is required (in seconds, e.g., 10).
-    pub cache_duration: u64,
+    /// Minimum number of source responses that must agree within
+    /// `max_deviation_bps` for OracleRouter to return a price. Floored at
+    /// `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
+    /// `shared::constants::MAX_ORACLE_SOURCES`.
+    pub min_required_sources: u32,
 }
 
 /// Represents a single trader's open leveraged position.
@@ -63,4 +68,17 @@ pub struct MarketInfo {
 #[contracttype]
 pub struct MigrationData {
     pub version: u32,
+}
+
+/// Pending WASM upgrade — set by `propose_upgrade`, consumed by `upgrade`
+/// (cleared atomically on a successful install), or cleared by `cancel_upgrade`.
+/// Single shape across every protocol contract; all four contracts store it at
+/// the shared `pending_upgrade` Symbol key in their own instance storage (see
+/// `interfaces::upgrade::pending_upgrade_key`). `upgrade` refuses to install
+/// unless `pending.wasm_hash` matches the supplied hash and `now >= eta`.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PendingUpgrade {
+    pub wasm_hash: BytesN<32>,
+    pub eta: u64,
 }

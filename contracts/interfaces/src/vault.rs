@@ -20,9 +20,24 @@ pub trait VaultInterface {
 
     fn update_net_pnl(env: Env, caller: Address, pnl: i128);
 
-    fn record_absorbed_collateral(env: Env, caller: Address, trader: Address, amount: i128);
+    /// Notify the vault that PM transferred `amount` USDC into the vault.
+    /// `pre_balance` is the vault's USDC balance immediately BEFORE the
+    /// transfer — `record_absorbed_collateral` verifies `post - pre == amount`
+    /// to detect PM↔Vault state divergence.
+    fn record_absorbed_collateral(
+        env: Env,
+        caller: Address,
+        trader: Address,
+        amount: i128,
+        pre_balance: i128,
+    );
 
     fn accrue_fees(env: Env, caller: Address, amount: i128);
+
+    /// Total assets minus `unclaimed_fees`, with no PnL deduction. Used by
+    /// PM's utilization gate so that mark-price moves cannot feed back into
+    /// the utilization denominator and bias the gate.
+    fn total_assets_excl_pnl(env: Env) -> i128;
 
     fn claim_fees(env: Env, caller: Address, recipient: Address);
 
