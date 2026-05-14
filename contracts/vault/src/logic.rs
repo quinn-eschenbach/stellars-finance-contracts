@@ -36,14 +36,27 @@ pub fn require_not_paused(env: &Env) {
 // Role guards (via ConfigManager cross-contract call)
 // ---------------------------------------------------------------------------
 
-pub fn require_pauser(env: &Env, caller: &Address) {
+/// Cross-contract role check + per-contract panic. Panics with
+/// `VaultError::Unauthorized` (code 5) on failure so the panic code
+/// identifies the source contract.
+fn require_role_or_panic(env: &Env, caller: &Address, role: &str) {
+    caller.require_auth();
     let config_mgr = storage::get_config_manager(env);
-    shared::require_role(env, caller, &config_mgr, shared::ROLE_PAUSER);
+    if !shared::has_role(env, &config_mgr, role, caller) {
+        panic_with_error!(env, VaultError::Unauthorized);
+    }
+}
+
+pub fn require_pauser(env: &Env, caller: &Address) {
+    require_role_or_panic(env, caller, shared::constants::ROLE_PAUSER);
 }
 
 pub fn require_admin(env: &Env, caller: &Address) {
-    let config_mgr = storage::get_config_manager(env);
-    shared::require_role(env, caller, &config_mgr, shared::ROLE_ADMIN);
+    require_role_or_panic(env, caller, shared::constants::ROLE_ADMIN);
+}
+
+pub fn require_upgrader(env: &Env, caller: &Address) {
+    require_role_or_panic(env, caller, shared::constants::ROLE_UPGRADER);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +129,17 @@ pub fn free_liquidity(env: &Env) -> i128 {
     let pnl_deduction = if net_pnl > 0 { net_pnl } else { 0 };
     let free = total - reserved - unclaimed_fees - pnl_deduction;
     if free < 0 { 0 } else { free }
+}
+
+/// Total assets minus only the fee-buffer. PnL is intentionally excluded so
+/// mark-price moves cannot feed back into consumers' utilization
+/// denominator (PM's utilization gate, in particular). LP withdraw/pay_profit
+/// still go through `free_liquidity`, which retains the PnL deduction.
+pub fn total_assets_excl_pnl(env: &Env) -> i128 {
+    let total = Vault::total_assets(env);
+    let unclaimed_fees = storage::get_unclaimed_fees(env);
+    let v = total - unclaimed_fees;
+    if v < 0 { 0 } else { v }
 }
 
 pub fn require_free_liquidity(env: &Env, amount: i128) {

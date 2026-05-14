@@ -1,5 +1,5 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env};
-use shared::{SHARED_THRESHOLD, SHARED_BUMP};
+use shared::constants::{SHARED_THRESHOLD, SHARED_BUMP};
 
 use crate::errors::VaultError;
 
@@ -142,6 +142,9 @@ pub fn save_version(env: &Env, version: u32) {
         .instance()
         .set(&VaultDataKey::Version, &version);
 }
+
+// Pending upgrade storage now lives in `interfaces::upgrade` under a shared
+// Symbol key — used by the `TimelockedUpgradeable` trait's default methods.
 
 // ---------------------------------------------------------------------------
 // Persistent storage: LockupExpiresAt (per-user)

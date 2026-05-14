@@ -308,7 +308,7 @@ mod claim_fees_to_auth {
 
         // Grant KEEPER role to some address -- still not PM
         let keeper = Address::generate(&fix.env);
-        let keeper_role = Symbol::new(&fix.env, shared::ROLE_KEEPER);
+        let keeper_role = Symbol::new(&fix.env, shared::constants::ROLE_KEEPER);
         fix.config_client
             .grant_role(&fix.admin, &keeper_role, &keeper);
 

@@ -1,5 +1,9 @@
 use soroban_sdk::{contractevent, Address};
 
+// Upgrade events live in `interfaces::events` — the
+// `TimelockedUpgradeable` trait's default methods emit them, so no
+// re-export is needed here.
+
 // NOTE: Deposit/Withdraw/Mint/Redeem events are emitted automatically by OZ's
 // stellar_tokens::vault::Vault — see stellar-tokens/src/vault/storage.rs.
 // Defining duplicates here would cause the indexer's spec map (keyed by topic
@@ -7,24 +11,28 @@ use soroban_sdk::{contractevent, Address};
 
 /// Vault has paid `amount` to `trader` to settle a position profit. PM is
 /// always the caller; the asset moves vault → trader.
+/// `new_total_assets` is the post-write absolute vault balance.
 #[contractevent(topics = ["pay_profit"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PayProfit {
     #[topic]
     pub trader: Address,
     pub amount: i128,
+    pub new_total_assets: i128,
 }
 
 /// PositionManager has just transferred `amount` USDC into the vault to
 /// absorb a trader's loss. The transfer happened off this call (PM does it
 /// directly, see ADR-0001); this event lets off-chain indexers keep their
 /// tracked total_assets consistent with the vault's on-chain balance.
+/// `new_total_assets` is the post-write absolute vault balance.
 #[contractevent(topics = ["absorbed"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AbsorbedCollateral {
     #[topic]
     pub trader: Address,
     pub amount: i128,
+    pub new_total_assets: i128,
 }
 
 #[contractevent(topics = ["reserve"], data_format = "vec")]
@@ -61,6 +69,24 @@ pub struct UpdateNetPnl {
     pub pnl: i128,
 }
 
+/// Emitted by `update_net_pnl` when the supplied `requested` value exceeded
+/// `±total_assets` and was truncated to `clamped` before being stored.
+/// Bounded-trust guard against PM compromise pushing a non-recoverable value.
+#[contractevent(topics = ["pnl_clamp"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PnlClamped {
+    pub requested: i128,
+    pub clamped: i128,
+}
+
+/// Absolute total_assets snapshot, emitted by every LP-facing entrypoint so
+/// off-chain indexers can replay state without arithmetic deltas.
+#[contractevent(topics = ["total"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TotalAssetsUpdate {
+    pub new_total_assets: i128,
+}
+
 #[contractevent(topics = ["claim_to"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaimFeesTo {
@@ -85,3 +111,4 @@ pub struct Lockup {
     pub user: Address,
     pub expires_at: u64,
 }
+

@@ -288,7 +288,7 @@ fn test_deposit_when_paused_reverts() {
 
     // Grant PAUSER role and pause the vault
     let pauser = Address::generate(&fix.env);
-    let pauser_role = Symbol::new(&fix.env, shared::ROLE_PAUSER);
+    let pauser_role = Symbol::new(&fix.env, shared::constants::ROLE_PAUSER);
     fix.config_client.grant_role(&fix.admin, &pauser_role, &pauser);
     fix.vault_client.pause(&pauser);
 
@@ -307,7 +307,7 @@ fn test_max_deposit_when_paused_returns_zero() {
 
     // Grant PAUSER role and pause
     let pauser = Address::generate(&fix.env);
-    let pauser_role = Symbol::new(&fix.env, shared::ROLE_PAUSER);
+    let pauser_role = Symbol::new(&fix.env, shared::constants::ROLE_PAUSER);
     fix.config_client.grant_role(&fix.admin, &pauser_role, &pauser);
     fix.vault_client.pause(&pauser);
 
@@ -401,11 +401,12 @@ fn test_convert_to_shares_and_assets_are_inverse() {
 }
 
 // ===========================================================================
-// 14. Deposit receiver != from (third-party deposit)
+// 14. Deposit where receiver != from (third-party deposit) is rejected.
 // ===========================================================================
 
 #[test]
-fn test_deposit_receiver_different_from_sender() {
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_deposit_receiver_different_from_sender_reverts() {
     let fix = setup();
     let sender = Address::generate(&fix.env);
     let receiver = Address::generate(&fix.env);
@@ -413,33 +414,11 @@ fn test_deposit_receiver_different_from_sender() {
 
     mint_usdc(&fix, &sender, deposit_amount);
 
-    // Sender provides USDC, receiver gets shares
-    let shares = fix.vault_client.deposit(
+    fix.vault_client.deposit(
         &deposit_amount,
-        &receiver,  // receiver gets shares
-        &sender,    // from provides USDC
-        &sender,    // operator authorizes
-    );
-
-    // Sender should have 0 USDC left
-    assert_eq!(
-        fix.token_client.balance(&sender),
-        0,
-        "Sender USDC must be fully spent"
-    );
-
-    // Receiver should have the shares
-    assert_eq!(
-        fix.vault_client.balance(&receiver),
-        shares,
-        "Receiver must hold the minted shares"
-    );
-
-    // Sender should have 0 shares
-    assert_eq!(
-        fix.vault_client.balance(&sender),
-        0,
-        "Sender must have no shares (they went to receiver)"
+        &receiver,
+        &sender,
+        &sender,
     );
 }
 
@@ -528,7 +507,7 @@ fn test_deposit_after_unpause_succeeds() {
 
     // Pause
     let pauser = Address::generate(&fix.env);
-    let pauser_role = Symbol::new(&fix.env, shared::ROLE_PAUSER);
+    let pauser_role = Symbol::new(&fix.env, shared::constants::ROLE_PAUSER);
     fix.config_client.grant_role(&fix.admin, &pauser_role, &pauser);
     fix.vault_client.pause(&pauser);
 
@@ -550,7 +529,7 @@ fn test_max_deposit_after_unpause_returns_max() {
     let depositor = Address::generate(&fix.env);
 
     let pauser = Address::generate(&fix.env);
-    let pauser_role = Symbol::new(&fix.env, shared::ROLE_PAUSER);
+    let pauser_role = Symbol::new(&fix.env, shared::constants::ROLE_PAUSER);
     fix.config_client.grant_role(&fix.admin, &pauser_role, &pauser);
 
     // Pause
@@ -674,30 +653,21 @@ fn test_deposit_inflation_attack_frontrun() {
 }
 
 // ===========================================================================
-// 26. Deposit to vault address itself (self-deposit edge case)
+// 26. Deposit naming the vault as receiver is rejected (receiver != from).
 // ===========================================================================
 
 #[test]
-fn test_deposit_receiver_is_vault_itself() {
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_deposit_receiver_is_vault_itself_reverts() {
     let fix = setup();
     let depositor = Address::generate(&fix.env);
     mint_usdc(&fix, &depositor, 50 * USDC);
 
-    // Deposit shares into the vault's own address -- unusual but should not break
-    let shares = fix.vault_client.deposit(
+    fix.vault_client.deposit(
         &(50 * USDC),
-        &fix.vault_id,   // receiver = vault itself
-        &depositor,       // from
-        &depositor,       // operator
-    );
-
-    assert!(shares > 0, "Deposit to vault address must still mint shares");
-
-    // The vault should hold its own shares
-    assert_eq!(
-        fix.vault_client.balance(&fix.vault_id),
-        shares,
-        "Vault should hold its own shares when it is the receiver"
+        &fix.vault_id,
+        &depositor,
+        &depositor,
     );
 }
 

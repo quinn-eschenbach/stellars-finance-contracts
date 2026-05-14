@@ -1,10 +1,13 @@
 
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, Address, Env, MuxedAddress, String,
+    contract, contractimpl, panic_with_error, Address, BytesN, Env, MuxedAddress, String,
 };
 
-use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
-use stellar_macros::UpgradeableMigratable;
+use interfaces::{ConfigManagerClient, MigrationData, TimelockedUpgradeable, UpgradeFailure};
+
+use stellar_contract_utils::upgradeable::{
+    complete_migration, ensure_can_complete_migration,
+};
 use stellar_tokens::{
     fungible::{Base, FungibleToken},
     vault::{FungibleVault, Vault},
@@ -15,7 +18,6 @@ use crate::events as vault_events;
 use crate::logic as vault_logic;
 use crate::storage as vault_storage;
 
-#[derive(UpgradeableMigratable)]
 #[contract]
 pub struct VaultContract;
 
@@ -81,14 +83,21 @@ impl FungibleVault for VaultContract {
     fn deposit(e: &Env, assets: i128, receiver: Address, from: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
-        // Reject zero-asset deposits — without this, anyone can extend any
-        // user's lockup at zero cost by minting 0 shares to them.
+        if receiver != from || operator != from {
+            panic_with_error!(e, VaultError::DepositMustBeSelf);
+        }
         if assets <= 0 {
             panic_with_error!(e, VaultError::ZeroAmount);
         }
         vault_logic::record_lockup(e, &receiver);
         // OZ Vault::deposit auto-emits the deposit event.
-        Vault::deposit(e, assets, receiver, from, operator)
+        let shares = Vault::deposit(e, assets, receiver, from, operator);
+        vault_events::TotalAssetsUpdate {
+            new_total_assets: Vault::total_assets(e),
+        }
+        .publish(e);
+        shared::bump_instance_ttl(e);
+        shares
     }
 
     fn max_mint(e: &Env, receiver: Address) -> i128 {
@@ -105,14 +114,21 @@ impl FungibleVault for VaultContract {
     fn mint(e: &Env, shares: i128, receiver: Address, from: Address, operator: Address) -> i128 {
         vault_logic::require_not_paused(e);
         vault_logic::require_initialized(e);
-        // Symmetric guard with deposit() — block zero-share mints that would
-        // otherwise let anyone reset a victim's lockup for free.
+        if receiver != from || operator != from {
+            panic_with_error!(e, VaultError::DepositMustBeSelf);
+        }
         if shares <= 0 {
             panic_with_error!(e, VaultError::ZeroAmount);
         }
         vault_logic::record_lockup(e, &receiver);
         // OZ Vault::mint auto-emits the deposit event (mint and deposit collapse to one event).
-        Vault::mint(e, shares, receiver, from, operator)
+        let assets = Vault::mint(e, shares, receiver, from, operator);
+        vault_events::TotalAssetsUpdate {
+            new_total_assets: Vault::total_assets(e),
+        }
+        .publish(e);
+        shared::bump_instance_ttl(e);
+        assets
     }
 
     fn max_withdraw(e: &Env, owner: Address) -> i128 {
@@ -140,7 +156,13 @@ impl FungibleVault for VaultContract {
         vault_logic::require_lockup_elapsed(e, &owner);
         vault_logic::require_free_liquidity(e, assets);
         // OZ Vault::withdraw auto-emits the withdraw event.
-        Vault::withdraw(e, assets, receiver, owner, operator)
+        let shares = Vault::withdraw(e, assets, receiver, owner, operator);
+        vault_events::TotalAssetsUpdate {
+            new_total_assets: Vault::total_assets(e),
+        }
+        .publish(e);
+        shared::bump_instance_ttl(e);
+        shares
     }
 
     fn max_redeem(e: &Env, owner: Address) -> i128 {
@@ -162,7 +184,13 @@ impl FungibleVault for VaultContract {
         let assets = Vault::preview_redeem(e, shares);
         vault_logic::require_free_liquidity(e, assets);
         // OZ Vault::redeem auto-emits the withdraw event (redeem and withdraw collapse to one event).
-        Vault::redeem(e, shares, receiver, owner, operator)
+        let withdrawn = Vault::redeem(e, shares, receiver, owner, operator);
+        vault_events::TotalAssetsUpdate {
+            new_total_assets: Vault::total_assets(e),
+        }
+        .publish(e);
+        shared::bump_instance_ttl(e);
+        withdrawn
     }
 }
 
@@ -221,7 +249,13 @@ impl VaultContract {
         let vault_addr = env.current_contract_address();
         vault_logic::transfer_asset(&env, &asset, &vault_addr, &trader, amount);
 
-        vault_events::PayProfit { trader: trader.clone(), amount }.publish(&env);
+        let new_total_assets = Vault::total_assets(&env);
+        vault_events::PayProfit {
+            trader: trader.clone(),
+            amount,
+            new_total_assets,
+        }
+        .publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
@@ -262,30 +296,61 @@ impl VaultContract {
         shared::bump_instance_ttl(&env);
     }
 
+    /// Clamps `|pnl| ≤ total_assets` so a bug or compromise of PM cannot
+    /// freeze every LP withdraw by pushing a non-recoverable value through
+    /// this state-push entrypoint. Emits `PnlClamped` on truncation.
     pub fn update_net_pnl(env: Env, caller: Address, pnl: i128) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
-        vault_storage::set_net_global_trader_pnl(&env, pnl);
-        vault_events::UpdateNetPnl { pnl }.publish(&env);
+        let total = Vault::total_assets(&env);
+        let clamped = if pnl > total {
+            total
+        } else if pnl < -total {
+            -total
+        } else {
+            pnl
+        };
+        if clamped != pnl {
+            vault_events::PnlClamped { requested: pnl, clamped }.publish(&env);
+        }
+        vault_storage::set_net_global_trader_pnl(&env, clamped);
+        vault_events::UpdateNetPnl { pnl: clamped }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
     /// Notify the vault that PositionManager has just transferred `amount`
     /// USDC of seized/loss-settlement collateral directly into the vault's
-    /// wallet. This call does NOT move tokens — it only verifies the caller
-    /// is PM, then emits an event so off-chain indexers can update their
-    /// tracked total_assets in lockstep with the vault's actual on-chain
-    /// balance. See ADR-0001 for why losses bypass `pay_profit`.
-    pub fn record_absorbed_collateral(env: Env, caller: Address, trader: Address, amount: i128) {
+    /// wallet. This call does NOT move tokens, but it DOES verify the
+    /// on-chain delta — `post - pre` must equal `amount`, otherwise PM and
+    /// Vault have diverged and we panic. See ADR-0001.
+    pub fn record_absorbed_collateral(
+        env: Env,
+        caller: Address,
+        trader: Address,
+        amount: i128,
+        pre_balance: i128,
+    ) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
         if amount <= 0 {
             panic_with_error!(&env, VaultError::ZeroAmount);
         }
-        vault_events::AbsorbedCollateral { trader, amount }.publish(&env);
+        let post = Vault::total_assets(&env);
+        if post.saturating_sub(pre_balance) != amount {
+            panic_with_error!(&env, VaultError::AbsorbedCollateralMismatch);
+        }
+        vault_events::AbsorbedCollateral {
+            trader,
+            amount,
+            new_total_assets: post,
+        }
+        .publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
+    /// Rejects when accruing would push `unclaimed_fees + reserved_usdc`
+    /// above `total_assets`. PM cannot accumulate book-only fees beyond
+    /// what is actually in the vault.
     pub fn accrue_fees(env: Env, caller: Address, amount: i128) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
@@ -296,6 +361,11 @@ impl VaultContract {
 
         let current = vault_storage::get_unclaimed_fees(&env);
         let new_total = current + amount;
+        let reserved = vault_storage::get_reserved_usdc(&env);
+        let total_assets = Vault::total_assets(&env);
+        if new_total + reserved > total_assets {
+            panic_with_error!(&env, VaultError::FeeAccrualExceedsAssets);
+        }
         vault_storage::set_unclaimed_fees(&env, new_total);
         vault_events::AccrueFees { amount, new_total }.publish(&env);
         shared::bump_instance_ttl(&env);
@@ -360,6 +430,14 @@ impl VaultContract {
         vault_logic::free_liquidity(&env)
     }
 
+    /// Total assets minus only the fee buffer — PnL is excluded so consumers
+    /// (PM's utilization gate) are not subject to mark-price feedback into
+    /// the utilization denominator. LP-facing flows still use `free_liquidity`.
+    pub fn total_assets_excl_pnl(env: Env) -> i128 {
+        vault_logic::require_initialized(&env);
+        vault_logic::total_assets_excl_pnl(&env)
+    }
+
     pub fn reserved_usdc(env: Env) -> i128 {
         vault_logic::require_initialized(&env);
         vault_storage::get_reserved_usdc(&env)
@@ -374,21 +452,72 @@ impl VaultContract {
     pub fn bump_vault_state(env: Env) {
         shared::bump_instance_ttl(&env);
     }
+
+    /// Propose a WASM upgrade. UPGRADER role only. Records `{wasm_hash, eta}`
+    /// where `eta = now + timelock` so `upgrade` can refuse to install a
+    /// different hash or fire before `eta`.
+    pub fn propose_upgrade(env: Env, caller: Address, wasm_hash: BytesN<32>) {
+        vault_logic::require_initialized(&env);
+        <Self as TimelockedUpgradeable>::propose(&env, caller, wasm_hash);
+        shared::bump_instance_ttl(&env);
+    }
+
+    /// PAUSER veto of a pending upgrade.
+    pub fn cancel_upgrade(env: Env, caller: Address) {
+        vault_logic::require_initialized(&env);
+        <Self as TimelockedUpgradeable>::cancel(&env, caller);
+        shared::bump_instance_ttl(&env);
+    }
+
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>, operator: Address) {
+        vault_logic::require_initialized(&env);
+        <Self as TimelockedUpgradeable>::execute(&env, operator, new_wasm_hash);
+    }
+
+    pub fn migrate(env: Env, migration_data: MigrationData, operator: Address) {
+        vault_logic::require_initialized(&env);
+        vault_logic::require_upgrader(&env, &operator);
+        ensure_can_complete_migration(&env);
+        Self::_migrate(&env, &migration_data);
+        complete_migration(&env);
+        shared::bump_instance_ttl(&env);
+    }
+}
+
+impl VaultContract {
+    pub(crate) fn _migrate(env: &Env, data: &MigrationData) {
+        vault_storage::save_version(env, data.version);
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Upgrade support
+// TimelockedUpgradeable impl — hooks supply the contract-specific bits.
 // ---------------------------------------------------------------------------
-impl UpgradeableMigratableInternal for VaultContract {
-    type MigrationData = interfaces::MigrationData;
-
-    fn _require_auth(e: &Env, operator: &Address) {
-        let config_mgr = vault_storage::get_config_manager(e);
-        shared::require_role(e, operator, &config_mgr, shared::ROLE_UPGRADER);
+impl TimelockedUpgradeable for VaultContract {
+    fn _require_proposer(env: &Env, caller: &Address) {
+        vault_logic::require_upgrader(env, caller);
     }
-
-    fn _migrate(e: &Env, data: &Self::MigrationData) {
-        vault_storage::save_version(e, data.version);
-        shared::bump_instance_ttl(e);
+    fn _require_executor(env: &Env, caller: &Address) {
+        vault_logic::require_upgrader(env, caller);
+    }
+    fn _require_canceller(env: &Env, caller: &Address) {
+        vault_logic::require_pauser(env, caller);
+    }
+    fn _timelock_seconds(env: &Env) -> u64 {
+        let config_mgr = vault_storage::get_config_manager(env);
+        ConfigManagerClient::new(env, &config_mgr).get_upgrade_timelock()
+    }
+    fn _panic_with_upgrade_error(env: &Env, err: UpgradeFailure) -> ! {
+        match err {
+            UpgradeFailure::NoPendingUpgrade => {
+                panic_with_error!(env, VaultError::NoPendingUpgrade)
+            }
+            UpgradeFailure::TimelockNotElapsed => {
+                panic_with_error!(env, VaultError::UpgradeTimelockNotElapsed)
+            }
+            UpgradeFailure::HashMismatch => {
+                panic_with_error!(env, VaultError::UpgradeHashMismatch)
+            }
+        }
     }
 }

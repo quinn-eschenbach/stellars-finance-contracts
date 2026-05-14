@@ -758,18 +758,16 @@ fn test_post_withdraw_redeposit_rearms_lockup() {
 }
 
 // ---------------------------------------------------------------------------
-// 17. Receiver of a third-party deposit gets the lockup (NOT the operator/from).
+// 17. Third-party deposits (receiver != from) are rejected.
 //
-// In the deposit flow, the contract calls `record_deposit_time(..., &receiver)`
-// — so the lockup is bound to the receiver of the shares, not the operator.
-//
-// Timeline:
-//   T=1000   cooldown=300; sender deposits ON BEHALF OF receiver
-//            => receiver.expiry=1300, sender.expiry=0 (sender never received shares)
+// Only the depositor themselves can credit shares to their own address. This
+// prevents an adversary from repeatedly resetting another user's lockup by
+// making tiny deposits in their name.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_third_party_deposit_lockup_binds_to_receiver_not_sender() {
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_third_party_deposit_is_rejected() {
     let fix = setup();
     let sender = Address::generate(&fix.env);
     let receiver = Address::generate(&fix.env);
@@ -781,17 +779,6 @@ fn test_third_party_deposit_lockup_binds_to_receiver_not_sender() {
     fix.token_client.mint(&sender, &amount);
     fix.vault_client
         .deposit(&amount, &receiver, &sender, &sender);
-
-    assert_eq!(
-        fix.vault_client.lockup_expires_at(&receiver),
-        1300,
-        "lockup must be set on the receiver (who got the shares)"
-    );
-    assert_eq!(
-        fix.vault_client.lockup_expires_at(&sender),
-        0,
-        "lockup must NOT be set on the sender (who only paid the assets)"
-    );
 }
 
 // ===========================================================================

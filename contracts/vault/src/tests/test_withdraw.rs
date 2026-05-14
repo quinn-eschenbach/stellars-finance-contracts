@@ -112,7 +112,7 @@ fn deposit_usdc(fix: &TestFixture, addr: &Address, amount: i128) -> i128 {
 
 /// Grant PAUSER role to `pauser` via the config manager.
 fn grant_pauser(fix: &TestFixture, pauser: &Address) {
-    let role = Symbol::new(&fix.env, shared::ROLE_PAUSER);
+    let role = Symbol::new(&fix.env, shared::constants::ROLE_PAUSER);
     fix.config_client.grant_role(&fix.admin, &role, pauser);
 }
 

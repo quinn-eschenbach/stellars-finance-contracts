@@ -107,7 +107,7 @@ fn seed_vault(fix: &TestFixture, amount: i128) -> (Address, i128) {
 /// Grant PAUSER role and return the pauser address.
 fn grant_pauser(fix: &TestFixture) -> Address {
     let pauser = Address::generate(&fix.env);
-    let pauser_role = Symbol::new(&fix.env, shared::ROLE_PAUSER);
+    let pauser_role = Symbol::new(&fix.env, shared::constants::ROLE_PAUSER);
     fix.config_client
         .grant_role(&fix.admin, &pauser_role, &pauser);
     pauser
@@ -115,7 +115,7 @@ fn grant_pauser(fix: &TestFixture) -> Address {
 
 /// Grant ADMIN role and return the admin address (for claim_fees tests).
 fn _grant_admin_role(fix: &TestFixture, addr: &Address) {
-    let admin_role = Symbol::new(&fix.env, shared::ROLE_ADMIN);
+    let admin_role = Symbol::new(&fix.env, shared::constants::ROLE_ADMIN);
     fix.config_client.grant_role(&fix.admin, &admin_role, addr);
 }
 
@@ -610,13 +610,13 @@ mod pause_unpause {
     // 2. Pause by unauthorized caller should fail
     // -----------------------------------------------------------------------
     #[test]
-    #[should_panic(expected = "Error(Contract, #3)")]
+    #[should_panic(expected = "Error(Contract, #5)")]
     fn test_pause_unauthorized_reverts() {
         let fix = setup();
 
         let attacker = Address::generate(&fix.env);
 
-        // SharedError::Unauthorized = 3
+        // VaultError::Unauthorized = 5 — panic comes from Vault's wrapper.
         fix.vault_client.pause(&attacker);
     }
 
@@ -624,7 +624,7 @@ mod pause_unpause {
     // 3. Unpause by unauthorized caller should fail
     // -----------------------------------------------------------------------
     #[test]
-    #[should_panic(expected = "Error(Contract, #3)")]
+    #[should_panic(expected = "Error(Contract, #5)")]
     fn test_unpause_unauthorized_reverts() {
         let fix = setup();
         let pauser = grant_pauser(&fix);
@@ -795,7 +795,7 @@ mod pause_unpause {
     // 12. Non-pauser cannot pause
     // -----------------------------------------------------------------------
     #[test]
-    #[should_panic(expected = "Error(Contract, #3)")]
+    #[should_panic(expected = "Error(Contract, #5)")]
     fn test_random_cannot_pause() {
         let fix = setup();
         let random = Address::generate(&fix.env);
@@ -807,7 +807,7 @@ mod pause_unpause {
     // 13. Position manager cannot pause (only PAUSER role)
     // -----------------------------------------------------------------------
     #[test]
-    #[should_panic(expected = "Error(Contract, #3)")]
+    #[should_panic(expected = "Error(Contract, #5)")]
     fn test_position_manager_cannot_pause() {
         let fix = setup();
 
@@ -843,7 +843,7 @@ mod pause_unpause {
     // 15. Admin cannot pause (only PAUSER role, admin is not pauser by default)
     // -----------------------------------------------------------------------
     #[test]
-    #[should_panic(expected = "Error(Contract, #3)")]
+    #[should_panic(expected = "Error(Contract, #5)")]
     fn test_admin_cannot_pause_without_pauser_role() {
         let fix = setup();
 
@@ -1058,7 +1058,7 @@ mod claim_fees {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #3)")]
+    #[should_panic(expected = "Error(Contract, #5)")]
     fn test_claim_fees_unauthorized_reverts() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);
@@ -1069,7 +1069,7 @@ mod claim_fees {
         let attacker = Address::generate(&fix.env);
         let recipient = Address::generate(&fix.env);
 
-        // Non-admin cannot claim fees -- SharedError::Unauthorized = 3
+        // Non-admin cannot claim fees → VaultError::Unauthorized = 5.
         fix.vault_client.claim_fees(&attacker, &recipient);
     }
 
@@ -1101,7 +1101,7 @@ mod claim_fees {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #3)")]
+    #[should_panic(expected = "Error(Contract, #5)")]
     fn test_position_manager_cannot_claim_fees() {
         let fix = setup();
         seed_vault(&fix, 100 * ONE_USDC);

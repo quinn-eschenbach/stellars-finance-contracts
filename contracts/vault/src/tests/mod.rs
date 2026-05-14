@@ -3,4 +3,5 @@ mod test_deposit;
 mod test_initialize;
 mod test_lockup_expires_at;
 mod test_operations;
+mod test_upgrade_timelock_enforcement;
 mod test_withdraw;
