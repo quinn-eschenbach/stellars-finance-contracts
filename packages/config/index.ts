@@ -66,3 +66,5 @@ export const config: Addresses = loadAddresses();
 export function getNetworkConfig(network: Network): NetworkConfig {
   return config[network];
 }
+
+export * from "./constants.js";
