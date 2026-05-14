@@ -62,11 +62,17 @@ provision-keys-testnet:
 
 # Network-agnostic deploy. NETWORK_KEY=local goes through deploy.sh just
 # like testnet/mainnet, so all networks share the same code path.
-deploy: build
+# `optimize` is a hard prerequisite — the deploy script resolves
+# `.optimized.wasm`, so without this dependency `make deploy` would either
+# fail on the optimized-file guard or silently deploy bloated bytecode.
+deploy: optimize
 	NETWORK_KEY=local bash scripts/deploy.sh
 
-deploy-testnet: build
+deploy-testnet: optimize
 	NETWORK_KEY=testnet bash scripts/deploy.sh
+
+deploy-mainnet: optimize
+	NETWORK_KEY=mainnet bash scripts/deploy.sh
 
 # Push freshly-built WASM bytecode to existing on-chain contracts via the
 # OZ Upgradeable `upgrade(operator, new_wasm_hash)` entrypoint. Admin needs
