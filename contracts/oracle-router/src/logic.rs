@@ -1,39 +1,73 @@
 use interfaces::OracleClient;
-use shared::{bump_instance_ttl, ROLE_ADMIN, ROLE_UPGRADER};
+use shared::bump_instance_ttl;
+use shared::constants::{
+    BPS, MAX_DEVIATION_BPS_CEILING, MAX_ORACLE_SOURCES, MIN_REQUIRED_SOURCES_FLOOR, ROLE_ADMIN,
+    ROLE_PAUSER, ROLE_UPGRADER,
+};
 use soroban_sdk::{panic_with_error, Address, Env, Symbol, Vec};
 
 use crate::errors::OracleRouterError;
 use crate::events;
 use crate::storage;
-use crate::types::{CachedPrice, OracleConfig};
+use crate::types::OracleConfig;
+
+/// Require `caller` to be authenticated and hold `role` in the linked
+/// ConfigManager. Panics with `OracleRouterError::Unauthorized` (code 3) on
+/// failure so the panic code identifies the source contract.
+fn require_role_or_panic(env: &Env, caller: &Address, role: &str) {
+    caller.require_auth();
+    let cm = storage::load_config_manager(env);
+    if !shared::has_role(env, &cm, role, caller) {
+        panic_with_error!(env, OracleRouterError::Unauthorized);
+    }
+}
 
 /// Require that `caller` holds the "ADMIN" role in the linked ConfigManager.
 pub fn require_oracle_admin(env: &Env, caller: &Address) {
-    let cm = storage::load_config_manager(env);
-    shared::require_role(env, caller, &cm, ROLE_ADMIN);
+    require_role_or_panic(env, caller, ROLE_ADMIN);
 }
 
 /// Require that `caller` holds the "UPGRADER" role in the linked ConfigManager.
 pub fn require_upgrader(env: &Env, caller: &Address) {
-    let cm = storage::load_config_manager(env);
-    shared::require_role(env, caller, &cm, ROLE_UPGRADER);
+    require_role_or_panic(env, caller, ROLE_UPGRADER);
 }
 
-/// Validate OracleConfig fields — all must be strictly positive.
-pub fn validate_oracle_config(env: &Env, config: &OracleConfig) {
-    if config.max_deviation_bps <= 0 || config.staleness_threshold == 0 || config.cache_duration == 0 {
-        panic_with_error!(env, OracleRouterError::InvalidConfig);
-    }
-    // Cache must not outlive the staleness window, otherwise stale prices can be served from cache
-    if config.cache_duration > config.staleness_threshold {
-        panic_with_error!(env, OracleRouterError::InvalidConfig);
+/// Require that `caller` holds the "PAUSER" role in the linked ConfigManager —
+/// used by the `cancel_upgrade` veto path. Distinct getter so the caller's
+/// intent ("PAUSER for upgrade veto", not generic pause) is clear.
+pub fn require_pauser_for_upgrade(env: &Env, caller: &Address) {
+    require_role_or_panic(env, caller, ROLE_PAUSER);
+}
+
+/// Bounds-validation surface for OracleConfig, mirroring the `Validate`
+/// pattern used in `config-manager/src/validate.rs`. Implemented locally —
+/// orphan rule prevents adding `impl` blocks on `interfaces::OracleConfig`
+/// directly.
+pub trait Validate {
+    /// Panics with `OracleRouterError::InvalidConfig` on failure; returns
+    /// normally otherwise.
+    fn validate(&self, env: &Env);
+}
+
+impl Validate for OracleConfig {
+    fn validate(&self, env: &Env) {
+        if self.max_deviation_bps <= 0 || self.max_deviation_bps > MAX_DEVIATION_BPS_CEILING {
+            panic_with_error!(env, OracleRouterError::InvalidConfig);
+        }
+        if self.staleness_threshold == 0 {
+            panic_with_error!(env, OracleRouterError::InvalidConfig);
+        }
+        if self.min_required_sources < MIN_REQUIRED_SOURCES_FLOOR
+            || self.min_required_sources > MAX_ORACLE_SOURCES
+        {
+            panic_with_error!(env, OracleRouterError::InvalidConfig);
+        }
     }
 }
 
-/// Query a list of oracle sources, filtering stale, broken, and invalid prices.
-///
-/// Uses try-variants for cross-contract calls so a broken source is skipped
-/// instead of aborting the entire transaction.
+/// Query every source, returning the prices that pass freshness, sign, and
+/// future-timestamp checks. Try-variants ensure a broken source is skipped
+/// rather than aborting the whole call.
 pub fn query_sources(
     env: &Env,
     sources: &Vec<Address>,
@@ -52,7 +86,12 @@ pub fn query_sources(
             Ok(Ok(ts)) => ts,
             _ => continue,
         };
-        if current_time.saturating_sub(last_update) > config.staleness_threshold || price <= 0 {
+        // Future-dated timestamps are rejected outright — prevents a source
+        // from masquerading as perpetually fresh.
+        if last_update > current_time {
+            continue;
+        }
+        if current_time - last_update > config.staleness_threshold || price <= 0 {
             continue;
         }
         valid_prices.push_back(price);
@@ -60,57 +99,58 @@ pub fn query_sources(
     valid_prices
 }
 
-/// Full price fetch: query primaries, fall back to secondaries, compute and
-/// validate the median, write cache, return.
+/// Full price fetch: query every source, require ≥ `min_required_sources`
+/// valid responses, compute and validate the median, emit, return.
+/// No cache — every call refetches.
 pub fn fetch_and_validate_price(env: &Env, symbol: Symbol) -> i128 {
     let config = storage::load_oracle_config(env);
     let current_time = env.ledger().timestamp();
 
-    // Cache hit — return immediately without querying sources.
-    if let Some(entry) = storage::load_cached_price(env, &symbol) {
-        if current_time <= entry.last_update + config.cache_duration {
-            return entry.price;
-        }
-    }
-
-    let primaries = storage::load_primary_sources(env, &symbol);
-    if primaries.is_empty() {
+    let sources = storage::load_sources(env, &symbol);
+    if sources.is_empty() {
         panic_with_error!(env, OracleRouterError::NoPriceSources);
     }
-    let mut valid_prices = query_sources(env, &primaries, &symbol, &config, current_time);
 
-    // Fall back to secondaries if all primaries failed.
+    let valid_prices = query_sources(env, &sources, &symbol, &config, current_time);
+
+    // No valid responses at all → StalePrice (every source was stale, broken,
+    // future-dated, or returned a non-positive price). This is distinct from
+    // "some valid responses but below quorum", which uses InsufficientSources.
     if valid_prices.is_empty() {
-        let secondaries = storage::load_secondary_sources(env, &symbol);
-        valid_prices = query_sources(env, &secondaries, &symbol, &config, current_time);
-        if valid_prices.is_empty() {
-            panic_with_error!(env, OracleRouterError::StalePrice);
-        }
+        panic_with_error!(env, OracleRouterError::StalePrice);
+    }
+    if (valid_prices.len() as u32) < config.min_required_sources {
+        panic_with_error!(env, OracleRouterError::InsufficientSources);
     }
 
-    insertion_sort(&mut valid_prices);
+    let mut sorted = valid_prices;
+    insertion_sort(&mut sorted);
 
-    let n = valid_prices.len();
-    let median = valid_prices.get(median_idx(n)).unwrap();
+    let n = sorted.len();
+    let median = sorted.get(median_idx(n)).unwrap();
     let dev = deviation_bps(
+        env,
         median,
-        valid_prices.get(0).unwrap(),
-        valid_prices.get(n - 1).unwrap(),
+        sorted.get(0).unwrap(),
+        sorted.get(n - 1).unwrap(),
     );
     if dev > config.max_deviation_bps {
         panic_with_error!(env, OracleRouterError::PriceDeviationTooHigh);
     }
 
-    storage::save_cached_price(env, &symbol, CachedPrice { price: median, last_update: current_time });
-    events::PriceFetch { symbol: symbol.clone(), price: median, timestamp: current_time }.publish(env);
+    events::PriceFetch {
+        symbol: symbol.clone(),
+        price: median,
+        timestamp: current_time,
+    }
+    .publish(env);
     bump_instance_ttl(env);
 
     median
 }
 
-/// Deduplicate an address list, preserving first-occurrence order.
-///
-/// O(n²) — acceptable because oracle source lists are small (typically 3–10 entries).
+/// Deduplicate an address list, preserving first-occurrence order. O(n²) —
+/// fine because source lists are bounded at MAX_ORACLE_SOURCES.
 pub fn dedup_sources(env: &Env, sources: &Vec<Address>) -> Vec<Address> {
     let mut result: Vec<Address> = Vec::new(env);
     'outer: for addr in sources.iter() {
@@ -124,8 +164,8 @@ pub fn dedup_sources(env: &Env, sources: &Vec<Address>) -> Vec<Address> {
     result
 }
 
-/// In-place insertion sort for a `Vec<i128>` (ascending). O(n²) — fine for the
-/// small source lists we aggregate over.
+/// In-place insertion sort (ascending). O(n²) — fine for source lists bounded
+/// at MAX_ORACLE_SOURCES.
 pub(crate) fn insertion_sort(prices: &mut Vec<i128>) {
     let n = prices.len();
     for i in 1..n {
@@ -154,9 +194,29 @@ pub(crate) fn median_idx(n: u32) -> u32 {
 }
 
 /// Max one-sided deviation in basis points:
-/// `max(max − median, median − min) × 10_000 / median`.
-pub(crate) fn deviation_bps(median: i128, min: i128, max: i128) -> i128 {
-    let upper = (max - median) * 10_000 / median;
-    let lower = (median - min) * 10_000 / median;
-    if upper > lower { upper } else { lower }
+/// `max(max − median, median − min) × BPS / median`.
+/// All arithmetic is checked — overflow on adversarial prices raises
+/// `DeviationOverflow` instead of trapping the host.
+pub(crate) fn deviation_bps(env: &Env, median: i128, min: i128, max: i128) -> i128 {
+    let upper_num = match max.checked_sub(median).and_then(|v| v.checked_mul(BPS)) {
+        Some(v) => v,
+        None => panic_with_error!(env, OracleRouterError::DeviationOverflow),
+    };
+    let upper = match upper_num.checked_div(median) {
+        Some(v) => v,
+        None => panic_with_error!(env, OracleRouterError::DeviationOverflow),
+    };
+    let lower_num = match median.checked_sub(min).and_then(|v| v.checked_mul(BPS)) {
+        Some(v) => v,
+        None => panic_with_error!(env, OracleRouterError::DeviationOverflow),
+    };
+    let lower = match lower_num.checked_div(median) {
+        Some(v) => v,
+        None => panic_with_error!(env, OracleRouterError::DeviationOverflow),
+    };
+    if upper > lower {
+        upper
+    } else {
+        lower
+    }
 }

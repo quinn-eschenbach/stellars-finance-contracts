@@ -1,4 +1,4 @@
-//! Tests for 2.6: `bump_oracle_state`.
+//! Tests for `bump_oracle_state`.
 //!
 //! `bump_oracle_state` extends the Soroban TTL of the OracleRouter's
 //! instance storage so that oracle config and source lists are not archived.
@@ -36,11 +36,11 @@ use super::helpers::{deploy, deploy_initialized, deploy_with_config_manager, val
 #[test]
 fn test_bump_oracle_state_succeeds_without_auth() {
     let env = Env::default();
-    // Deliberately do NOT call env.mock_all_auths() — if the impl were to call
-    // any address.require_auth() this test would panic, proving the violation.
+    env.mock_all_auths();
     let (client, _config_manager) = deploy_initialized(&env);
 
-    // Must not panic. If auth is accidentally required, this call will fail.
+    // Strip auth before the bump call to verify it has no internal auth check.
+    env.mock_auths(&[]);
     client.bump_oracle_state();
 }
 
@@ -50,10 +50,11 @@ fn test_bump_oracle_state_succeeds_without_auth() {
 #[test]
 fn test_bump_oracle_state_empty_auth_context_does_not_panic() {
     let env = Env::default();
-    env.mock_auths(&[]);
+    env.mock_all_auths();
     let (client, _) = deploy_initialized(&env);
 
-    // No auth at all — must succeed because bump_oracle_state is permissionless.
+    // Strip auth before the bump call — must still succeed.
+    env.mock_auths(&[]);
     client.bump_oracle_state();
 }
 
@@ -119,7 +120,8 @@ fn test_bump_oracle_state_untrusted_caller_no_auth_succeeds() {
         env2.mock_all_auths();
         let client2 = deploy(&env2);
         let cm2 = Address::generate(&env2);
-        client2.initialize(&cm2);
+        let admin2 = Address::generate(&env2);
+        client2.initialize(&admin2, &cm2);
     }
 
     // Simplest version: just initialize and call with no auth env.
@@ -127,7 +129,8 @@ fn test_bump_oracle_state_untrusted_caller_no_auth_succeeds() {
     env3.mock_all_auths();
     let client3 = deploy(&env3);
     let cm_addr3 = Address::generate(&env3);
-    client3.initialize(&cm_addr3);
+    let admin3 = Address::generate(&env3);
+    client3.initialize(&admin3, &cm_addr3);
 
     // Now call with empty auths — permissionless call must not fail.
     env3.mock_auths(&[]);
@@ -166,7 +169,7 @@ fn test_bump_oracle_state_instance_storage_remains_accessible_after_bump() {
         "2.6-d: staleness_threshold must be unchanged after bump_oracle_state"
     );
     assert_eq!(
-        fetched.cache_duration, config.cache_duration,
+        fetched.min_required_sources, config.min_required_sources,
         "2.6-d: cache_duration must be unchanged after bump_oracle_state"
     );
 }

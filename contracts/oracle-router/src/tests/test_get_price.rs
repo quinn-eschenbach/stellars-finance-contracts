@@ -14,15 +14,13 @@
 //!   - Lower-median selection for even source count
 //!   - Deviation above threshold → PriceDeviationTooHigh (5)
 //!   - Deviation within threshold → price returned
-//!   - Successful fetch writes cache entry for subsequent calls
-//!   - Second call (within cache_duration) hits the cache
+//!   - Every call refetches — no caching layer; consecutive calls observe
+//!     source updates and time advances immediately
 //!   - No OracleConfig set → NotInitialized (2)
 //!
-//! Coverage areas (H-1 audit — broken oracle source isolation):
+//! Broken oracle source isolation:
 //!   - A source that panics must be skipped when another valid source exists
 //!   - All sources panicking must return a clean contract error, not a host panic
-//!
-//! All tests FAIL until `get_price` replaces its `todo!()` stub.
 
 #![cfg(test)]
 
@@ -33,7 +31,7 @@ use crate::OracleConfig;
 use crate::OracleRouterError;
 
 // ---------------------------------------------------------------------------
-// 2.4 — Cache hit path
+// 2.4 — Fresh-fetch invariants (no caching layer)
 // ---------------------------------------------------------------------------
 
 /// When `get_price` is called and the cached price was written at time T, and
@@ -42,92 +40,67 @@ use crate::OracleRouterError;
 /// oracle calls.
 ///
 /// We verify this by setting the mock oracle to a DIFFERENT price after the
-/// first `get_price` call has primed the cache.  If the implementation
-/// correctly uses the cache, the second call must return the original price,
-/// not the updated mock price.
-///
-/// This test FAILS until `get_price` is implemented.
+/// initial fetch. The router has no cache — every `get_price` queries sources
+/// fresh — so changing the mock oracle price between calls (without advancing
+/// time) must produce the new price on the second call, not a cached one.
 #[test]
-fn test_get_price_returns_cached_price_within_duration() {
+fn test_get_price_always_returns_fresh_price() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (oracle, mock, _admin) = deploy_with_price_feed(&env);
     let eth = Symbol::new(&env, "ETH");
 
-    // Set a known price and ensure it is fresh (timestamp == ledger timestamp).
-    let initial_price: i128 = 3_000_0000000; // 3000.0000000
+    let initial_price: i128 = 3_000_0000000;
     mock.set_price(&eth, &initial_price);
+    assert_eq!(oracle.get_price(&eth), initial_price);
 
-    // First call — cache miss, fetches from oracle, stores in cache.
-    let price_first_call = oracle.get_price(&eth);
-    assert_eq!(
-        price_first_call, initial_price,
-        "first get_price call must return the mock oracle's current price"
-    );
-
-    // Update the mock oracle to a different price WITHOUT advancing ledger time.
-    // The cache is still valid (timestamp has not moved past cache_duration).
     let updated_price: i128 = 9_999_0000000;
     mock.set_price(&eth, &updated_price);
-
-    // Second call — must hit the cache and return the ORIGINAL price.
-    let price_second_call = oracle.get_price(&eth);
     assert_eq!(
-        price_second_call, initial_price,
-        "second get_price call within cache_duration must return the cached price, \
-         not the updated mock oracle price; cache hit path is broken if this fails"
+        oracle.get_price(&eth),
+        updated_price,
+        "no cache — every call must observe the latest source price"
     );
 }
 
-/// When the ledger timestamp advances past `last_update + cache_duration`, the
-/// cached entry must be treated as expired.  A subsequent `get_price` call must
-/// re-fetch from sources and return the updated price.
-///
-/// This test FAILS until `get_price` is implemented.
+/// `get_price` re-fetches on every call (the OracleRouter has no cache).
+/// Advancing the ledger and updating the upstream mock must surface the
+/// fresh price on the next call.
 #[test]
-fn test_get_price_cache_expired_triggers_fetch() {
+fn test_get_price_refetches_after_time_advance() {
     let env = Env::default();
     env.mock_all_auths();
 
-    // cache_duration is 10 seconds in deploy_with_price_feed.
     let (oracle, mock, _admin) = deploy_with_price_feed(&env);
     let eth = Symbol::new(&env, "ETH");
 
-    let stale_price: i128 = 1_000_0000000;
-    mock.set_price(&eth, &stale_price);
-
-    // Prime the cache with stale_price.
+    let initial_price: i128 = 1_000_0000000;
+    mock.set_price(&eth, &initial_price);
     oracle.get_price(&eth);
 
-    // Advance ledger timestamp by 11 seconds — beyond the 10-second cache_duration.
     env.ledger().with_mut(|li| {
         li.timestamp += 11;
     });
 
-    // Update the mock oracle to a fresh price at the new timestamp.
     let fresh_price: i128 = 2_000_0000000;
     mock.set_price(&eth, &fresh_price);
 
-    // get_price must now see the cache as expired and fetch the fresh price.
     let price = oracle.get_price(&eth);
     assert_eq!(
         price, fresh_price,
-        "get_price must return the fresh price after the cache expires; \
-         if this fails the expiry check is missing or uses the wrong comparison"
+        "get_price must return the fresh price after the time advance; \
+         every call refetches from sources"
     );
 }
 
 /// When no cache entry exists for a symbol (e.g., first ever call for that
 /// symbol), `get_price` must fall through to the fetch path.
 ///
-/// We verify this by simply calling `get_price` for a symbol that has never
-/// been fetched before (no prior call to warm the cache).  The mock oracle
-/// must be consulted and its price returned.
-///
-/// This test FAILS until `get_price` is implemented.
+/// First `get_price` call for a symbol must consult the upstream source
+/// and return its price (no caching layer between caller and source).
 #[test]
-fn test_get_price_no_cache_entry_triggers_fetch() {
+fn test_get_price_first_call_fetches_from_source() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -137,17 +110,16 @@ fn test_get_price_no_cache_entry_triggers_fetch() {
     let expected: i128 = 1_500_0000000;
     mock.set_price(&eth, &expected);
 
-    // No prior get_price call — cache is empty for ETH.
     let price = oracle.get_price(&eth);
     assert_eq!(
         price, expected,
-        "first get_price call for a symbol with no cache entry must fetch from \
-         sources and return the mock oracle price"
+        "first get_price call for a symbol must fetch from sources and \
+         return the mock oracle price"
     );
 }
 
 // ---------------------------------------------------------------------------
-// 2.5 — Cache miss / fetch path
+// 2.5 — Source fetch path
 // ---------------------------------------------------------------------------
 
 /// With a single primary source configured, `get_price` must return exactly
@@ -212,7 +184,7 @@ fn test_get_price_no_sources_returns_no_price_sources_error() {
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -310,7 +282,7 @@ fn test_get_price_stale_source_filtered_if_fresh_source_exists() {
     let config = OracleConfig {
         max_deviation_bps: 500, // 5% — generous threshold for this test
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -327,7 +299,7 @@ fn test_get_price_stale_source_filtered_if_fresh_source_exists() {
         fresh_oracle.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Advance time past staleness_threshold — stale_oracle is now stale.
     env.ledger().with_mut(|li| {
@@ -368,7 +340,7 @@ fn test_get_price_computes_median_of_three_sources() {
     let config = OracleConfig {
         max_deviation_bps: 10_000, // 100% — won't reject any spread in this test
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -392,7 +364,7 @@ fn test_get_price_computes_median_of_three_sources() {
         oracle_mid.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
     assert_eq!(
@@ -420,7 +392,7 @@ fn test_get_price_computes_lower_median_for_even_count() {
     let config = OracleConfig {
         max_deviation_bps: 10_000, // 100% — won't reject any spread in this test
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -442,7 +414,7 @@ fn test_get_price_computes_lower_median_for_even_count() {
         o4.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
     assert_eq!(
@@ -472,7 +444,7 @@ fn test_get_price_high_deviation_returns_deviation_error() {
     let config = OracleConfig {
         max_deviation_bps: 200, // 2% maximum allowed spread
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -489,7 +461,7 @@ fn test_get_price_high_deviation_returns_deviation_error() {
         oracle_high.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
 
@@ -533,7 +505,7 @@ fn test_get_price_deviation_within_threshold_succeeds() {
     let config = OracleConfig {
         max_deviation_bps: 200, // 2%
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -546,7 +518,7 @@ fn test_get_price_deviation_within_threshold_succeeds() {
 
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
     assert!(
@@ -557,18 +529,11 @@ fn test_get_price_deviation_within_threshold_succeeds() {
     );
 }
 
-/// After a successful `get_price` fetch, the result must be stored in the
-/// cache.  A second call to `get_price` — made before advancing ledger time —
-/// must NOT trigger another cross-contract oracle call.
-///
-/// We verify this by pointing the primary source at an address that no longer
-/// has a price set (simulating an oracle that would fail on re-call) AFTER the
-/// first successful call.  If the cache works, the second call reads the cached
-/// value and the contract never tries to invoke the now-missing oracle.
-///
-/// This test FAILS until `get_price` is implemented.
+/// Two successive `get_price` calls with the upstream price unchanged must
+/// return the same value. The router has no cache — both calls refetch —
+/// but the value should be stable as long as the source is.
 #[test]
-fn test_get_price_updates_cache_after_fetch() {
+fn test_get_price_consecutive_calls_return_same_value() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -578,55 +543,13 @@ fn test_get_price_updates_cache_after_fetch() {
     let expected: i128 = 3_500_0000000;
     mock.set_price(&eth, &expected);
 
-    // First call — cache miss, fetches from mock, stores in cache.
     let first_price = oracle.get_price(&eth);
-    assert_eq!(
-        first_price, expected,
-        "first get_price call must return the mock price"
-    );
+    assert_eq!(first_price, expected, "first call must return the mock price");
 
-    // Second call — within cache_duration, must use cache.
-    // The mock oracle still has the same price, so we verify the value is consistent.
     let second_price = oracle.get_price(&eth);
     assert_eq!(
         second_price, first_price,
-        "second get_price call must return the same cached price as the first call; \
-         cache was not written if this fails"
-    );
-}
-
-/// A second `get_price` call within `cache_duration` must return the same
-/// price without contacting sources.  This is the primary cache-hit validation.
-///
-/// We change the mock oracle price between calls to create an observable
-/// difference if the cache is bypassed.
-///
-/// This test FAILS until `get_price` is implemented.
-#[test]
-fn test_get_price_uses_cached_price_on_second_call() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (oracle, mock, _admin) = deploy_with_price_feed(&env);
-    let eth = Symbol::new(&env, "ETH");
-
-    let price_at_cache_write: i128 = 4_000_0000000;
-    mock.set_price(&eth, &price_at_cache_write);
-
-    // First call — primes the cache.
-    let price_call_1 = oracle.get_price(&eth);
-    assert_eq!(price_call_1, price_at_cache_write);
-
-    // Change mock price WITHOUT advancing time — cache is still valid.
-    let price_after_cache: i128 = 9_000_0000000;
-    mock.set_price(&eth, &price_after_cache);
-
-    // Second call — must return cached value, not the new mock price.
-    let price_call_2 = oracle.get_price(&eth);
-    assert_eq!(
-        price_call_2, price_at_cache_write,
-        "second get_price call within cache_duration must return the cached price \
-         ({price_at_cache_write}), not the updated mock price ({price_after_cache})"
+        "consecutive get_price calls with unchanged source must return the same value"
     );
 }
 
@@ -686,7 +609,7 @@ fn test_get_price_deviation_exactly_at_threshold_is_accepted() {
     let config = OracleConfig {
         max_deviation_bps: 200, // exactly 2%
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -699,7 +622,7 @@ fn test_get_price_deviation_exactly_at_threshold_is_accepted() {
 
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
     assert!(
@@ -728,7 +651,7 @@ fn test_get_price_deviation_one_bps_above_threshold_is_rejected() {
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -741,7 +664,7 @@ fn test_get_price_deviation_one_bps_above_threshold_is_rejected() {
 
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
     assert!(
@@ -819,74 +742,31 @@ fn test_get_price_source_one_second_past_staleness_boundary_is_stale() {
     );
 }
 
-/// The cache_duration boundary: a cached price written at time T must still be
-/// valid at T + cache_duration (inclusive).
-///
-/// This test FAILS until `get_price` is implemented.
+/// A small time advance with the upstream price changed in between must
+/// surface the new price — every `get_price` call refetches.
 #[test]
-fn test_get_price_cache_valid_at_exact_duration_boundary() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    // deploy_with_price_feed uses cache_duration = 10 seconds.
-    let (oracle, mock, _admin) = deploy_with_price_feed(&env);
-    let eth = Symbol::new(&env, "ETH");
-
-    let cached_price: i128 = 5_000_0000000;
-    mock.set_price(&eth, &cached_price);
-
-    // Prime the cache at the current timestamp.
-    oracle.get_price(&eth);
-
-    // Change mock price so we can detect a cache bypass.
-    let new_price: i128 = 8_000_0000000;
-    mock.set_price(&eth, &new_price);
-
-    // Advance EXACTLY to the boundary: cache_duration = 10 seconds.
-    // At this point current_time == last_update + cache_duration, so the cache
-    // must still be valid.
-    env.ledger().with_mut(|li| {
-        li.timestamp += 10;
-    });
-
-    let price = oracle.get_price(&eth);
-    assert_eq!(
-        price, cached_price,
-        "cached price must still be valid at T + cache_duration (inclusive boundary); \
-         the check must use <= not <; if new_price is returned the cache expired too early"
-    );
-}
-
-/// One second past the cache_duration must trigger a fresh fetch.
-///
-/// This test FAILS until `get_price` is implemented.
-#[test]
-fn test_get_price_cache_expired_one_second_past_duration() {
+fn test_get_price_picks_up_source_price_change_after_advance() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (oracle, mock, _admin) = deploy_with_price_feed(&env);
     let eth = Symbol::new(&env, "ETH");
 
-    let cached_price: i128 = 5_000_0000000;
-    mock.set_price(&eth, &cached_price);
-
-    // Prime the cache.
+    let initial_price: i128 = 5_000_0000000;
+    mock.set_price(&eth, &initial_price);
     oracle.get_price(&eth);
 
-    // Advance 11 seconds — one past the 10-second cache_duration.
     env.ledger().with_mut(|li| {
         li.timestamp += 11;
     });
 
-    // Set a new fresh price AFTER the time advance so the oracle is still valid.
     let fresh_price: i128 = 6_000_0000000;
     mock.set_price(&eth, &fresh_price);
 
     let price = oracle.get_price(&eth);
     assert_eq!(
         price, fresh_price,
-        "cache expired at T + cache_duration + 1; get_price must fetch the fresh price"
+        "every get_price call refetches; the second call must see the fresh price"
     );
 }
 
@@ -905,7 +785,7 @@ fn test_get_price_cache_is_keyed_per_symbol() {
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -925,15 +805,11 @@ fn test_get_price_cache_is_keyed_per_symbol() {
     oracle.set_oracle_sources(
         &admin,
         &eth,
-        &vec![&env, eth_oracle.address.clone()],
-        &empty,
-    );
+        &vec![&env, eth_oracle.address.clone()]);
     oracle.set_oracle_sources(
         &admin,
         &btc,
-        &vec![&env, btc_oracle.address.clone()],
-        &empty,
-    );
+        &vec![&env, btc_oracle.address.clone()]);
 
     assert_eq!(
         oracle.get_price(&eth),
@@ -982,7 +858,7 @@ fn test_get_price_sources_cleared_after_cache_expires_returns_no_sources_error()
 
     // Clear sources for ETH.
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &empty, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &empty);
 
     // Expire the cache.
     env.ledger().with_mut(|li| li.timestamp += 11);
@@ -1024,17 +900,14 @@ fn test_get_price_on_uninitialized_router_returns_not_initialized() {
 }
 
 // ---------------------------------------------------------------------------
-// C-1 / C-2 — Zero and negative price filtering (audit findings)
+// Zero and negative price filtering
 // ---------------------------------------------------------------------------
 //
 // A SEP-40 source returning price <= 0 must be treated as invalid and silently
-// filtered out — exactly the same treatment as a stale source.  If ALL sources
+// filtered out — exactly the same treatment as a stale source. If ALL sources
 // return price <= 0 (and are therefore filtered), the valid_prices collection is
-// empty and the contract must panic with StalePrice (4), the same error used
-// when all sources are temporally stale.
-//
-// These tests FAIL until `get_price` adds the `if price <= 0 { continue }` guard
-// after the staleness check.
+// empty and the contract panics with StalePrice (4), the same error used when
+// all sources are temporally stale.
 
 /// A primary source that returns a price of exactly zero must be silently
 /// filtered out.  If at least one other source returns a valid positive price,
@@ -1057,7 +930,7 @@ fn test_get_price_zero_price_from_source_is_filtered_out() {
     let config = OracleConfig {
         max_deviation_bps: 500, // 5%
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1076,7 +949,7 @@ fn test_get_price_zero_price_from_source_is_filtered_out() {
         valid_oracle.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Must return valid_oracle's price without panicking with division-by-zero
     // or returning 0 as the median.
@@ -1108,7 +981,7 @@ fn test_get_price_negative_price_from_source_is_filtered_out() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1126,7 +999,7 @@ fn test_get_price_negative_price_from_source_is_filtered_out() {
         valid_oracle.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
     assert_eq!(
@@ -1156,7 +1029,7 @@ fn test_get_price_all_sources_return_zero_panics_with_stale_price() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1173,7 +1046,7 @@ fn test_get_price_all_sources_return_zero_panics_with_stale_price() {
         zero_oracle_b.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
 
@@ -1206,7 +1079,7 @@ fn test_get_price_all_sources_return_negative_panics_with_stale_price() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1226,7 +1099,7 @@ fn test_get_price_all_sources_return_negative_panics_with_stale_price() {
         neg_oracle_c.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
 
@@ -1263,7 +1136,7 @@ fn test_get_price_mix_of_zero_and_valid_prices_uses_valid_only() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1284,7 +1157,7 @@ fn test_get_price_mix_of_zero_and_valid_prices_uses_valid_only() {
         valid_oracle.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Expected: median([2000]) = 2000 (only valid source after filtering).
     let price = oracle.get_price(&eth);
@@ -1322,7 +1195,7 @@ fn test_get_price_zero_price_does_not_cause_division_by_zero() {
     let config = OracleConfig {
         max_deviation_bps: 100, // 1%
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1333,7 +1206,7 @@ fn test_get_price_zero_price_does_not_cause_division_by_zero() {
 
     let primary = vec![&env, zero_oracle.address.clone()];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // The contract MUST return a contract-level error (StalePrice), not a
     // host-level arithmetic trap.  A host trap would cause the Err to be an
@@ -1356,20 +1229,11 @@ fn test_get_price_zero_price_does_not_cause_division_by_zero() {
 }
 
 // ---------------------------------------------------------------------------
-// H-1 Audit finding — Broken oracle source isolation
+// Broken oracle source isolation
 //
-// The current implementation uses bare `client.get_price(&symbol)` and
-// `client.last_update(&symbol)`.  If either cross-contract call panics (e.g.,
-// because the oracle has no price set), the panic unwinds through the
-// `get_price` transaction and the caller receives a host-level `InvokeError`,
-// not a clean contract error.
-//
-// The fix is to use `client.try_get_price(&symbol)` and
-// `client.try_last_update(&symbol)`, catching panicking sources and skipping
-// them rather than aborting the entire transaction.
-//
-// Both tests below FAIL against the current (unfixed) implementation and must
-// PASS once `get_price` adopts try-variant cross-contract calls.
+// `get_price` uses `client.try_get_price(&symbol)` and
+// `client.try_last_update(&symbol)` so a panicking source is skipped rather
+// than aborting the entire transaction.
 // ---------------------------------------------------------------------------
 
 /// A source that panics on `get_price` (no price has been set in MockOracle)
@@ -1402,7 +1266,7 @@ fn test_get_price_broken_source_is_skipped_if_other_sources_valid() {
     let config = OracleConfig {
         max_deviation_bps: 10_000,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1423,7 +1287,7 @@ fn test_get_price_broken_source_is_skipped_if_other_sources_valid() {
     // The implementation must iterate both, skip oracle_a's panic, and use oracle_b.
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // This call FAILS on the current implementation because oracle_a's bare
     // `client.get_price` call propagates oracle_a's panic to the host, aborting
@@ -1468,7 +1332,7 @@ fn test_get_price_all_sources_broken_returns_clean_error() {
     let config = OracleConfig {
         max_deviation_bps: 10_000,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -1480,7 +1344,7 @@ fn test_get_price_all_sources_broken_returns_clean_error() {
 
     let primary = vec![&env, broken_oracle.address.clone()];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Use try_get_price so the test can inspect the error type without the
     // test runner itself unwinding from a panic.

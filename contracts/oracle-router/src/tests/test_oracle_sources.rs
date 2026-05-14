@@ -44,7 +44,7 @@ fn test_set_oracle_sources_admin_succeeds() {
     let secondary = vec![&env, Address::generate(&env)];
 
     // Must not panic. Fails on todo!() until implementation is written.
-    oracle.set_oracle_sources(&admin, &symbol, &primary, &secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &primary);
 }
 
 /// Calling `set_oracle_sources` a second time for the same symbol must
@@ -68,14 +68,14 @@ fn test_set_oracle_sources_overwrites_previous_sources() {
     let first_secondary = vec![&env, Address::generate(&env)];
 
     // First write — must succeed.
-    oracle.set_oracle_sources(&admin, &symbol, &first_primary, &first_secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &first_primary);
 
     let second_primary = vec![&env, Address::generate(&env), Address::generate(&env)];
     let second_secondary = vec![&env, Address::generate(&env)];
 
     // Second write for the same symbol — must also succeed without any error.
     // An implementation that rejects overwrites would panic here.
-    oracle.set_oracle_sources(&admin, &symbol, &second_primary, &second_secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &second_primary);
 }
 
 /// Passing empty Vec for both `primary` and `secondary` must succeed.
@@ -97,7 +97,7 @@ fn test_set_oracle_sources_can_set_empty_lists() {
     let empty: soroban_sdk::Vec<Address> = vec![&env];
 
     // Both empty — this is the "clear sources" operation and must NOT panic.
-    oracle.set_oracle_sources(&admin, &symbol, &empty, &empty);
+    oracle.set_oracle_sources(&admin, &symbol, &empty);
 }
 
 /// Sources set for "ETH" must not bleed into the storage slot for "BTC"
@@ -127,15 +127,15 @@ fn test_set_oracle_sources_multiple_symbols_are_independent() {
     let btc_secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // Set ETH sources.
-    oracle.set_oracle_sources(&admin, &eth, &eth_primary, &eth_secondary);
+    oracle.set_oracle_sources(&admin, &eth, &eth_primary);
 
     // Set BTC sources — must not panic or interfere with ETH slot.
-    oracle.set_oracle_sources(&admin, &btc, &btc_primary, &btc_secondary);
+    oracle.set_oracle_sources(&admin, &btc, &btc_primary);
 
     // Overwrite ETH again to confirm the BTC write did not corrupt the ETH key.
     let new_eth_primary = vec![&env, Address::generate(&env)];
     let new_eth_secondary = vec![&env, Address::generate(&env)];
-    oracle.set_oracle_sources(&admin, &eth, &new_eth_primary, &new_eth_secondary);
+    oracle.set_oracle_sources(&admin, &eth, &new_eth_primary);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,17 +151,19 @@ fn test_set_oracle_sources_multiple_symbols_are_independent() {
 /// panic boundary.
 #[test]
 fn test_set_oracle_sources_requires_auth() {
-    // DO NOT call env.mock_all_auths() — this test specifically requires that
-    // the missing signature is detected and rejected by the host.
     let env = Env::default();
-
+    env.mock_all_auths();
     let (oracle, _) = deploy_initialized(&env);
+
+    // Strip auth before the call under test so the missing signature for
+    // `caller.require_auth()` is detected.
+    env.mock_auths(&[]);
     let caller = Address::generate(&env);
     let symbol = Symbol::new(&env, "ETH");
     let primary = vec![&env, Address::generate(&env)];
     let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
-    let result = oracle.try_set_oracle_sources(&caller, &symbol, &primary, &secondary);
+    let result = oracle.try_set_oracle_sources(&caller, &symbol, &primary);
 
     assert!(
         result.is_err(),
@@ -191,7 +193,7 @@ fn test_set_oracle_sources_non_admin_is_unauthorized() {
     let primary = vec![&env, Address::generate(&env)];
     let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
-    let result = oracle.try_set_oracle_sources(&attacker, &symbol, &primary, &secondary);
+    let result = oracle.try_set_oracle_sources(&attacker, &symbol, &primary);
 
     assert!(
         result.is_err(),
@@ -243,7 +245,7 @@ fn test_set_oracle_sources_single_primary_source() {
     let empty_secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // Single primary with no secondary — a minimal valid oracle configuration.
-    oracle.set_oracle_sources(&admin, &symbol, &single_primary, &empty_secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &single_primary);
 }
 
 /// Five primary sources and three secondary sources must all be stored without
@@ -277,7 +279,7 @@ fn test_set_oracle_sources_many_sources() {
     let secondary = vec![&env, s1, s2, s3];
 
     // Must not panic — large lists must be stored verbatim.
-    oracle.set_oracle_sources(&admin, &symbol, &primary, &secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &primary);
 }
 
 /// An address that appears in both the primary and secondary lists must be
@@ -303,7 +305,7 @@ fn test_set_oracle_sources_same_address_in_primary_and_secondary() {
     let secondary = vec![&env, shared.clone()];
 
     // Must succeed — the contract stores lists verbatim, no dedup check.
-    oracle.set_oracle_sources(&admin, &symbol, &primary, &secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &primary);
 }
 
 /// An address repeated multiple times in the primary list (duplicates within
@@ -327,7 +329,7 @@ fn test_set_oracle_sources_duplicate_addresses_within_primary_list() {
     let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // No dedup: the contract must store the list exactly as provided.
-    oracle.set_oracle_sources(&admin, &symbol, &primary, &secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &primary);
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +358,7 @@ fn test_set_oracle_sources_keeper_role_is_not_sufficient() {
     let primary = vec![&env, Address::generate(&env)];
     let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
-    let result = oracle.try_set_oracle_sources(&keeper, &symbol, &primary, &secondary);
+    let result = oracle.try_set_oracle_sources(&keeper, &symbol, &primary);
 
     assert!(
         result.is_err(),
@@ -390,7 +392,7 @@ fn test_set_oracle_sources_admin_of_wrong_config_manager_is_unauthorized() {
     let primary = vec![&env, Address::generate(&env)];
     let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
-    let result = oracle_a.try_set_oracle_sources(&admin_b, &symbol, &primary, &secondary);
+    let result = oracle_a.try_set_oracle_sources(&admin_b, &symbol, &primary);
 
     assert!(
         result.is_err(),
@@ -422,11 +424,12 @@ fn test_set_oracle_sources_revoked_admin_is_unauthorized_after_transfer() {
     let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // Confirm the original admin can call set_oracle_sources.
-    oracle.set_oracle_sources(&original_admin, &symbol, &primary, &secondary);
+    oracle.set_oracle_sources(&original_admin, &symbol, &primary);
 
     // Transfer admin role to a new address.
     let new_admin = Address::generate(&env);
-    cm.transfer_admin(&original_admin, &new_admin);
+    cm.propose_admin(&original_admin, &new_admin);
+    cm.accept_admin(&new_admin);
 
     // original_admin no longer holds the ADMIN role — must be rejected now.
     let attacker_primary = vec![&env, Address::generate(&env)];
@@ -435,9 +438,7 @@ fn test_set_oracle_sources_revoked_admin_is_unauthorized_after_transfer() {
     let result = oracle.try_set_oracle_sources(
         &original_admin,
         &symbol,
-        &attacker_primary,
-        &attacker_secondary,
-    );
+        &attacker_primary);
 
     assert!(
         result.is_err(),
@@ -472,7 +473,7 @@ fn test_set_oracle_sources_bumps_instance_ttl() {
     let primary = vec![&env, Address::generate(&env)];
     let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
-    oracle.set_oracle_sources(&admin, &symbol, &primary, &secondary);
+    oracle.set_oracle_sources(&admin, &symbol, &primary);
 
     // get_oracle_config reads from instance storage. A well-typed contract
     // error (NotInitialized) proves the instance storage entry is live.
@@ -523,8 +524,8 @@ fn test_set_oracle_sources_symbol_is_case_sensitive() {
     let empty: soroban_sdk::Vec<Address> = vec![&env];
 
     // Both calls must succeed independently — they address different storage slots.
-    oracle.set_oracle_sources(&admin, &eth_upper, &primary_upper, &empty);
-    oracle.set_oracle_sources(&admin, &eth_lower, &primary_lower, &empty);
+    oracle.set_oracle_sources(&admin, &eth_upper, &primary_upper);
+    oracle.set_oracle_sources(&admin, &eth_lower, &primary_lower);
 }
 
 /// Setting sources for multiple different symbols in sequence must not panic
@@ -545,30 +546,24 @@ fn test_set_oracle_sources_multiple_symbols_sequence() {
         let secondary = vec![&env, Address::generate(&env)];
 
         // Each symbol must succeed in isolation.
-        oracle.set_oracle_sources(&admin, &symbol, &primary, &secondary);
+        oracle.set_oracle_sources(&admin, &symbol, &primary);
     }
 }
 
 // ---------------------------------------------------------------------------
-// H-2 Audit finding — Duplicate oracle source deduplication
+// Duplicate oracle source deduplication
 //
-// The current `set_oracle_sources` stores the primary list verbatim.  If the
-// same oracle address appears twice, `get_price` queries that address twice
-// and counts both responses in the median calculation.  This lets an attacker
-// or misconfigured operator make a single oracle appear as two "independent"
-// sources, manipulating the median toward that oracle's price.
+// `set_oracle_sources` deduplicates the primary list before storing it so each
+// address contributes at most one data point to the median. Without this, a
+// single oracle could appear as two "independent" sources and bias the median.
 //
-// The fix is to deduplicate the `primary` list before storing it so each
-// address contributes at most one data point to the median.
-//
-// Test H-2a verifies the correct median is returned after dedup by using a
-// specific three-source scenario where the duplicate biases the non-dedup
-// median away from the true two-source median:
+// The dedup-correctness test below uses a three-source scenario where the
+// duplicate biases the non-dedup median away from the true two-source median:
 //   Sources: [oracle_a (price=300), oracle_a (price=300), oracle_b (price=100)]
 //   Without dedup: sorted=[100,300,300], n=3, median_idx=1 → median=300
 //   With dedup:    sorted=[100,300],     n=2, median_idx=0 → median=100
 //
-// Test H-2b verifies that after dedup a duplicate-only list `[a,a]` is treated
+// The second test below verifies that after dedup a duplicate-only list `[a,a]` is treated
 // as a single-source list and returns that source's price cleanly.
 // ---------------------------------------------------------------------------
 
@@ -595,51 +590,47 @@ fn test_set_oracle_sources_deduplicates_primary_list() {
 
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
 
-    // Max deviation set very high so the guard never trips — test is purely
-    // about median calculation. With original formula (max-min)*10000/median,
-    // prices 100 and 300 give deviation=20000 bps, so threshold must be >=20000.
-    // staleness_threshold=60: timestamp=100, prices set at 100 → age=0 → fresh.
+    // Max deviation set to the ceiling so the guard never trips during the
+    // dedup-only check. min_required_sources=1 keeps the quorum trivial.
     let config = crate::OracleConfig {
-        max_deviation_bps: 100_000,
+        max_deviation_bps: shared::constants::MAX_DEVIATION_BPS_CEILING,
         staleness_threshold: 60,
-        cache_duration: 1,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
     let eth = Symbol::new(&env, "ETH");
 
-    // oracle_a returns 300, oracle_b returns 100.
+    // Prices 100 and 200 sit at the deviation ceiling (10_000 bps = 100% of
+    // the lower median) so the gate passes while still letting us observe
+    // whether dedup happened.
     let oracle_a = super::helpers::deploy_mock_oracle(&env);
-    oracle_a.set_price(&eth, &300i128);
+    oracle_a.set_price(&eth, &200i128);
 
     let oracle_b = super::helpers::deploy_mock_oracle(&env);
     oracle_b.set_price(&eth, &100i128);
 
     // Register oracle_a TWICE and oracle_b ONCE.
-    // Primary list (pre-dedup): [oracle_a.address, oracle_a.address, oracle_b.address]
-    //
-    // WITHOUT dedup: sorted prices = [100, 300, 300], n=3, median_idx=1 → median=300
-    // WITH dedup:    stored list = [oracle_a.address, oracle_b.address]
-    //                sorted prices = [100, 300], n=2, median_idx=0 → median=100
+    // WITHOUT dedup: sorted = [100, 200, 200], n=3, median_idx=1 → median=200
+    // WITH dedup:    sorted = [100, 200],     n=2, median_idx=0 → median=100
     let primary = vec![
         &env,
         oracle_a.address.clone(),
         oracle_a.address.clone(),
         oracle_b.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
 
-    // After dedup, the correct median of the two distinct prices [100, 300] is
-    // 100 (lower-median for even n=2).  A return value of 300 indicates that
+    // After dedup, the correct median of the two distinct prices [100, 200] is
+    // 100 (lower-median for even n=2).  A return value of 200 indicates that
     // oracle_a was double-counted (no dedup), which is the bug being fixed.
     assert_eq!(
         price, 100i128,
         "get_price must return the deduplicated median (100), not the duplicate-biased \
-         median (300). oracle_a was registered twice; after dedup it contributes only one \
-         data point. If 300 is returned, deduplication is not happening in set_oracle_sources."
+         median (200). oracle_a was registered twice; after dedup it contributes only one \
+         data point. If 200 is returned, deduplication is not happening in set_oracle_sources."
     );
 }
 
@@ -669,7 +660,7 @@ fn test_set_oracle_sources_dedup_all_duplicate_list_acts_as_single_source() {
     let config = crate::OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
-        cache_duration: 1,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -687,7 +678,7 @@ fn test_set_oracle_sources_dedup_all_duplicate_list_acts_as_single_source() {
         oracle_a.address.clone(),
     ];
     let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Must succeed: single effective source, deviation = 0, price = single_price.
     let price = oracle.get_price(&eth);
@@ -740,12 +731,12 @@ fn test_set_oracle_sources_dedup_preserves_deviation_check_for_divergent_sources
 
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
 
-    // Very permissive deviation so the divergence in prices does not trip the guard.
-    // upper_dev of [100, 500] = (500-100)*10000/100 = 40000. Use 50000 to pass.
+    // Use the deviation ceiling so the divergence in this dedup-focused test
+    // doesn't trip the guard. `max_deviation_bps` is capped at 10_000 (100%).
     let config = crate::OracleConfig {
-        max_deviation_bps: 50_000,
+        max_deviation_bps: shared::constants::MAX_DEVIATION_BPS_CEILING,
         staleness_threshold: 60,
-        cache_duration: 1,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
@@ -755,11 +746,13 @@ fn test_set_oracle_sources_dedup_preserves_deviation_check_for_divergent_sources
     oracle_a.set_price(&eth, &100i128);
 
     let oracle_b = super::helpers::deploy_mock_oracle(&env);
-    oracle_b.set_price(&eth, &500i128);
+    // Capped at +100% of the lower-median (100), the max upper price the new
+    // deviation gate (10_000 bps ceiling) allows is 200.
+    oracle_b.set_price(&eth, &200i128);
 
-    // [oracle_a (100), oracle_a (100), oracle_b (500)]
-    // Without dedup: n=3, sorted=[100,100,500], median_idx=1, median=100
-    // With dedup:    n=2, sorted=[100,500],     median_idx=0, median=100
+    // [oracle_a (100), oracle_a (100), oracle_b (200)]
+    // Without dedup: n=3, sorted=[100,100,200], median_idx=1, median=100
+    // With dedup:    n=2, sorted=[100,200],     median_idx=0, median=100
     // Both return 100 — confirms dedup is safe for this layout.
     let primary = vec![
         &env,
@@ -767,14 +760,13 @@ fn test_set_oracle_sources_dedup_preserves_deviation_check_for_divergent_sources
         oracle_a.address.clone(),
         oracle_b.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
 
     assert_eq!(
         price, 100i128,
-        "get_price with [oracle_a(100), oracle_a(100), oracle_b(500)] must return the \
+        "get_price with [oracle_a(100), oracle_a(100), oracle_b(200)] must return the \
          lower-median price (100) regardless of whether dedup is applied, confirming \
          the fix is safe and does not change the outcome for this configuration."
     );

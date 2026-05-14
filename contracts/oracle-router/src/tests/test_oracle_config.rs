@@ -68,7 +68,7 @@ fn test_get_oracle_config_returns_stored_config() {
         "staleness_threshold must round-trip through storage unchanged"
     );
     assert_eq!(
-        stored.cache_duration, config.cache_duration,
+        stored.min_required_sources, config.min_required_sources,
         "cache_duration must round-trip through storage unchanged"
     );
 }
@@ -88,12 +88,12 @@ fn test_set_oracle_config_overwrites_previous_config() {
     let first = OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     let second = OracleConfig {
         max_deviation_bps: 250,
         staleness_threshold: 120,
-        cache_duration: 30,
+        min_required_sources: 1,
     };
 
     oracle.set_oracle_config(&admin, &first);
@@ -110,7 +110,7 @@ fn test_set_oracle_config_overwrites_previous_config() {
         "staleness_threshold must reflect the SECOND write, not the first"
     );
     assert_eq!(
-        stored.cache_duration, second.cache_duration,
+        stored.min_required_sources, second.min_required_sources,
         "cache_duration must reflect the SECOND write, not the first"
     );
 }
@@ -129,11 +129,13 @@ fn test_set_oracle_config_overwrites_previous_config() {
 /// rather than a well-typed OracleRouterError).
 #[test]
 fn test_set_oracle_config_requires_auth() {
-    // DO NOT call env.mock_all_auths() — this test specifically needs the
-    // auth check to be enforced so the missing signature is detected.
     let env = Env::default();
-
+    env.mock_all_auths();
     let (oracle, _) = deploy_initialized(&env);
+
+    // Strip auth before the call under test so the missing signature for
+    // `caller.require_auth()` is detected.
+    env.mock_auths(&[]);
     let caller = Address::generate(&env);
     let config = valid_oracle_config();
 
@@ -237,7 +239,7 @@ fn test_set_oracle_config_zero_max_deviation_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 0, // invalid
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
 
     // Must panic because max_deviation_bps == 0 is not allowed.
@@ -257,19 +259,19 @@ fn test_set_oracle_config_zero_staleness_threshold_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 0, // invalid
-        cache_duration: 10,
+        min_required_sources: 1,
     };
 
     // Must panic because staleness_threshold == 0 is not allowed.
     oracle.set_oracle_config(&admin, &config);
 }
 
-/// cache_duration == 0 would mean the price cache expires immediately after
-/// every write, forcing a cross-contract call on every single get_price
-/// invocation.  This is an operational footgun and the contract must reject it.
+/// min_required_sources == 0 falls below `MIN_REQUIRED_SOURCES_FLOOR` and
+/// must be rejected — without a quorum, OracleRouter would return the
+/// median of an empty (or single-source) set.
 #[test]
 #[should_panic]
-fn test_set_oracle_config_zero_cache_duration_is_invalid() {
+fn test_set_oracle_config_zero_min_required_sources_is_invalid() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -277,10 +279,9 @@ fn test_set_oracle_config_zero_cache_duration_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 60,
-        cache_duration: 0, // invalid
+        min_required_sources: 0,
     };
 
-    // Must panic because cache_duration == 0 is not allowed.
     oracle.set_oracle_config(&admin, &config);
 }
 
@@ -297,7 +298,7 @@ fn test_set_oracle_config_negative_max_deviation_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: -1, // negative — invalid
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
 
     oracle.set_oracle_config(&admin, &config);
@@ -316,7 +317,7 @@ fn test_set_oracle_config_all_fields_zero_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 0,
         staleness_threshold: 0,
-        cache_duration: 0,
+        min_required_sources: 1,
     };
 
     oracle.set_oracle_config(&admin, &config);
@@ -340,7 +341,7 @@ fn test_set_oracle_config_valid_boundary_values_succeed() {
     let config = OracleConfig {
         max_deviation_bps: 1,   // minimum valid i128 positive
         staleness_threshold: 1, // minimum valid u64 positive
-        cache_duration: 1,      // minimum valid u64 positive
+        min_required_sources: 1,      // minimum valid u64 positive
     };
 
     // Must not panic. Minimum boundary values are valid.
@@ -356,47 +357,45 @@ fn test_set_oracle_config_valid_boundary_values_succeed() {
         "staleness_threshold boundary value 1 must be stored"
     );
     assert_eq!(
-        stored.cache_duration, 1,
+        stored.min_required_sources, 1,
         "cache_duration boundary value 1 must be stored"
     );
 }
 
-/// Large values (e.g., i128::MAX for deviation, u64::MAX for thresholds) must
-/// not cause overflow panics — the contract stores them as-is without
-/// arithmetic that could overflow.
-///
-/// This test FAILS until `set_oracle_config` is implemented.
+/// max_deviation_bps > MAX_DEVIATION_BPS_CEILING (100%) is rejected — any
+/// larger value would effectively disable the deviation gate.
 #[test]
-fn test_set_oracle_config_large_boundary_values_succeed() {
+#[should_panic]
+fn test_set_oracle_config_deviation_above_ceiling_is_invalid() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
     let config = OracleConfig {
-        max_deviation_bps: i128::MAX,
-        staleness_threshold: u64::MAX,
-        cache_duration: u64::MAX,
+        max_deviation_bps: shared::constants::MAX_DEVIATION_BPS_CEILING + 1,
+        staleness_threshold: 60,
+        min_required_sources: 1,
     };
 
-    // Storage is a simple write; no arithmetic happens on these values here.
     oracle.set_oracle_config(&admin, &config);
+}
 
-    let stored = oracle.get_oracle_config();
-    assert_eq!(
-        stored.max_deviation_bps,
-        i128::MAX,
-        "i128::MAX must round-trip without truncation"
-    );
-    assert_eq!(
-        stored.staleness_threshold,
-        u64::MAX,
-        "u64::MAX staleness_threshold must round-trip without truncation"
-    );
-    assert_eq!(
-        stored.cache_duration,
-        u64::MAX,
-        "u64::MAX cache_duration must round-trip without truncation"
-    );
+/// min_required_sources > MAX_ORACLE_SOURCES is rejected — quorum can never
+/// require more sources than the configured maximum.
+#[test]
+#[should_panic]
+fn test_set_oracle_config_quorum_above_ceiling_is_invalid() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (oracle, _cm, admin) = deploy_with_config_manager(&env);
+    let config = OracleConfig {
+        max_deviation_bps: 100,
+        staleness_threshold: 60,
+        min_required_sources: shared::constants::MAX_ORACLE_SOURCES + 1,
+    };
+
+    oracle.set_oracle_config(&admin, &config);
 }
 
 // ---------------------------------------------------------------------------
@@ -469,7 +468,7 @@ fn test_get_oracle_config_round_trips_all_fields() {
     let config = OracleConfig {
         max_deviation_bps: 137,
         staleness_threshold: 251,
-        cache_duration: 97,
+        min_required_sources: 7,
     };
 
     oracle.set_oracle_config(&admin, &config);
@@ -484,8 +483,8 @@ fn test_get_oracle_config_round_trips_all_fields() {
         "staleness_threshold must be 251 — field swap or truncation detected if this fails"
     );
     assert_eq!(
-        stored.cache_duration, 97,
-        "cache_duration must be 97 — field swap or truncation detected if this fails"
+        stored.min_required_sources, 7,
+        "min_required_sources must be 7 — field swap or truncation detected if this fails"
     );
 }
 
@@ -510,12 +509,12 @@ fn test_two_oracle_router_instances_have_independent_config_storage() {
     let config_a = OracleConfig {
         max_deviation_bps: 50,
         staleness_threshold: 30,
-        cache_duration: 5,
+        min_required_sources: 1,
     };
     let config_b = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 120,
-        cache_duration: 20,
+        min_required_sources: 1,
     };
 
     oracle_a.set_oracle_config(&admin_a, &config_a);
@@ -583,13 +582,14 @@ fn test_set_oracle_config_revoked_admin_is_unauthorized_after_transfer() {
 
     // Transfer admin role to a new address.
     let new_admin = Address::generate(&env);
-    cm.transfer_admin(&original_admin, &new_admin);
+    cm.propose_admin(&original_admin, &new_admin);
+    cm.accept_admin(&new_admin);
 
     // original_admin no longer holds the ADMIN role — must be rejected.
     let config = OracleConfig {
         max_deviation_bps: 999,
         staleness_threshold: 999,
-        cache_duration: 999,
+        min_required_sources: 1,
     };
     let result = oracle.try_set_oracle_config(&original_admin, &config);
 

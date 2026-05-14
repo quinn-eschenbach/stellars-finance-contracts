@@ -1,39 +1,22 @@
-//! Tests for 2.7: `UpgradeableMigratableInternal` — `_require_auth` and `_migrate`.
+//! Tests for `upgrade` and `migrate` authorization on OracleRouter.
 //!
-//! The `UpgradeableMigratable` derive macro generates two public contract
-//! functions:
-//!   - `upgrade(new_wasm_hash, operator)` — replaces the WASM; calls `_require_auth`.
-//!   - `migrate(data, operator)` — runs post-upgrade migration; calls `_require_auth`
-//!     then `_migrate`.
+//! The contract exposes two upgrade-related entrypoints:
+//!   - `upgrade(new_wasm_hash, operator)` — replaces the WASM after auth and
+//!     pending-upgrade checks.
+//!   - `migrate(data, operator)` — runs post-upgrade migration after auth.
 //!
-//! `_require_auth` must:
-//!   1. Call `operator.require_auth()`.
+//! Auth for both:
+//!   1. `operator.require_auth()`.
 //!   2. Cross-call ConfigManager's `has_role("UPGRADER", operator)`.
 //!   3. Panic with `OracleRouterError::Unauthorized (3)` if not upgrader.
 //!
-//! `_migrate` must:
-//!   1. Write `data.version` to `StorageKey::Version` in instance storage.
-//!
-//! Covers:
-//!   - F-2.7-a: upgrade with non-upgrader address returns Unauthorized (3).
-//!   - F-2.7-b: upgrade with upgrader address passes _require_auth (WASM error, not Unauthorized).
-//!   - F-2.7-c: upgrade without any mocked auth panics (require_auth is called).
-//!   - F-2.7-d: error code for Unauthorized is exactly 3 (compile-time pin).
-//!   - F-2.7-e: migrate with non-upgrader address returns Unauthorized (3).
-//!   - F-2.7-f: migrate without prior upgrade (no MIGRATING flag) errors — non-Unauthorized.
-//!   - F-2.7-g: migrate with MIGRATING flag set writes version to storage.
-//!   - F-2.7-h: migrate without any mocked auth panics (require_auth is called).
-//!   - F-2.7-i: _migrate directly writes version to instance storage.
-//!   - F-2.7-j: multiple migrations overwrite the version correctly.
-//!   - F-2.7-k: migrate Unauthorized error code is exactly 3.
-//!
-//! All tests that exercise paths through the `todo!()` stubs will FAIL until
-//! the implementation is provided.
+//! Migration writes `data.version` to `StorageKey::Version` in instance
+//! storage.
 
 #![cfg(test)]
 
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, IntoVal, Symbol};
-use stellar_contract_utils::upgradeable::{enable_migration, UpgradeableMigratableInternal};
+use stellar_contract_utils::upgradeable::enable_migration;
 
 use crate::storage::StorageKey;
 use crate::{OracleRouterContract, OracleRouterError, MigrationData};
@@ -44,16 +27,15 @@ use super::helpers::{deploy_with_config_manager, deploy_with_upgrader};
 // Shared fixture helpers
 // ---------------------------------------------------------------------------
 
-/// Helper: returns a 32-byte dummy WASM hash (all zeros).
-/// Used when we need to call `try_upgrade` but don't have a real WASM blob —
-/// the host will reject the hash as invalid, but not before `_require_auth`
-/// runs.
+/// Returns a 32-byte dummy WASM hash (all zeros). Used when calling
+/// `try_upgrade` without a real WASM blob — the host will reject the hash
+/// as invalid, but only after the auth check has run.
 fn dummy_wasm_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[0u8; 32])
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-a: upgrade — non-upgrader is rejected with Unauthorized (3)
+// upgrade — non-upgrader is rejected with Unauthorized
 // ---------------------------------------------------------------------------
 
 /// An address that has no UPGRADER role calling `upgrade` must receive
@@ -81,12 +63,12 @@ fn test_upgrade_non_upgrader_is_unauthorized() {
     let result = upgradeable.try_upgrade(&hash, &non_upgrader);
     assert!(
         result.is_err(),
-        "F-2.7-a: upgrade from a non-upgrader address must return an error"
+        "upgrade from a non-upgrader address must return an error"
     );
     assert_eq!(
         result.unwrap_err().unwrap(),
         soroban_sdk::Error::from_contract_error(OracleRouterError::Unauthorized as u32),
-        "F-2.7-a: error code must be Unauthorized (3)"
+        "error code must be Unauthorized (3)"
     );
 }
 
@@ -107,17 +89,17 @@ fn test_upgrade_admin_without_upgrader_role_is_unauthorized() {
     let result = upgradeable.try_upgrade(&hash, &admin);
     assert!(
         result.is_err(),
-        "F-2.7-a: admin address without UPGRADER role must be rejected for upgrade"
+        "admin address without UPGRADER role must be rejected for upgrade"
     );
     assert_eq!(
         result.unwrap_err().unwrap(),
         soroban_sdk::Error::from_contract_error(OracleRouterError::Unauthorized as u32),
-        "F-2.7-a: error must be Unauthorized (3) — ADMIN role alone is insufficient"
+        "error must be Unauthorized (3) — ADMIN role alone is insufficient"
     );
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-b: upgrade — upgrader passes _require_auth (host WASM error, not Unauthorized)
+// upgrade — upgrader passes _require_auth (host WASM error, not Unauthorized)
 // ---------------------------------------------------------------------------
 
 /// When the caller HAS the UPGRADER role, `_require_auth` must pass cleanly.
@@ -151,7 +133,7 @@ fn test_upgrade_upgrader_passes_require_auth_gets_wasm_error_not_unauthorized() 
             assert_ne!(
                 contract_err,
                 soroban_sdk::Error::from_contract_error(OracleRouterError::Unauthorized as u32),
-                "F-2.7-b: upgrader must not receive Unauthorized — _require_auth must pass"
+                "upgrader must not receive Unauthorized — _require_auth must pass"
             );
         }
         Err(Err(_host_err)) => {
@@ -162,7 +144,7 @@ fn test_upgrade_upgrader_passes_require_auth_gets_wasm_error_not_unauthorized() 
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-c: upgrade — no mocked auth panics
+// upgrade — no mocked auth panics
 // ---------------------------------------------------------------------------
 
 /// Calling `upgrade` without mocked auth must panic because `operator.require_auth()`
@@ -188,7 +170,7 @@ fn test_upgrade_requires_caller_auth() {
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-d: Compile-time pin — Unauthorized error code is exactly 3
+// Compile-time pin — Unauthorized error code is exactly 3
 // ---------------------------------------------------------------------------
 
 /// Compile-time pin: `OracleRouterError::Unauthorized` must have discriminant 3.
@@ -202,12 +184,12 @@ fn test_upgrade_unauthorized_error_code_is_3() {
     assert_eq!(
         OracleRouterError::Unauthorized as u32,
         3,
-        "F-2.7-d: OracleRouterError::Unauthorized must have discriminant 3"
+        "OracleRouterError::Unauthorized must have discriminant 3"
     );
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-e: migrate — non-upgrader is rejected with Unauthorized (3)
+// migrate — non-upgrader is rejected with Unauthorized (3)
 // ---------------------------------------------------------------------------
 
 /// An address without the UPGRADER role calling `migrate` must receive
@@ -234,12 +216,12 @@ fn test_migrate_non_upgrader_is_unauthorized() {
 
     assert!(
         result.is_err(),
-        "F-2.7-e: migrate from a non-upgrader must return an error"
+        "migrate from a non-upgrader must return an error"
     );
     assert_eq!(
         result.unwrap_err().unwrap(),
         soroban_sdk::Error::from_contract_error(OracleRouterError::Unauthorized as u32),
-        "F-2.7-e: error code must be Unauthorized (3)"
+        "error code must be Unauthorized (3)"
     );
 }
 
@@ -260,17 +242,17 @@ fn test_migrate_admin_without_upgrader_role_is_unauthorized() {
 
     assert!(
         result.is_err(),
-        "F-2.7-e: admin without UPGRADER role must be rejected for migrate"
+        "admin without UPGRADER role must be rejected for migrate"
     );
     assert_eq!(
         result.unwrap_err().unwrap(),
         soroban_sdk::Error::from_contract_error(OracleRouterError::Unauthorized as u32),
-        "F-2.7-e: error must be Unauthorized (3) — ADMIN role alone is insufficient"
+        "error must be Unauthorized (3) — ADMIN role alone is insufficient"
     );
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-f: migrate — without prior upgrade (no MIGRATING flag) errors
+// migrate — without prior upgrade (no MIGRATING flag) errors
 // ---------------------------------------------------------------------------
 
 /// Calling `migrate` with a valid upgrader, but without a prior `upgrade`
@@ -297,7 +279,7 @@ fn test_migrate_without_prior_upgrade_errors_non_unauthorized() {
 
     assert!(
         result.is_err(),
-        "F-2.7-f: migrate without prior upgrade must fail"
+        "migrate without prior upgrade must fail"
     );
     // The error must NOT be Unauthorized — the upgrader passed auth successfully,
     // but the MIGRATING flag is absent, so a different error fires.
@@ -305,7 +287,7 @@ fn test_migrate_without_prior_upgrade_errors_non_unauthorized() {
         assert_ne!(
             contract_err,
             soroban_sdk::Error::from_contract_error(OracleRouterError::Unauthorized as u32),
-            "F-2.7-f: upgrader should pass _require_auth; error must not be Unauthorized"
+            "upgrader should pass _require_auth; error must not be Unauthorized"
         );
     }
     // A host-level error (Err(Err(_))) is also acceptable here and indicates
@@ -313,7 +295,7 @@ fn test_migrate_without_prior_upgrade_errors_non_unauthorized() {
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-g: migrate — MIGRATING flag active, version is written to storage
+// migrate — MIGRATING flag active, version is written to storage
 // ---------------------------------------------------------------------------
 
 /// When the MIGRATING flag is manually set (simulating a prior `upgrade` call)
@@ -348,7 +330,7 @@ fn test_migrate_with_active_migration_flag_writes_version() {
         assert_eq!(
             stored_version,
             Some(7),
-            "F-2.7-g: _migrate must write version = 7 to StorageKey::Version"
+            "_migrate must write version = 7 to StorageKey::Version"
         );
     });
 }
@@ -378,13 +360,13 @@ fn test_migrate_with_active_migration_flag_writes_correct_version_value() {
         assert_eq!(
             stored_version,
             Some(42),
-            "F-2.7-g: _migrate must write the exact version value supplied in MigrationData"
+            "_migrate must write the exact version value supplied in MigrationData"
         );
     });
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-h: migrate — no mocked auth panics
+// migrate — no mocked auth panics
 // ---------------------------------------------------------------------------
 
 /// Calling `migrate` without any mocked auth must panic because
@@ -415,14 +397,14 @@ fn test_migrate_requires_caller_auth() {
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-i: _migrate directly — writes version to instance storage
+// _migrate directly — writes version to instance storage
 // ---------------------------------------------------------------------------
 
 /// Directly call the internal `_migrate` function (bypassing the macro-generated
 /// public `migrate` function and its MIGRATING flag guard) to validate that
 /// `_migrate` in isolation writes `StorageKey::Version`.
 ///
-/// This mirrors the pattern used in config-manager's F-11-c test.
+/// This mirrors the pattern used in config-manager's  test.
 ///
 /// FAILS against todo!() — passes once `_migrate` writes the version key.
 #[test]
@@ -439,7 +421,7 @@ fn test_migrate_internal_writes_version_to_storage() {
         assert_eq!(
             stored_version,
             Some(2),
-            "F-2.7-i: _migrate must write version = 2 to StorageKey::Version in instance storage"
+            "_migrate must write version = 2 to StorageKey::Version in instance storage"
         );
     });
 }
@@ -458,7 +440,7 @@ fn test_migrate_internal_writes_version_zero() {
         assert_eq!(
             stored_version,
             Some(0),
-            "F-2.7-i: _migrate must write version = 0 — zero is a valid version number"
+            "_migrate must write version = 0 — zero is a valid version number"
         );
     });
 }
@@ -477,13 +459,13 @@ fn test_migrate_internal_writes_max_version_without_overflow() {
         assert_eq!(
             stored_version,
             Some(u32::MAX),
-            "F-2.7-i: _migrate must write u32::MAX without overflow"
+            "_migrate must write u32::MAX without overflow"
         );
     });
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-j: Multiple sequential migrations overwrite the version
+// Multiple sequential migrations overwrite the version
 // ---------------------------------------------------------------------------
 
 /// Calling `_migrate` twice must leave only the second version in storage.
@@ -503,13 +485,13 @@ fn test_migrate_internal_second_call_overwrites_first_version() {
         assert_eq!(
             stored_version,
             Some(2),
-            "F-2.7-j: second _migrate must overwrite first — version must be 2"
+            "second _migrate must overwrite first — version must be 2"
         );
     });
 }
 
 // ---------------------------------------------------------------------------
-// F-2.7-k: Compile-time pin — migrate Unauthorized error code is exactly 3
+// Compile-time pin — migrate Unauthorized error code is exactly 3
 // ---------------------------------------------------------------------------
 
 /// Compile-time and runtime pin: the error code for Unauthorized is 3.
@@ -521,7 +503,7 @@ fn test_migrate_unauthorized_error_code_is_3() {
     assert_eq!(
         OracleRouterError::Unauthorized as u32,
         3,
-        "F-2.7-k: OracleRouterError::Unauthorized must have discriminant 3"
+        "OracleRouterError::Unauthorized must have discriminant 3"
     );
 }
 

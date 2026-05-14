@@ -32,7 +32,8 @@ pub fn deploy(env: &Env) -> OracleRouterClient<'_> {
 pub fn deploy_initialized(env: &Env) -> (OracleRouterClient<'_>, Address) {
     let client = deploy(env);
     let config_manager = Address::generate(env);
-    client.initialize(&config_manager);
+    let admin = Address::generate(env);
+    client.initialize(&admin, &config_manager);
     (client, config_manager)
 }
 
@@ -63,7 +64,7 @@ pub fn deploy_with_config_manager(
     // 3. Deploy OracleRouter and link it to the ConfigManager.
     let oracle_id = env.register(OracleRouterContract, ());
     let oracle = OracleRouterClient::new(env, &oracle_id);
-    oracle.initialize(&cm_id);
+    oracle.initialize(&admin, &cm_id);
 
     (oracle, cm, admin)
 }
@@ -78,7 +79,7 @@ pub fn valid_oracle_config() -> OracleConfig {
     OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     }
 }
 
@@ -154,15 +155,14 @@ pub fn deploy_with_price_feed(
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
-        cache_duration: 10,
+        min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
 
     let mock = deploy_mock_oracle(env);
     let eth = Symbol::new(env, "ETH");
-    let primary = vec![env, mock.address.clone()];
-    let empty: soroban_sdk::Vec<Address> = vec![env];
-    oracle.set_oracle_sources(&admin, &eth, &primary, &empty);
+    let sources = vec![env, mock.address.clone()];
+    oracle.set_oracle_sources(&admin, &eth, &sources);
 
     (oracle, mock, admin)
 }

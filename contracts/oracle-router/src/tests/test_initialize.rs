@@ -27,10 +27,11 @@ fn test_initialize_happy_path_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let admin = Address::generate(&env);
     let config_manager = Address::generate(&env);
 
     // Must not panic. Fails on todo!() until implementation is written.
-    client.initialize(&config_manager);
+    client.initialize(&admin, &config_manager);
 }
 
 /// Happy path via helper: `deploy_initialized` is the canonical setup path
@@ -63,11 +64,12 @@ fn test_initialize_second_call_errors_already_initialized() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let admin = Address::generate(&env);
     let config_manager = Address::generate(&env);
 
-    client.initialize(&config_manager);
+    client.initialize(&admin, &config_manager);
 
-    let result = client.try_initialize(&config_manager);
+    let result = client.try_initialize(&admin, &config_manager);
     assert!(
         result.is_err(),
         "second initialize call must return an error, not succeed silently"
@@ -87,12 +89,13 @@ fn test_initialize_second_call_with_new_address_also_errors() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let admin = Address::generate(&env);
     let first_config_manager = Address::generate(&env);
     let second_config_manager = Address::generate(&env);
 
-    client.initialize(&first_config_manager);
+    client.initialize(&admin, &first_config_manager);
 
-    let result = client.try_initialize(&second_config_manager);
+    let result = client.try_initialize(&admin, &second_config_manager);
     assert!(
         result.is_err(),
         "second initialize with a different address must still fail — double-init is never allowed"
@@ -113,11 +116,12 @@ fn test_initialize_second_call_panics() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let admin = Address::generate(&env);
     let config_manager = Address::generate(&env);
 
-    client.initialize(&config_manager);
+    client.initialize(&admin, &config_manager);
     // This second call must panic.
-    client.initialize(&config_manager);
+    client.initialize(&admin, &config_manager);
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +166,7 @@ fn test_two_separate_instances_hold_independent_state() {
     let env = Env::default();
     env.mock_all_auths();
 
+    let admin = Address::generate(&env);
     let config_a = Address::generate(&env);
     let config_b = Address::generate(&env);
 
@@ -169,12 +174,12 @@ fn test_two_separate_instances_hold_independent_state() {
     let client_a = deploy(&env);
     let client_b = deploy(&env);
 
-    client_a.initialize(&config_a);
-    client_b.initialize(&config_b);
+    client_a.initialize(&admin, &config_a);
+    client_b.initialize(&admin, &config_b);
 
     // Both should now be initialized. A second call on either must fail.
-    let result_a = client_a.try_initialize(&config_a);
-    let result_b = client_b.try_initialize(&config_b);
+    let result_a = client_a.try_initialize(&admin, &config_a);
+    let result_b = client_b.try_initialize(&admin, &config_b);
 
     assert!(
         result_a.is_err(),
@@ -239,13 +244,14 @@ fn test_initialize_with_self_as_config_manager_then_double_init_fails() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let admin = Address::generate(&env);
     let self_address = client.address.clone();
 
     // Storing self as config_manager is unusual but must not crash initialize.
-    client.initialize(&self_address);
+    client.initialize(&admin, &self_address);
 
     // Double-init must still be rejected.
-    let result = client.try_initialize(&self_address);
+    let result = client.try_initialize(&admin, &self_address);
     assert!(
         result.is_err(),
         "even with self-referential config_manager, a second initialize must fail"
@@ -265,15 +271,16 @@ fn test_initialize_replay_attack_is_rejected() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let admin = Address::generate(&env);
     let config_manager = Address::generate(&env);
     let attacker = Address::generate(&env);
 
     // Legitimate initialization.
-    client.initialize(&config_manager);
+    client.initialize(&admin, &config_manager);
 
     // Attacker replays with their own address hoping to hijack the stored
     // config_manager pointer.
-    let replay_result = client.try_initialize(&attacker);
+    let replay_result = client.try_initialize(&attacker, &attacker);
     assert!(
         replay_result.is_err(),
         "replay of initialize with attacker address must be rejected"
@@ -295,13 +302,14 @@ fn test_each_fresh_deployment_accepts_exactly_one_initialize() {
 
     for _ in 0..3 {
         let client = deploy(&env);
+        let admin = Address::generate(&env);
         let config_manager = Address::generate(&env);
 
         // First call must succeed.
-        client.initialize(&config_manager);
+        client.initialize(&admin, &config_manager);
 
         // Second call on the same instance must fail.
-        let result = client.try_initialize(&config_manager);
+        let result = client.try_initialize(&admin, &config_manager);
         assert!(
             result.is_err(),
             "every fresh deployment must accept exactly one initialize call"
@@ -312,4 +320,23 @@ fn test_each_fresh_deployment_accepts_exactly_one_initialize() {
             "AlreadyInitialized (1) must be returned on the second call for every instance"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+/// `initialize` requires the `admin` address to authorize the call. With no
+/// auth mocked, the host rejects the call so it cannot be front-run by an
+/// unauthorized actor between deploy and init.
+#[test]
+#[should_panic]
+fn test_initialize_without_admin_auth_panics() {
+    let env = Env::default();
+    // No mock_all_auths — the admin signature is not present.
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let config_manager = Address::generate(&env);
+
+    client.initialize(&admin, &config_manager);
 }
