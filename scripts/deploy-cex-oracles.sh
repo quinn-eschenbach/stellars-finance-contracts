@@ -198,8 +198,11 @@ grant_oracle "$KUCOIN_KEY_ADDR" kucoin-oracle
 # existing simulation (which pushes through mock_oracle) keeps working
 # alongside the live CEX feeds. Router takes the median across all three.
 echo ""
-echo "=== Registering router primaries (${TICKERS[*]}) ==="
-PRIMARY_JSON=$(jq -nc \
+echo "=== Registering router sources (${TICKERS[*]}) ==="
+# Flat source list — mock + binance + kucoin. Quorum is enforced via
+# OracleConfig.min_required_sources; this script doesn't touch the config,
+# so whatever min_required_sources was set during initial deploy stays.
+SOURCES_JSON=$(jq -nc \
   --arg m "$MOCK_ORACLE_ID" \
   --arg b "$BINANCE_ID" \
   --arg k "$KUCOIN_ID" \
@@ -210,8 +213,7 @@ for ticker in "${TICKERS[@]}"; do
   invoke --id "$OR_ID" -- set_oracle_sources \
     --caller "$ADMIN_ADDR" \
     --symbol "$ticker" \
-    --primary "$PRIMARY_JSON" \
-    --secondary '[]'
+    --sources "$SOURCES_JSON"
 done
 
 # ---------- Persist addresses.json ----------

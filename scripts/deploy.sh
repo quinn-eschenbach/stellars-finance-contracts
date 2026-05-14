@@ -309,14 +309,13 @@ for ticker in "${TICKERS[@]}"; do
   invoke --id "$OR_ID" -- set_oracle_sources \
     --caller "$ADMIN_ADDR" \
     --symbol "$ticker" \
-    --primary '["'"$ORACLE_ID"'"]' \
-    --secondary '[]'
+    --sources '["'"$ORACLE_ID"'"]'
 done
 
 echo "  set oracle config"
 invoke --id "$OR_ID" -- set_oracle_config \
   --caller "$ADMIN_ADDR" \
-  --config '{"cache_duration":2,"max_deviation_bps":"500","staleness_threshold":600}'
+  --config '{"max_deviation_bps":"500","staleness_threshold":600,"min_required_sources":1}'
 
 # ---------- Configure markets ----------
 echo ""

@@ -76,18 +76,19 @@ if [[ -z "$OR_ID" || -z "$PM_ID" ]]; then
   exit 1
 fi
 
-# Build the primary source list from whichever addresses are populated.
+# Build the source list from whichever addresses are populated.
 # Empty strings (not-yet-deployed CEX oracles) drop out — the router only
-# learns about sources we actually have.
-PRIMARIES=()
-[[ -n "$MOCK_ORACLE_ID" ]] && PRIMARIES+=("$MOCK_ORACLE_ID")
-[[ -n "$BINANCE_ID"     ]] && PRIMARIES+=("$BINANCE_ID")
-[[ -n "$KUCOIN_ID"      ]] && PRIMARIES+=("$KUCOIN_ID")
-if [[ ${#PRIMARIES[@]} -eq 0 ]]; then
+# learns about sources we actually have. OracleRouter uses a flat source
+# list with a `min_required_sources` quorum (no primary/secondary tiering).
+SOURCES=()
+[[ -n "$MOCK_ORACLE_ID" ]] && SOURCES+=("$MOCK_ORACLE_ID")
+[[ -n "$BINANCE_ID"     ]] && SOURCES+=("$BINANCE_ID")
+[[ -n "$KUCOIN_ID"      ]] && SOURCES+=("$KUCOIN_ID")
+if [[ ${#SOURCES[@]} -eq 0 ]]; then
   echo "❌ No oracle sources available for $SYMBOL — deploy at least the mock oracle"
   exit 1
 fi
-PRIMARY_JSON=$(printf '%s\n' "${PRIMARIES[@]}" | jq -R . | jq -sc .)
+SOURCES_JSON=$(printf '%s\n' "${SOURCES[@]}" | jq -R . | jq -sc .)
 
 invoke() {
   stellar contract invoke \
@@ -98,14 +99,13 @@ invoke() {
 }
 
 echo "=== Adding market '$SYMBOL' on '$NETWORK_KEY' (max leverage ${MAX_LEVERAGE}×) ==="
-echo "  primary sources: $PRIMARY_JSON"
+echo "  sources: $SOURCES_JSON"
 
 echo "  oracle_router.set_oracle_sources($SYMBOL, …)"
 invoke --id "$OR_ID" -- set_oracle_sources \
   --caller "$ADMIN_ADDR" \
   --symbol "$SYMBOL" \
-  --primary "$PRIMARY_JSON" \
-  --secondary '[]'
+  --sources "$SOURCES_JSON"
 
 echo "  position_manager.set_max_leverage($SYMBOL, $MAX_LEVERAGE)"
 invoke --id "$PM_ID" -- set_max_leverage \
