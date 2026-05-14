@@ -62,14 +62,18 @@ function extractEventSpecs(spec: ContractSpec, contractId: string): Map<string, 
       }
     }
 
-    // Two events on the same contract sharing the same topic name would
-    // silently overwrite in the spec map, leaving one variant unparseable.
-    // Detect at startup so the operator catches it before traffic arrives.
+    // Two events on the same contract sharing the same topic name —
+    // common when OZ trait macros (e.g. `#[contractimpl(contracttrait)]`
+    // on FungibleToken) bring in extension events the contract never
+    // emits (NFT/RWA Burn etc. alongside fungible Burn). Keep the first
+    // occurrence (which is the canonical one OZ's emit_* paths actually
+    // fire) and log so an operator can verify the duplicate is benign.
     if (result.has(topicName)) {
-      throw new Error(
+      console.warn(
         `[spec-parser] duplicate event topic "${topicName}" in contract ${contractId} — ` +
-          `two #[contractevent] declarations share the same topic name, which would cause silent parse collisions`,
+          `keeping the first occurrence. If this contract emits both variants, decoding will pick the first.`,
       );
+      continue;
     }
 
     result.set(topicName, { topicFields, dataFields });
