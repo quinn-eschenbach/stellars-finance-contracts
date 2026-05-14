@@ -15,7 +15,7 @@ use shared::constants::{
     DEFAULT_OPTIMAL_UTILIZATION_BPS, DEFAULT_SLOPE1_BPS,
 };
 
-use crate::{BorrowRateConfig, ConfigManagerError, ProtocolLimits};
+use crate::{BorrowRateConfig, ConfigManagerError};
 
 use super::helpers::{deploy_initialized, valid_limits};
 

@@ -16,7 +16,7 @@
 
 use soroban_sdk::Env;
 
-use crate::{BorrowRateConfig, ConfigManagerError, FeeSplits, ProtocolLimits};
+use crate::{BorrowRateConfig, ConfigManagerError, FeeSplits};
 use shared::constants::{
     BPS, DEFAULT_BASE_BORROW_RATE_BPS, DEFAULT_BASE_FUNDING_RATE_BPS, DEFAULT_OPTIMAL_UTILIZATION_BPS,
     DEFAULT_SLOPE1_BPS, MAX_COOLDOWN_DURATION, MAX_FUNDING_CUT_BPS, MAX_SLOPE2_BPS, MIN_ADL_PNL_BPS,

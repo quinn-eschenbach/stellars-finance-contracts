@@ -41,7 +41,6 @@ fn test_set_oracle_sources_admin_succeeds() {
     let addr1 = Address::generate(&env);
     let addr2 = Address::generate(&env);
     let primary = vec![&env, addr1.clone(), addr2.clone()];
-    let secondary = vec![&env, Address::generate(&env)];
 
     // Must not panic. Fails on todo!() until implementation is written.
     oracle.set_oracle_sources(&admin, &symbol, &primary);
@@ -65,13 +64,11 @@ fn test_set_oracle_sources_overwrites_previous_sources() {
     let symbol = Symbol::new(&env, "ETH");
 
     let first_primary = vec![&env, Address::generate(&env)];
-    let first_secondary = vec![&env, Address::generate(&env)];
 
     // First write — must succeed.
     oracle.set_oracle_sources(&admin, &symbol, &first_primary);
 
     let second_primary = vec![&env, Address::generate(&env), Address::generate(&env)];
-    let second_secondary = vec![&env, Address::generate(&env)];
 
     // Second write for the same symbol — must also succeed without any error.
     // An implementation that rejects overwrites would panic here.
@@ -93,10 +90,9 @@ fn test_set_oracle_sources_can_set_empty_lists() {
 
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
     let symbol = Symbol::new(&env, "ETH");
-
     let empty: soroban_sdk::Vec<Address> = vec![&env];
 
-    // Both empty — this is the "clear sources" operation and must NOT panic.
+    // Empty source list — this is the "clear sources" operation and must NOT panic.
     oracle.set_oracle_sources(&admin, &symbol, &empty);
 }
 
@@ -121,10 +117,8 @@ fn test_set_oracle_sources_multiple_symbols_are_independent() {
     let btc = Symbol::new(&env, "BTC");
 
     let eth_primary = vec![&env, Address::generate(&env)];
-    let eth_secondary = vec![&env, Address::generate(&env)];
 
     let btc_primary = vec![&env, Address::generate(&env), Address::generate(&env)];
-    let btc_secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // Set ETH sources.
     oracle.set_oracle_sources(&admin, &eth, &eth_primary);
@@ -134,7 +128,6 @@ fn test_set_oracle_sources_multiple_symbols_are_independent() {
 
     // Overwrite ETH again to confirm the BTC write did not corrupt the ETH key.
     let new_eth_primary = vec![&env, Address::generate(&env)];
-    let new_eth_secondary = vec![&env, Address::generate(&env)];
     oracle.set_oracle_sources(&admin, &eth, &new_eth_primary);
 }
 
@@ -161,7 +154,6 @@ fn test_set_oracle_sources_requires_auth() {
     let caller = Address::generate(&env);
     let symbol = Symbol::new(&env, "ETH");
     let primary = vec![&env, Address::generate(&env)];
-    let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     let result = oracle.try_set_oracle_sources(&caller, &symbol, &primary);
 
@@ -191,7 +183,6 @@ fn test_set_oracle_sources_non_admin_is_unauthorized() {
     let attacker = Address::generate(&env);
     let symbol = Symbol::new(&env, "ETH");
     let primary = vec![&env, Address::generate(&env)];
-    let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     let result = oracle.try_set_oracle_sources(&attacker, &symbol, &primary);
 
@@ -242,7 +233,6 @@ fn test_set_oracle_sources_single_primary_source() {
     let symbol = Symbol::new(&env, "ETH");
 
     let single_primary = vec![&env, Address::generate(&env)];
-    let empty_secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // Single primary with no secondary — a minimal valid oracle configuration.
     oracle.set_oracle_sources(&admin, &symbol, &single_primary);
@@ -272,12 +262,6 @@ fn test_set_oracle_sources_many_sources() {
     let p5 = Address::generate(&env);
     let primary = vec![&env, p1, p2, p3, p4, p5];
 
-    // Build 3 distinct secondary addresses.
-    let s1 = Address::generate(&env);
-    let s2 = Address::generate(&env);
-    let s3 = Address::generate(&env);
-    let secondary = vec![&env, s1, s2, s3];
-
     // Must not panic — large lists must be stored verbatim.
     oracle.set_oracle_sources(&admin, &symbol, &primary);
 }
@@ -302,7 +286,6 @@ fn test_set_oracle_sources_same_address_in_primary_and_secondary() {
     // Shared address that appears in both lists.
     let shared = Address::generate(&env);
     let primary = vec![&env, shared.clone()];
-    let secondary = vec![&env, shared.clone()];
 
     // Must succeed — the contract stores lists verbatim, no dedup check.
     oracle.set_oracle_sources(&admin, &symbol, &primary);
@@ -326,7 +309,6 @@ fn test_set_oracle_sources_duplicate_addresses_within_primary_list() {
     let addr = Address::generate(&env);
     // Same address three times in the primary list.
     let primary = vec![&env, addr.clone(), addr.clone(), addr.clone()];
-    let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // No dedup: the contract must store the list exactly as provided.
     oracle.set_oracle_sources(&admin, &symbol, &primary);
@@ -356,7 +338,6 @@ fn test_set_oracle_sources_keeper_role_is_not_sufficient() {
 
     let symbol = Symbol::new(&env, "ETH");
     let primary = vec![&env, Address::generate(&env)];
-    let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     let result = oracle.try_set_oracle_sources(&keeper, &symbol, &primary);
 
@@ -390,7 +371,6 @@ fn test_set_oracle_sources_admin_of_wrong_config_manager_is_unauthorized() {
     // admin_b is the ADMIN of cm_b, but oracle_a is wired to cm_a.
     let symbol = Symbol::new(&env, "ETH");
     let primary = vec![&env, Address::generate(&env)];
-    let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     let result = oracle_a.try_set_oracle_sources(&admin_b, &symbol, &primary);
 
@@ -421,7 +401,6 @@ fn test_set_oracle_sources_revoked_admin_is_unauthorized_after_transfer() {
 
     let symbol = Symbol::new(&env, "ETH");
     let primary = vec![&env, Address::generate(&env)];
-    let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     // Confirm the original admin can call set_oracle_sources.
     oracle.set_oracle_sources(&original_admin, &symbol, &primary);
@@ -433,7 +412,6 @@ fn test_set_oracle_sources_revoked_admin_is_unauthorized_after_transfer() {
 
     // original_admin no longer holds the ADMIN role — must be rejected now.
     let attacker_primary = vec![&env, Address::generate(&env)];
-    let attacker_secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     let result = oracle.try_set_oracle_sources(
         &original_admin,
@@ -471,7 +449,6 @@ fn test_set_oracle_sources_bumps_instance_ttl() {
     let (oracle, _cm, admin) = deploy_with_config_manager(&env);
     let symbol = Symbol::new(&env, "ETH");
     let primary = vec![&env, Address::generate(&env)];
-    let secondary: soroban_sdk::Vec<Address> = vec![&env];
 
     oracle.set_oracle_sources(&admin, &symbol, &primary);
 
@@ -521,7 +498,6 @@ fn test_set_oracle_sources_symbol_is_case_sensitive() {
 
     let primary_upper = vec![&env, Address::generate(&env)];
     let primary_lower = vec![&env, Address::generate(&env)];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
 
     // Both calls must succeed independently — they address different storage slots.
     oracle.set_oracle_sources(&admin, &eth_upper, &primary_upper);
@@ -543,7 +519,6 @@ fn test_set_oracle_sources_multiple_symbols_sequence() {
     for sym_str in ["ETH", "BTC", "SOL", "XLM"] {
         let symbol = Symbol::new(&env, sym_str);
         let primary = vec![&env, Address::generate(&env)];
-        let secondary = vec![&env, Address::generate(&env)];
 
         // Each symbol must succeed in isolation.
         oracle.set_oracle_sources(&admin, &symbol, &primary);
@@ -677,7 +652,6 @@ fn test_set_oracle_sources_dedup_all_duplicate_list_acts_as_single_source() {
         oracle_a.address.clone(),
         oracle_a.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Must succeed: single effective source, deviation = 0, price = single_price.

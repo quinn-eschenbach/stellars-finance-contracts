@@ -298,7 +298,6 @@ fn test_get_price_stale_source_filtered_if_fresh_source_exists() {
         stale_oracle.address.clone(),
         fresh_oracle.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Advance time past staleness_threshold — stale_oracle is now stale.
@@ -363,7 +362,6 @@ fn test_get_price_computes_median_of_three_sources() {
         oracle_low.address.clone(),
         oracle_mid.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
@@ -413,7 +411,6 @@ fn test_get_price_computes_lower_median_for_even_count() {
         o3.address.clone(),
         o4.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
@@ -460,7 +457,6 @@ fn test_get_price_high_deviation_returns_deviation_error() {
         oracle_low.address.clone(),
         oracle_high.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
@@ -517,7 +513,6 @@ fn test_get_price_deviation_within_threshold_succeeds() {
     oracle_b.set_price(&eth, &101_0000000i128); // 101.0000000
 
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
@@ -544,7 +539,10 @@ fn test_get_price_consecutive_calls_return_same_value() {
     mock.set_price(&eth, &expected);
 
     let first_price = oracle.get_price(&eth);
-    assert_eq!(first_price, expected, "first call must return the mock price");
+    assert_eq!(
+        first_price, expected,
+        "first call must return the mock price"
+    );
 
     let second_price = oracle.get_price(&eth);
     assert_eq!(
@@ -621,7 +619,6 @@ fn test_get_price_deviation_exactly_at_threshold_is_accepted() {
     oracle_b.set_price(&eth, &102_0000000i128);
 
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
@@ -663,7 +660,6 @@ fn test_get_price_deviation_one_bps_above_threshold_is_rejected() {
     oracle_b.set_price(&eth, &10_201_0000000i128);
 
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
@@ -801,15 +797,8 @@ fn test_get_price_cache_is_keyed_per_symbol() {
     eth_oracle.set_price(&eth, &eth_price);
     btc_oracle.set_price(&btc, &btc_price);
 
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
-    oracle.set_oracle_sources(
-        &admin,
-        &eth,
-        &vec![&env, eth_oracle.address.clone()]);
-    oracle.set_oracle_sources(
-        &admin,
-        &btc,
-        &vec![&env, btc_oracle.address.clone()]);
+    oracle.set_oracle_sources(&admin, &eth, &vec![&env, eth_oracle.address.clone()]);
+    oracle.set_oracle_sources(&admin, &btc, &vec![&env, btc_oracle.address.clone()]);
 
     assert_eq!(
         oracle.get_price(&eth),
@@ -948,7 +937,6 @@ fn test_get_price_zero_price_from_source_is_filtered_out() {
         zero_oracle.address.clone(),
         valid_oracle.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Must return valid_oracle's price without panicking with division-by-zero
@@ -998,7 +986,6 @@ fn test_get_price_negative_price_from_source_is_filtered_out() {
         negative_oracle.address.clone(),
         valid_oracle.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let price = oracle.get_price(&eth);
@@ -1045,7 +1032,6 @@ fn test_get_price_all_sources_return_zero_panics_with_stale_price() {
         zero_oracle_a.address.clone(),
         zero_oracle_b.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
@@ -1098,7 +1084,6 @@ fn test_get_price_all_sources_return_negative_panics_with_stale_price() {
         neg_oracle_b.address.clone(),
         neg_oracle_c.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     let result = oracle.try_get_price(&eth);
@@ -1156,7 +1141,6 @@ fn test_get_price_mix_of_zero_and_valid_prices_uses_valid_only() {
         neg_oracle.address.clone(),
         valid_oracle.address.clone(),
     ];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Expected: median([2000]) = 2000 (only valid source after filtering).
@@ -1205,7 +1189,6 @@ fn test_get_price_zero_price_does_not_cause_division_by_zero() {
     zero_oracle.set_price(&eth, &0i128);
 
     let primary = vec![&env, zero_oracle.address.clone()];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // The contract MUST return a contract-level error (StalePrice), not a
@@ -1286,7 +1269,6 @@ fn test_get_price_broken_source_is_skipped_if_other_sources_valid() {
     // Register both as primary sources: oracle_a first (broken), oracle_b second (valid).
     // The implementation must iterate both, skip oracle_a's panic, and use oracle_b.
     let primary = vec![&env, oracle_a.address.clone(), oracle_b.address.clone()];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // This call FAILS on the current implementation because oracle_a's bare
@@ -1343,7 +1325,6 @@ fn test_get_price_all_sources_broken_returns_clean_error() {
     // Intentionally do NOT call broken_oracle.set_price(...).
 
     let primary = vec![&env, broken_oracle.address.clone()];
-    let empty: soroban_sdk::Vec<Address> = vec![&env];
     oracle.set_oracle_sources(&admin, &eth, &primary);
 
     // Use try_get_price so the test can inspect the error type without the

@@ -10,10 +10,7 @@
 
 #![cfg(test)]
 
-use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, Symbol,
-};
+use soroban_sdk::{testutils::Ledger as _, BytesN, Env, Symbol};
 use stellar_contract_utils::upgradeable::UpgradeableClient;
 
 use crate::OracleRouterError;
