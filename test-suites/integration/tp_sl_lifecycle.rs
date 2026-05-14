@@ -29,7 +29,7 @@ fn test_short_tp_triggered() {
         &(2_000 * USDC_UNIT),
         &false, // short
         &tp_price,
-        &0,
+        &0, &0i128
     );
 
     let balance_after_open = f.usdc.balance(&trader);
@@ -75,7 +75,7 @@ fn test_short_sl_triggered() {
         &(2_000 * USDC_UNIT),
         &false,
         &0,
-        &sl_price,
+        &sl_price, &0i128
     );
 
     let balance_after_open = f.usdc.balance(&trader);
@@ -120,7 +120,7 @@ fn test_long_tp_payout_correct() {
         &collateral,
         &true,
         &tp_price,
-        &0,
+        &0, &0i128
     );
 
     let balance_after_open = f.usdc.balance(&f.trader);
@@ -171,7 +171,7 @@ fn test_long_sl_payout_correct() {
         &collateral,
         &true,
         &0,
-        &sl_price,
+        &sl_price, &0i128
     );
 
     let balance_after_open = f.usdc.balance(&f.trader);
@@ -262,7 +262,7 @@ fn test_set_tp_sl_reset_to_zero() {
         &(2_000 * USDC_UNIT),
         &true,
         &tp,
-        &sl,
+        &sl, &0i128
     );
 
     // Reset to 0
@@ -308,7 +308,7 @@ fn test_tp_equal_entry_invalid_long() {
         &(1_000 * USDC_UNIT),
         &true,
         &tp_at_entry,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -331,7 +331,7 @@ fn test_tp_equal_entry_invalid_short() {
         &(1_000 * USDC_UNIT),
         &false,
         &tp_at_entry,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -353,7 +353,7 @@ fn test_sl_equal_entry_invalid_long() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &sl_at_entry,
+        &sl_at_entry, &0i128
     );
 }
 
@@ -375,7 +375,7 @@ fn test_sl_equal_entry_invalid_short() {
         &(1_000 * USDC_UNIT),
         &false,
         &0,
-        &sl_at_entry,
+        &sl_at_entry, &0i128
     );
 }
 
@@ -400,7 +400,7 @@ fn test_short_tp_payout_correct() {
         &collateral,
         &false,
         &tp_price,
-        &0,
+        &0, &0i128
     );
 
     let balance_after_open = f.usdc.balance(&trader);

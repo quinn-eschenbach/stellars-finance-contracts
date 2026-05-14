@@ -132,21 +132,19 @@ impl<'a> Fixture<'a> {
         // 3. OracleRouter — link to ConfigManager + MockOracle
         let oracle_router_id = env.register(OracleRouterContract, ());
         let oracle_router = OracleRouterClient::new(env, &oracle_router_id);
-        oracle_router.initialize(&config_id);
+        oracle_router.initialize(&admin, &config_id);
         oracle_router.set_oracle_config(
             &admin,
             &OracleConfig {
                 max_deviation_bps: 500,
                 staleness_threshold: 3600,
-                cache_duration: 10,
+                min_required_sources: 1,
             },
         );
         oracle_router.set_oracle_sources(
             &admin,
             &symbol_short!("BTC"),
-            &vec![env, oracle_id.clone()],
-            &vec![env],
-        );
+            &vec![env, oracle_id.clone()]);
 
         // 4. PositionManager (register first to get address for Vault)
         let pm_id = env.register(PositionManagerContract, ());
@@ -200,8 +198,8 @@ impl<'a> Fixture<'a> {
             &collateral,
             &true,
             &0,
-            &0,
-        );
+            &0, &0i128
+    );
     }
 
     /// Shorthand: open a short BTC position.
@@ -213,8 +211,8 @@ impl<'a> Fixture<'a> {
             &collateral,
             &false,
             &0,
-            &0,
-        );
+            &0, &0i128
+    );
     }
 
     /// Set the BTC oracle price. `price_usd` is in whole dollars (e.g. 50_000).

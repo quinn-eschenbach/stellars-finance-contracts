@@ -41,7 +41,7 @@ fn test_full_lifecycle_trader_profits_lp_absorbs_loss() {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let trader_balance_after_open = f.usdc.balance(&f.trader);
@@ -97,7 +97,7 @@ fn test_full_lifecycle_trader_loses_lp_profits() {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Price drops 5%
@@ -140,7 +140,7 @@ fn test_full_lifecycle_partial_then_full_close() {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
@@ -186,7 +186,7 @@ fn test_full_lifecycle_short_position_profit() {
         &collateral,
         &false, // short
         &0,
-        &0,
+        &0, &0i128
     );
 
     let balance_after_open = f.usdc.balance(&f.trader);

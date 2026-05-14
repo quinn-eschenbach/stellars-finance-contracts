@@ -92,7 +92,7 @@ fn test_non_keeper_cannot_execute_orders() {
         &(1_000 * USDC_UNIT),
         &true,
         &tp_price,
-        &0,
+        &0, &0i128
     );
 
     // Move price to trigger TP
@@ -287,8 +287,8 @@ fn test_grief_dust_position_excessive_leverage() {
             &(1),                  // 0.000001 USDC collateral → 1B x leverage
             &true,
             &0,
-            &0,
-        );
+            &0, &0i128
+    );
     }));
     assert!(result.is_err(), "Dust collateral with excessive leverage must be rejected");
 }

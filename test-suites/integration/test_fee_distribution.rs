@@ -92,7 +92,7 @@ fn test_tp_sl_keeper_gets_share() {
         &collateral,
         &true,
         &tp_price,
-        &0,
+        &0, &0i128
     );
 
     // Advance time to accumulate borrow fees
@@ -390,7 +390,7 @@ fn test_fee_split_bps_precision() {
         &collateral,
         &true,
         &tp_price,
-        &0,
+        &0, &0i128
     );
 
     let _trader_balance_after_open = f.usdc.balance(&f.trader);

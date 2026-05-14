@@ -26,7 +26,7 @@ fn test_pause_blocks_new_positions_but_allows_close() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Admin pauses
@@ -43,8 +43,8 @@ fn test_pause_blocks_new_positions_but_allows_close() {
             &(1_000 * USDC_UNIT),
             &true,
             &0,
-            &0,
-        );
+            &0, &0i128
+    );
     }));
     assert!(result.is_err(), "New positions must be blocked when paused");
 
@@ -74,7 +74,7 @@ fn test_unpause_restores_normal_operations() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos = f
@@ -153,7 +153,7 @@ fn test_grant_new_keeper_can_liquidate() {
         &(2_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Crash
@@ -179,8 +179,8 @@ fn test_admin_transfer_and_new_admin_operates() {
     let f = Fixture::deploy(&env);
 
     let new_admin = Address::generate(&env);
-    f.config_manager
-        .transfer_admin(&f.admin, &new_admin);
+    f.config_manager.propose_admin(&f.admin, &new_admin);
+    f.config_manager.accept_admin(&new_admin);
 
     // Old admin can't update limits anymore
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -234,7 +234,7 @@ fn test_admin_transfer_and_new_admin_operates() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_random_user_cannot_pause() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
@@ -286,7 +286,7 @@ fn test_updated_utilization_cap_allows_larger_positions() {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));

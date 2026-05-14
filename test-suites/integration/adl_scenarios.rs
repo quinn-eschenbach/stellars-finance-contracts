@@ -41,12 +41,16 @@ fn lower_adl_thresholds(f: &Fixture) {
 // ADL triggers via PnL ratio threshold
 // ---------------------------------------------------------------------------
 
+// Audit MIN_ADL_PNL_BPS = 5_000 (= 50%) is the new floor. The pnl-route
+// trigger now requires combined_pnl > 50% of total_assets, so the scenario
+// uses two large positions and a 100% price pump to put aggregate unrealized
+// PnL well above half the vault.
 #[test]
 fn test_adl_triggers_via_pnl_ratio() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // Very low PnL threshold so we can trigger via PnL route
+    // Set adl_pnl_bps to exactly the floor — tightest the protocol allows.
     f.config_manager.update_protocol_limits(
         &f.admin,
         &config_manager::ProtocolLimits {
@@ -55,8 +59,10 @@ fn test_adl_triggers_via_pnl_ratio() {
             min_position_lifetime: 60,
             max_utilization_ratio: 8_500,
             funding_cut_bps: 500,
-            adl_pnl_bps: 200,            // 2% of total assets triggers ADL
-            adl_utilization_bps: 9_500,   // keep util threshold high (won't trigger)
+            // 50% — equal to MIN_ADL_PNL_BPS. ConfigManager refuses values below this.
+            adl_pnl_bps: 5_000,
+            // Keep util threshold high so the test isolates the pnl-route trigger.
+            adl_utilization_bps: 9_500,
             liquidation_threshold_bps: 200,
         },
     );
@@ -68,31 +74,41 @@ fn test_adl_triggers_via_pnl_ratio() {
         base_funding_rate_bps: 100,
     });
 
-    // Open a large position that we'll close at profit to push net_pnl up
-    let trader_b = f.create_funded_trader(50_000 * USDC_UNIT);
-    f.open_long(&trader_b, 400_000 * USDC_UNIT, 40_000 * USDC_UNIT);
+    // Sizing math: pnl_ratio = combined_pnl / total_assets > 50%, AND the
+    // vault must retain enough free_liquidity to actually pay the ADL victim
+    // their realized profit. free_liquidity deducts net_pnl, so the more PnL
+    // we sit on, the less liquid the vault is.
+    //
+    // For vault = $1M with utilization r and ADL-victim share f = size_t / OI:
+    //   need r ≤ 0.5 × (1 - f)   to leave headroom for the victim's payout.
+    //
+    // Pick a low-utilisation setup with a small victim:
+    //   size_b = 200k, size_t = 30k → reserved = 230k (23% util), f ≈ 0.13.
+    // Then a 250% price pump (BTC 50k → 175k) gives combined_pnl ≈ 575k,
+    // pnl_ratio ≈ 57.5% (over the 50% floor) and free_liquidity ≈ 195k —
+    // more than enough to disburse the victim's ~75k profit.
+    let trader_b = f.create_funded_trader(30_000 * USDC_UNIT);
+    f.open_long(&trader_b, 200_000 * USDC_UNIT, 20_000 * USDC_UNIT);
 
-    // Also open the ADL target
-    let trader = f.create_funded_trader(20_000 * USDC_UNIT);
-    f.open_long(&trader, 100_000 * USDC_UNIT, 10_000 * USDC_UNIT);
+    let trader = f.create_funded_trader(10_000 * USDC_UNIT);
+    f.open_long(&trader, 30_000 * USDC_UNIT, 3_000 * USDC_UNIT);
 
-    // Price pumps 10% → trader_b PnL = 400k * 10% = 40k
     f.advance_time(TEST_TIMESTAMP + 200);
-    f.set_btc_price(55_000);
+    f.set_btc_price(175_000);
 
-    // Close trader_b to realize PnL and push net_global_trader_pnl up
-    f.position_manager
-        .decrease_position(&trader_b, &symbol_short!("BTC"), &(400_000 * USDC_UNIT));
-
-    // net_pnl ≈ 40k. total_assets ≈ ~960k (1M - 40k profit paid out).
-    // pnl_ratio = 40k * 10000 / 960k ≈ 416 bps > 200 bps threshold → triggers!
-
+    // ADL the smaller position. Its PnL is positive (AdlTargetNotProfitable
+    // gate clears) and the global pnl-route trigger condition holds.
     let balance_before_adl = f.usdc.balance(&trader);
     f.position_manager
         .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
 
+    // The trader's position is fully closed; only trader_b's OI remains.
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
-    assert_eq!(market.long_open_interest, 0, "ADL must fully close position");
+    assert_eq!(
+        market.long_open_interest,
+        200_000 * USDC_UNIT,
+        "ADL must fully close only the targeted position; trader_b stays open",
+    );
 
     let balance_after_adl = f.usdc.balance(&trader);
     let payout = balance_after_adl - balance_before_adl;

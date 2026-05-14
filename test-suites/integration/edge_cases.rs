@@ -29,7 +29,7 @@ fn test_minimum_collateral_position() {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos = f
@@ -81,7 +81,7 @@ fn test_partial_close_then_increase() {
         &(1_500 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos_after = f
@@ -207,7 +207,7 @@ fn test_increase_position_resets_min_lifetime() {
         &(500 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Try to close immediately — should fail because timer reset
@@ -241,7 +241,7 @@ fn test_tp_exactly_at_current_price() {
         &(1_000 * USDC_UNIT),
         &true,
         &tp_price,
-        &0,
+        &0, &0i128
     );
 
     // Set price exactly to TP
@@ -273,7 +273,7 @@ fn test_sl_exactly_at_current_price() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &sl_price,
+        &sl_price, &0i128
     );
 
     // Set price exactly to SL

@@ -39,7 +39,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
         &(2_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     f.position_manager.increase_position(
@@ -49,7 +49,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
         &(3_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     f.position_manager.increase_position(
@@ -59,7 +59,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
         &(20_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // 12% crash — enough to wipe risky traders, safe_c survives
@@ -114,7 +114,7 @@ fn test_liquidation_works_when_paused() {
         &(2_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Crash price
@@ -157,7 +157,7 @@ fn test_vault_solvent_after_liquidations() {
         &(3_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Crash and liquidate
@@ -201,7 +201,7 @@ fn test_short_liquidation_on_price_spike() {
         &(2_000 * USDC_UNIT),
         &false, // short
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Price spikes 12% — devastating for shorts

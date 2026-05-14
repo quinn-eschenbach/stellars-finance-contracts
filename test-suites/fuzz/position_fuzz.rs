@@ -45,8 +45,8 @@ proptest! {
             &collateral,
             &is_long,
             &0,
-            &0,
-        );
+            &0, &0i128
+    );
 
         let market_after_open = f.position_manager.get_market(&symbol_short!("BTC"));
         if is_long {
@@ -101,8 +101,8 @@ proptest! {
             &collateral,
             &is_long,
             &0,
-            &0,
-        );
+            &0, &0i128
+    );
 
         let pos = f.position_manager.get_position(&trader, &symbol_short!("BTC"));
         prop_assert_eq!(pos.entry_price, BTC_PRICE, "Entry price must match oracle");
@@ -142,8 +142,8 @@ proptest! {
             &collateral,
             &is_long,
             &0,
-            &0,
-        );
+            &0, &0i128
+    );
 
         let balance_after_open = f.usdc.balance(&trader);
 
@@ -217,8 +217,8 @@ proptest! {
                 &collateral,
                 &true,
                 &0,
-                &0,
-            );
+                &0, &0i128
+    );
         }
 
         let market_open = f.position_manager.get_market(&symbol_short!("BTC"));

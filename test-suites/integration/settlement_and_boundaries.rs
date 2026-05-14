@@ -67,11 +67,11 @@ fn test_partial_close_fee_proportional() {
 }
 
 // ---------------------------------------------------------------------------
-// Close with size_delta > position.size — should clamp, not panic
+// Close with size_delta > position.size — reverts (does not clamp).
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_close_more_than_size_clamps() {
+fn test_close_more_than_size_reverts() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
@@ -81,20 +81,14 @@ fn test_close_more_than_size_clamps() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(50_000);
 
-    // Request to close 2x the actual position size
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size * 2));
+    let result = f
+        .position_manager
+        .try_decrease_position(&f.trader, &symbol_short!("BTC"), &(size * 2));
+    assert!(result.is_err(), "Over-close must revert, not silently clamp");
 
-    // Position should be fully closed (clamped to pos.size)
+    // Position must still be open with full OI intact.
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
-    assert_eq!(market.long_open_interest, 0, "Oversize close must be clamped");
-
-    // get_position should fail since it's deleted
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .get_position(&f.trader, &symbol_short!("BTC"));
-    }));
-    assert!(result.is_err(), "Position must be deleted after clamped full close");
+    assert_eq!(market.long_open_interest, size, "OI must be unchanged after rejected over-close");
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +273,7 @@ fn test_multiple_increases_reaverage_entry_price() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos2 = f
@@ -305,7 +299,7 @@ fn test_multiple_increases_reaverage_entry_price() {
         &(2_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos3 = f
@@ -486,7 +480,7 @@ fn test_entry_indices_reaverage_on_increase() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos2 = f

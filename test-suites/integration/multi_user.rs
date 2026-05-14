@@ -88,7 +88,7 @@ fn test_opposing_traders_long_vs_short() {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     f.position_manager.increase_position(
@@ -98,7 +98,7 @@ fn test_opposing_traders_long_vs_short() {
         &collateral,
         &false,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Market state: balanced OI
@@ -154,7 +154,7 @@ fn test_multi_trader_with_keeper_index_updates() {
         &(2_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Advance 1 hour, keeper updates indices
@@ -177,7 +177,7 @@ fn test_multi_trader_with_keeper_index_updates() {
         &(1_500 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos_b = f
@@ -216,7 +216,7 @@ fn test_lp_deposits_while_positions_open() {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Now LP deposits (while liquidity is partially reserved)
@@ -256,7 +256,7 @@ fn test_concurrent_open_and_close() {
         &(2_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
@@ -270,7 +270,7 @@ fn test_concurrent_open_and_close() {
         &(1_500 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // A closes (A had enough time)

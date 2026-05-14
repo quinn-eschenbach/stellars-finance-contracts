@@ -25,7 +25,7 @@ fn test_open_position_zero_size() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -42,7 +42,7 @@ fn test_open_position_zero_collateral() {
         &0, // zero collateral
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -61,9 +61,7 @@ fn test_open_on_unconfigured_market() {
     f.oracle_router.set_oracle_sources(
         &f.admin,
         &symbol_short!("ETH"),
-        &soroban_sdk::vec![&env, f.mock_oracle.address.clone()],
-        &soroban_sdk::vec![&env],
-    );
+        &soroban_sdk::vec![&env, f.mock_oracle.address.clone()]);
 
     f.position_manager.increase_position(
         &f.trader,
@@ -72,7 +70,7 @@ fn test_open_on_unconfigured_market() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -94,7 +92,7 @@ fn test_excessive_leverage_rejected() {
         &(1_000 * USDC_UNIT),   // 1k collateral = 200x leverage
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -115,7 +113,7 @@ fn test_close_before_min_lifetime() {
         &(1_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Try to close immediately — min_position_lifetime is 60s
@@ -160,7 +158,7 @@ fn test_liquidate_healthy_position() {
         &(5_000 * USDC_UNIT), // 2x leverage — very healthy
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     f.advance_time(TEST_TIMESTAMP + 75);
@@ -190,7 +188,7 @@ fn test_adl_when_conditions_not_met() {
         &(5_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     f.advance_time(TEST_TIMESTAMP + 75);
@@ -224,7 +222,7 @@ fn test_execute_order_no_trigger() {
         &(1_000 * USDC_UNIT),
         &true,
         &tp_price,
-        &sl_price,
+        &sl_price, &0i128
     );
 
     f.advance_time(TEST_TIMESTAMP + 75);
@@ -257,7 +255,7 @@ fn test_utilization_cap_breach() {
         &(90_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -280,7 +278,7 @@ fn test_invalid_tp_sl_long() {
         &(1_000 * USDC_UNIT),
         &true,
         &bad_tp, // TP below entry = invalid for long
-        &0,
+        &0, &0i128
     );
 }
 
@@ -304,6 +302,7 @@ fn test_invalid_tp_sl_short() {
         &false,
         &0,
         &bad_sl, // SL below entry = invalid for short
+        &0i128,
     );
 }
 
