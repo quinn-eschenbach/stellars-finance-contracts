@@ -1,9 +1,10 @@
-//! Tests for H-1: admin split-brain consistency.
+//! Tests for admin split-brain consistency.
 //!
 //! The contract maintains two parallel representations of "is X the admin?":
-//!   (a) `StorageKey::Admin` in instance storage  (used by require_admin)
-//!   (b) `StorageKey::RoleMember { role: "ADMIN", account }` in persistent
-//!       storage  (queried by has_role)
+//!   (a) The OZ AccessControl admin pointer in instance storage (read by
+//!       `require_admin` via `oz_get_admin`)
+//!   (b) The OZ AccessControl role-membership entry for `ADMIN` (queried by
+//!       `has_role`)
 //!
 //! These tests verify both representations remain consistent across all operations.
 
@@ -13,7 +14,7 @@ use crate::ConfigManagerError;
 
 use super::helpers::{deploy_initialized, role_admin, role_keeper};
 
-/// H-1: After granting KEEPER to another address, the admin must still hold ADMIN role.
+/// After granting KEEPER to another address, the admin must still hold ADMIN role.
 #[test]
 fn test_has_role_admin_consistent_after_grant_role() {
     let env = Env::default();
@@ -32,7 +33,7 @@ fn test_has_role_admin_consistent_after_grant_role() {
     );
 }
 
-/// H-1: After revoking KEEPER from another address, the admin must still hold ADMIN role.
+/// After revoking KEEPER from another address, the admin must still hold ADMIN role.
 #[test]
 fn test_has_role_admin_consistent_after_revoke_role() {
     let env = Env::default();
@@ -52,7 +53,7 @@ fn test_has_role_admin_consistent_after_revoke_role() {
     );
 }
 
-/// H-1: Admin role persists across a full grant → revoke → re-grant sequence on other accounts.
+/// Admin role persists across a full grant → revoke → re-grant sequence on other accounts.
 #[test]
 fn test_has_role_admin_consistent_after_operations() {
     let env = Env::default();
@@ -73,7 +74,7 @@ fn test_has_role_admin_consistent_after_operations() {
     assert!(client.has_role(&admin_role, &admin), "after re-grant: admin must still hold ADMIN role");
 }
 
-/// H-1: Self-revoke of ADMIN must leave both stores consistent — no split-brain.
+/// Self-revoke of ADMIN must leave both stores consistent — no split-brain.
 ///
 /// The contract may either reject the revoke (Err) or accept it (Ok).
 /// In either case, has_role and require_admin must agree on the result.
@@ -117,7 +118,7 @@ fn test_revoking_admin_role_from_admin_no_split_brain() {
     }
 }
 
-/// H-1: has_role must match require_admin after initialize — no split-brain between stores.
+/// has_role must match require_admin after initialize — no split-brain between stores.
 #[test]
 fn test_admin_has_role_matches_require_admin_after_initialize() {
     let env = Env::default();
@@ -142,7 +143,7 @@ fn test_admin_has_role_matches_require_admin_after_initialize() {
     );
 }
 
-/// H-1: An impostor must be rejected by both has_role and require_admin.
+/// An impostor must be rejected by both has_role and require_admin.
 #[test]
 fn test_impostor_has_no_admin_privileges_in_either_store() {
     let env = Env::default();
@@ -173,7 +174,7 @@ fn test_impostor_has_no_admin_privileges_in_either_store() {
     );
 }
 
-/// H-1: Granting an extra role to the admin address must not corrupt the instance store.
+/// Granting an extra role to the admin address must not corrupt the instance store.
 #[test]
 fn test_granting_extra_role_to_admin_does_not_corrupt_instance_store() {
     let env = Env::default();

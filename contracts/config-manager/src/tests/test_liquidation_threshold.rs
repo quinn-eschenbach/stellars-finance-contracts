@@ -11,7 +11,7 @@
 //!
 //! These tests are expected to FAIL at COMPILE time until code-writer adds the
 //! `liquidation_threshold_bps: u32` field to `shared::ProtocolLimits`,
-//! initialises it from `shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS = 200` in
+//! initialises it from `shared::constants::DEFAULT_LIQUIDATION_THRESHOLD_BPS = 200` in
 //! `ConfigManagerContract::initialize`, validates it in `update_protocol_limits`
 //! (must be <= 1_000), and includes it in the `LimitsUpdate` event payload.
 //!
@@ -35,7 +35,7 @@ use super::helpers::{deploy, deploy_initialized, valid_limits};
 /// (200 bps = 2%) so that PositionManager can read a sane value before any
 /// admin update arrives. Reading the default constant from the `shared` crate
 /// is the load-bearing assertion — the value must come from
-/// `shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS`, not be hard-coded inline in
+/// `shared::constants::DEFAULT_LIQUIDATION_THRESHOLD_BPS`, not be hard-coded inline in
 /// `contract.rs`, so a single source of truth is preserved.
 #[test]
 fn test_initialize_seeds_default_liquidation_threshold_of_200_bps() {
@@ -46,8 +46,8 @@ fn test_initialize_seeds_default_liquidation_threshold_of_200_bps() {
     let stored = client.get_protocol_limits();
     assert_eq!(
         stored.liquidation_threshold_bps,
-        shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS,
-        "initialize must seed liquidation_threshold_bps from shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS"
+        shared::constants::DEFAULT_LIQUIDATION_THRESHOLD_BPS,
+        "initialize must seed liquidation_threshold_bps from shared::constants::DEFAULT_LIQUIDATION_THRESHOLD_BPS"
     );
     assert_eq!(
         stored.liquidation_threshold_bps, 200,
@@ -210,8 +210,8 @@ fn test_update_protocol_limits_liquidation_threshold_at_1001_errors() {
     );
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
-        "error code must be InvalidLimits (5)"
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLiquidationThreshold as u32),
+        "error code must be InvalidLiquidationThreshold (35)"
     );
 }
 
@@ -239,8 +239,8 @@ fn test_update_protocol_limits_liquidation_threshold_u32_max_errors() {
     );
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLimits as u32),
-        "error code must be InvalidLimits (5)"
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidLiquidationThreshold as u32),
+        "error code must be InvalidLiquidationThreshold (35)"
     );
 }
 

@@ -6,6 +6,7 @@ mod events;
 pub mod logic;
 pub mod storage;
 pub mod types;
+pub mod validate;
 
 #[cfg(test)]
 mod tests;

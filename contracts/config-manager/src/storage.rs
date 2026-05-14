@@ -1,30 +1,27 @@
-use soroban_sdk::{contracttype, panic_with_error, Address, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env};
 
 use crate::errors::ConfigManagerError;
 use crate::types::{BorrowRateConfig, FeeSplits, ProtocolLimits};
 
-/// Composite key for role membership entries.
-#[contracttype]
-#[derive(Clone)]
-pub struct RoleMemberKey {
-    pub role: Symbol,
-    pub account: Address,
-}
+/// Pending WASM upgrade is the same shape across every protocol contract —
+/// re-exported here so callers can keep saying `storage::PendingUpgrade`.
+pub use interfaces::PendingUpgrade;
 
 #[contracttype]
 pub enum StorageKey {
     /// Initialization flag — set to `true` after `initialize` succeeds.
     Initialized,
-    /// The admin address stored in instance storage.
-    Admin,
-    /// Role membership: `RoleMemberKey { role, account } -> bool`.
-    RoleMember(RoleMemberKey),
     /// Fee split configuration.
     FeeSplits,
     /// Protocol risk and timing limits (single struct replaces four separate keys).
     ProtocolLimits,
     /// Borrow rate kink curve and funding rate parameters.
     BorrowRateConfig,
+    /// Configurable upgrade timelock in seconds. Floor enforced at
+    /// `shared::constants::MIN_UPGRADE_TIMELOCK`.
+    UpgradeTimelock,
+    /// Pending admin awaiting `accept_admin` — set by `propose_admin`.
+    PendingAdmin,
     /// Current contract version (written by migration).
     Version,
 }
@@ -32,7 +29,7 @@ pub enum StorageKey {
 // ---------------------------------------------------------------------------
 // TTL constants — single source of truth lives in the `shared` crate.
 // ---------------------------------------------------------------------------
-pub use shared::{INSTANCE_BUMP, INSTANCE_THRESHOLD, SHARED_BUMP, SHARED_THRESHOLD};
+pub use shared::constants::{INSTANCE_BUMP, INSTANCE_THRESHOLD, SHARED_BUMP, SHARED_THRESHOLD};
 
 // ---------------------------------------------------------------------------
 // Initialization helpers
@@ -56,12 +53,23 @@ pub fn set_initialized(env: &Env) {
 }
 
 // ---------------------------------------------------------------------------
-// Admin helpers
+// PendingAdmin helpers — two-step admin transfer (propose → accept).
 // ---------------------------------------------------------------------------
 
-pub fn set_admin(env: &Env, addr: &Address) {
-    env.storage().instance().set(&StorageKey::Admin, addr);
+pub fn save_pending_admin(env: &Env, addr: &Address) {
+    env.storage().instance().set(&StorageKey::PendingAdmin, addr);
 }
+
+pub fn load_pending_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&StorageKey::PendingAdmin)
+}
+
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().instance().remove(&StorageKey::PendingAdmin);
+}
+
+// Pending upgrade storage now lives in `interfaces::upgrade` under a shared
+// Symbol key — used by the `TimelockedUpgradeable` trait's default methods.
 
 // ---------------------------------------------------------------------------
 // FeeSplits helpers
@@ -112,6 +120,23 @@ pub fn save_borrow_rate_config(env: &Env, config: &BorrowRateConfig) {
     env.storage()
         .instance()
         .set(&StorageKey::BorrowRateConfig, config);
+}
+
+// ---------------------------------------------------------------------------
+// Upgrade timelock helpers
+// ---------------------------------------------------------------------------
+
+pub fn load_upgrade_timelock(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&StorageKey::UpgradeTimelock)
+        .unwrap_or_else(|| panic_with_error!(env, ConfigManagerError::NotInitialized))
+}
+
+pub fn save_upgrade_timelock(env: &Env, seconds: u64) {
+    env.storage()
+        .instance()
+        .set(&StorageKey::UpgradeTimelock, &seconds);
 }
 
 // ---------------------------------------------------------------------------

@@ -2,8 +2,8 @@
 //!
 //! Covers:
 //!   - Basic happy path and double-init guard (1.1)
-//!   - Auth enforcement: require_auth must be called (C-1)
-//!   - TTL extension during initialize (C-2)
+//!   - Auth enforcement: require_auth must be called ()
+//!   - TTL extension during initialize ()
 
 use soroban_sdk::{testutils::Address as _, Address, Env, IntoVal};
 
@@ -87,10 +87,10 @@ fn test_initialize_second_call_with_new_admin_also_errors() {
 }
 
 // ---------------------------------------------------------------------------
-// Auth enforcement (C-1)
+// Auth enforcement ()
 // ---------------------------------------------------------------------------
 
-/// C-1 (negative path): calling `initialize` WITHOUT mocking any auths must
+///  (negative path): calling `initialize` WITHOUT mocking any auths must
 /// panic because the implementation calls `admin_address.require_auth()`.
 #[test]
 #[should_panic]
@@ -102,7 +102,7 @@ fn test_initialize_requires_admin_auth() {
     client.initialize(&admin);
 }
 
-/// C-1 (positive path): mocking ONLY the admin address auth for the
+///  (positive path): mocking ONLY the admin address auth for the
 /// initialize invocation must allow the call to succeed.
 #[test]
 fn test_initialize_with_correct_auth_succeeds() {
@@ -128,7 +128,7 @@ fn test_initialize_with_correct_auth_succeeds() {
     );
 }
 
-/// C-1 (impostor path): providing a different address's auth while calling
+///  (impostor path): providing a different address's auth while calling
 /// initialize with the real admin address must panic.
 #[test]
 #[should_panic]
@@ -151,7 +151,7 @@ fn test_initialize_with_wrong_auth_panics() {
     client.initialize(&admin);
 }
 
-/// C-1 (replay-with-auth): a second call to `initialize`, even with valid
+///  (replay-with-auth): a second call to `initialize`, even with valid
 /// admin auth, must fail with AlreadyInitialized.
 #[test]
 fn test_initialize_second_call_with_admin_auth_still_errors() {
@@ -175,10 +175,10 @@ fn test_initialize_second_call_with_admin_auth_still_errors() {
 }
 
 // ---------------------------------------------------------------------------
-// TTL extension (C-2)
+// TTL extension ()
 // ---------------------------------------------------------------------------
 
-/// C-2: `initialize` must complete without panic, which includes bumping the
+/// `initialize` must complete without panic, which includes bumping the
 /// instance TTL and the persistent role-member TTL internally.
 #[test]
 fn test_initialize_completes_without_panic_ttl_bump_implied() {
@@ -195,7 +195,7 @@ fn test_initialize_completes_without_panic_ttl_bump_implied() {
     );
 }
 
-/// C-2: the role-member persistent entry written by `initialize` must be
+/// the role-member persistent entry written by `initialize` must be
 /// readable immediately (TTL was extended at write time).
 #[test]
 fn test_initialize_role_member_entry_readable_after_write() {
@@ -253,22 +253,22 @@ fn test_initialize_emits_seeded_default_events() {
         if topic0 == Symbol::new(&env, "feecfg") {
             let parsed: Result<(u32, u32, u32), _> = data.try_into_val(&env);
             let (k, d, l) = parsed.expect("feecfg event must unpack as (u32, u32, u32)");
-            assert_eq!(k, shared::DEFAULT_KEEPER_BPS);
-            assert_eq!(d, shared::DEFAULT_DEV_BPS);
-            assert_eq!(l, shared::DEFAULT_LP_BPS);
+            assert_eq!(k, shared::constants::DEFAULT_KEEPER_BPS);
+            assert_eq!(d, shared::constants::DEFAULT_DEV_BPS);
+            assert_eq!(l, shared::constants::DEFAULT_LP_BPS);
             saw_feecfg = true;
         } else if topic0 == Symbol::new(&env, "limits") {
             let parsed: Result<(i128, u64, u64, i128, u32, u32, u32, u32), _> =
                 data.try_into_val(&env);
             let tup = parsed.expect("limits event must unpack as 8-tuple including liquidation_threshold_bps");
-            assert_eq!(tup.0, shared::DEFAULT_MIN_COLLATERAL);
-            assert_eq!(tup.1, shared::DEFAULT_COOLDOWN_DURATION);
-            assert_eq!(tup.7, shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS);
+            assert_eq!(tup.0, shared::constants::DEFAULT_MIN_COLLATERAL);
+            assert_eq!(tup.1, shared::constants::DEFAULT_COOLDOWN_DURATION);
+            assert_eq!(tup.7, shared::constants::DEFAULT_LIQUIDATION_THRESHOLD_BPS);
             saw_limits = true;
         } else if topic0 == Symbol::new(&env, "rates") {
             let parsed: Result<(i128, i128, i128, i128, i128), _> = data.try_into_val(&env);
             let tup = parsed.expect("rates event must unpack as 5-tuple");
-            assert_eq!(tup.0, shared::DEFAULT_BASE_BORROW_RATE_BPS);
+            assert_eq!(tup.0, shared::constants::DEFAULT_BASE_BORROW_RATE_BPS);
             saw_rates = true;
         }
         let _: Val = topics.get(0).unwrap();

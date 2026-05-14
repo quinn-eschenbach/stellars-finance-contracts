@@ -1,20 +1,32 @@
-use interfaces::ConfigManager;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol};
-use stellar_contract_utils::upgradeable::UpgradeableMigratableInternal;
-use stellar_macros::UpgradeableMigratable;
+use interfaces::{ConfigManager, MigrationData, TimelockedUpgradeable, UpgradeFailure};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
+use stellar_contract_utils::upgradeable::{
+    complete_migration, ensure_can_complete_migration,
+};
 
 use crate::{
     errors::ConfigManagerError,
     events,
     logic::{
-        admin_role_symbol, bump_instance_ttl, get_role_member, remove_role_member,
-        require_admin_with_auth, set_role_member,
+        admin_role_symbol, bump_instance_ttl, grant_role_internal, has_role_local, init_admin,
+        load_admin, require_admin_with_auth, revoke_role_internal,
     },
     storage,
     types::{roles, BorrowRateConfig, FeeSplits, ProtocolLimits},
+    validate::Validate,
 };
 
-#[derive(UpgradeableMigratable)]
+/// ConfigManager-local role check. Unlike Vault/PM/OracleRouter (which
+/// cross-call ConfigManager via `shared::has_role`), ConfigManager *is*
+/// the role authority — so the membership read is local.
+fn require_local_role(env: &Env, caller: &Address, role: &str) {
+    caller.require_auth();
+    let role_sym = Symbol::new(env, role);
+    if !has_role_local(env, &role_sym, caller) {
+        panic_with_error!(env, ConfigManagerError::Unauthorized);
+    }
+}
+
 #[contract]
 pub struct ConfigManagerContract;
 
@@ -27,36 +39,42 @@ impl ConfigManager for ConfigManagerContract {
     fn initialize(env: Env, admin_address: Address) {
         admin_address.require_auth();
         storage::check_not_initialized(&env);
-        storage::set_admin(&env, &admin_address);
+        init_admin(&env, &admin_address);
         let admin_role = admin_role_symbol(&env);
-        set_role_member(&env, &admin_role, &admin_address, true);
+        grant_role_internal(&env, &admin_role, &admin_address, &admin_address);
+        events::RoleChange {
+            role: admin_role.clone(),
+            account: admin_address.clone(),
+            is_grant: true,
+        }
+        .publish(&env);
 
         // Set sensible defaults so PM never panics reading unconfigured values
         let fee_splits = FeeSplits {
-            keeper_bps: shared::DEFAULT_KEEPER_BPS,
-            dev_bps: shared::DEFAULT_DEV_BPS,
-            lp_bps: shared::DEFAULT_LP_BPS,
+            keeper_bps: shared::constants::DEFAULT_KEEPER_BPS,
+            dev_bps: shared::constants::DEFAULT_DEV_BPS,
+            lp_bps: shared::constants::DEFAULT_LP_BPS,
         };
         storage::save_fee_splits(&env, &fee_splits);
 
         let protocol_limits = ProtocolLimits {
-            min_collateral: shared::DEFAULT_MIN_COLLATERAL,
-            cooldown_duration: shared::DEFAULT_COOLDOWN_DURATION,
-            min_position_lifetime: shared::DEFAULT_MIN_POSITION_LIFETIME,
-            max_utilization_ratio: shared::DEFAULT_MAX_UTILIZATION_RATIO,
-            funding_cut_bps: shared::DEFAULT_FUNDING_CUT_BPS,
-            adl_pnl_bps: shared::DEFAULT_ADL_PNL_BPS,
-            adl_utilization_bps: shared::DEFAULT_ADL_UTILIZATION_BPS,
-            liquidation_threshold_bps: shared::DEFAULT_LIQUIDATION_THRESHOLD_BPS,
+            min_collateral: shared::constants::DEFAULT_MIN_COLLATERAL,
+            cooldown_duration: shared::constants::DEFAULT_COOLDOWN_DURATION,
+            min_position_lifetime: shared::constants::DEFAULT_MIN_POSITION_LIFETIME,
+            max_utilization_ratio: shared::constants::DEFAULT_MAX_UTILIZATION_RATIO,
+            funding_cut_bps: shared::constants::DEFAULT_FUNDING_CUT_BPS,
+            adl_pnl_bps: shared::constants::DEFAULT_ADL_PNL_BPS,
+            adl_utilization_bps: shared::constants::DEFAULT_ADL_UTILIZATION_BPS,
+            liquidation_threshold_bps: shared::constants::DEFAULT_LIQUIDATION_THRESHOLD_BPS,
         };
         storage::save_protocol_limits(&env, &protocol_limits);
 
         let borrow_rate_config = BorrowRateConfig {
-            base_borrow_rate_bps: shared::DEFAULT_BASE_BORROW_RATE_BPS,
-            slope1_bps: shared::DEFAULT_SLOPE1_BPS,
-            slope2_bps: shared::DEFAULT_SLOPE2_BPS,
-            optimal_utilization_bps: shared::DEFAULT_OPTIMAL_UTILIZATION_BPS,
-            base_funding_rate_bps: shared::DEFAULT_BASE_FUNDING_RATE_BPS,
+            base_borrow_rate_bps: shared::constants::DEFAULT_BASE_BORROW_RATE_BPS,
+            slope1_bps: shared::constants::DEFAULT_SLOPE1_BPS,
+            slope2_bps: shared::constants::DEFAULT_SLOPE2_BPS,
+            optimal_utilization_bps: shared::constants::DEFAULT_OPTIMAL_UTILIZATION_BPS,
+            base_funding_rate_bps: shared::constants::DEFAULT_BASE_FUNDING_RATE_BPS,
         };
         storage::save_borrow_rate_config(&env, &borrow_rate_config);
 
@@ -89,18 +107,24 @@ impl ConfigManager for ConfigManagerContract {
         }
         .publish(&env);
 
+        storage::save_upgrade_timelock(&env, shared::constants::DEFAULT_UPGRADE_TIMELOCK);
+        events::UpgradeTimelockUpdate {
+            timelock_seconds: shared::constants::DEFAULT_UPGRADE_TIMELOCK,
+        }
+        .publish(&env);
+
         storage::set_initialized(&env);
         bump_instance_ttl(&env);
     }
 
     fn grant_role(env: Env, caller: Address, role: Symbol, account: Address) {
         require_admin_with_auth(&env, &caller);
-        // ADMIN role is managed exclusively via transfer_admin
+        // ADMIN role is managed exclusively via propose_admin/accept_admin
         let admin_role = admin_role_symbol(&env);
         if role == admin_role {
             panic_with_error!(&env, ConfigManagerError::Unauthorized);
         }
-        set_role_member(&env, &role, &account, true);
+        grant_role_internal(&env, &role, &account, &caller);
         events::RoleChange { role: role.clone(), account: account.clone(), is_grant: true }.publish(&env);
     }
 
@@ -110,22 +134,17 @@ impl ConfigManager for ConfigManagerContract {
         if role == admin_role {
             panic_with_error!(&env, ConfigManagerError::Unauthorized);
         }
-        remove_role_member(&env, &role, &account);
+        revoke_role_internal(&env, &role, &account, &caller);
         events::RoleChange { role: role.clone(), account: account.clone(), is_grant: false }.publish(&env);
     }
 
     fn has_role(env: Env, role: Symbol, account: Address) -> bool {
-        get_role_member(&env, &role, &account)
+        has_role_local(&env, &role, &account)
     }
 
     fn update_fee_splits(env: Env, caller: Address, fee_splits: FeeSplits) {
         require_admin_with_auth(&env, &caller);
-        if fee_splits.keeper_bps == 0 || fee_splits.dev_bps == 0 || fee_splits.lp_bps == 0 {
-            panic_with_error!(&env, ConfigManagerError::InvalidFeeSplits);
-        }
-        if fee_splits.keeper_bps + fee_splits.dev_bps + fee_splits.lp_bps != 10_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidFeeSplits);
-        }
+        fee_splits.validate(&env);
         storage::save_fee_splits(&env, &fee_splits);
         events::FeeSplitsUpdate { keeper_bps: fee_splits.keeper_bps, dev_bps: fee_splits.dev_bps, lp_bps: fee_splits.lp_bps }.publish(&env);
         bump_instance_ttl(&env);
@@ -133,32 +152,7 @@ impl ConfigManager for ConfigManagerContract {
 
     fn update_protocol_limits(env: Env, caller: Address, limits: ProtocolLimits) {
         require_admin_with_auth(&env, &caller);
-        if limits.min_collateral < 1 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if limits.max_utilization_ratio < 1 || limits.max_utilization_ratio > 10_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if limits.funding_cut_bps >= 10_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if limits.adl_pnl_bps < 1 || limits.adl_pnl_bps > 10_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if limits.adl_utilization_bps < 1 || limits.adl_utilization_bps > 10_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if limits.liquidation_threshold_bps > 1_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        // Safety ceilings: prevent trapping funds via extreme time parameters
-        // 30 days max cooldown, 24 hours max position lifetime
-        if limits.cooldown_duration > 2_592_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if limits.min_position_lifetime > 86_400 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
+        limits.validate(&env);
         storage::save_protocol_limits(&env, &limits);
         events::LimitsUpdate {
             min_collateral: limits.min_collateral,
@@ -187,19 +181,7 @@ impl ConfigManager for ConfigManagerContract {
 
     fn update_borrow_rate_config(env: Env, caller: Address, config: BorrowRateConfig) {
         require_admin_with_auth(&env, &caller);
-        if config.base_borrow_rate_bps < 0
-            || config.slope1_bps < 0
-            || config.slope2_bps < 0
-            || config.base_funding_rate_bps < 0
-        {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if config.optimal_utilization_bps < 1 || config.optimal_utilization_bps > 10_000 {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
-        if config.slope2_bps < config.slope1_bps {
-            panic_with_error!(&env, ConfigManagerError::InvalidLimits);
-        }
+        config.validate(&env);
         storage::save_borrow_rate_config(&env, &config);
         events::BorrowRateUpdate {
             base_borrow_rate_bps: config.base_borrow_rate_bps,
@@ -215,35 +197,159 @@ impl ConfigManager for ConfigManagerContract {
         storage::load_borrow_rate_config(&env)
     }
 
-    fn transfer_admin(env: Env, caller: Address, new_admin: Address) {
+    fn set_upgrade_timelock(env: Env, caller: Address, seconds: u64) {
         require_admin_with_auth(&env, &caller);
-        // Require auth from the new admin to prove they control the address,
-        // preventing irrecoverable bricking from a typo or wrong address.
-        new_admin.require_auth();
+        if seconds < shared::constants::MIN_UPGRADE_TIMELOCK {
+            panic_with_error!(&env, ConfigManagerError::UpgradeTimelockTooShort);
+        }
+        storage::save_upgrade_timelock(&env, seconds);
+        events::UpgradeTimelockUpdate { timelock_seconds: seconds }.publish(&env);
+        bump_instance_ttl(&env);
+    }
+
+    fn get_upgrade_timelock(env: Env) -> u64 {
+        storage::load_upgrade_timelock(&env)
+    }
+
+    fn propose_admin(env: Env, caller: Address, new_admin: Address) {
+        require_admin_with_auth(&env, &caller);
         if caller == new_admin {
-            return;
+            panic_with_error!(&env, ConfigManagerError::InvalidAdminProposal);
+        }
+        storage::save_pending_admin(&env, &new_admin);
+        events::AdminProposed {
+            proposer: caller.clone(),
+            new_admin: new_admin.clone(),
+        }
+        .publish(&env);
+        bump_instance_ttl(&env);
+    }
+
+    fn accept_admin(env: Env, new_admin: Address) {
+        new_admin.require_auth();
+        let pending = storage::load_pending_admin(&env)
+            .unwrap_or_else(|| panic_with_error!(&env, ConfigManagerError::NoPendingAdmin));
+        if pending != new_admin {
+            panic_with_error!(&env, ConfigManagerError::NotPendingAdmin);
         }
         let admin_role = admin_role_symbol(&env);
-        storage::set_admin(&env, &new_admin);
-        remove_role_member(&env, &admin_role, &caller);
-        set_role_member(&env, &admin_role, &new_admin, true);
+        let old_admin = load_admin(&env);
+        // Invariant: old_admin must hold ADMIN at this point — `initialize`
+        // grants it and `grant_role`/`revoke_role` reject `role == ADMIN`.
+        // Asserting catches state corruption rather than letting the
+        // defensive no-op in `revoke_role_internal` emit a misleading
+        // RoleChange event for an account that never held the role.
+        if !has_role_local(&env, &admin_role, &old_admin) {
+            panic_with_error!(&env, ConfigManagerError::Unauthorized);
+        }
+        revoke_role_internal(&env, &admin_role, &old_admin, &old_admin);
+        grant_role_internal(&env, &admin_role, &new_admin, &new_admin);
+        // Rotate the OZ admin pointer to new_admin. OZ's `set_admin` panics
+        // if an admin is already set, so we clear the storage slot first
+        // (acceptable because old_admin no longer holds the admin role).
+        env.storage().instance().remove(&stellar_access::access_control::AccessControlStorageKey::Admin);
+        init_admin(&env, &new_admin);
+        storage::clear_pending_admin(&env);
+        events::RoleChange {
+            role: admin_role.clone(),
+            account: old_admin,
+            is_grant: false,
+        }
+        .publish(&env);
+        events::RoleChange {
+            role: admin_role,
+            account: new_admin,
+            is_grant: true,
+        }
+        .publish(&env);
+        bump_instance_ttl(&env);
+    }
+
+    fn cancel_admin_proposal(env: Env, caller: Address) {
+        require_admin_with_auth(&env, &caller);
+        storage::clear_pending_admin(&env);
+        events::AdminProposalCancelled {
+            canceller: caller.clone(),
+        }
+        .publish(&env);
+        bump_instance_ttl(&env);
+    }
+
+    fn get_pending_admin(env: Env) -> Option<Address> {
+        storage::load_pending_admin(&env)
+    }
+
+    fn propose_upgrade(env: Env, caller: Address, wasm_hash: BytesN<32>) {
+        <Self as TimelockedUpgradeable>::propose(&env, caller, wasm_hash);
+        bump_instance_ttl(&env);
+    }
+
+    fn cancel_upgrade(env: Env, caller: Address) {
+        <Self as TimelockedUpgradeable>::cancel(&env, caller);
         bump_instance_ttl(&env);
     }
 
 }
 
-impl UpgradeableMigratableInternal for ConfigManagerContract {
-    type MigrationData = interfaces::MigrationData;
-
-    fn _require_auth(e: &Env, operator: &Address) {
-        operator.require_auth();
-        let upgrader_role = Symbol::new(e, roles::UPGRADER);
-        if !get_role_member(e, &upgrader_role, operator) {
-            panic_with_error!(e, ConfigManagerError::Unauthorized);
-        }
+// ---------------------------------------------------------------------------
+// Upgrade / migrate entrypoints — `upgrade` delegates to the trait's
+// `execute`; `migrate` keeps its OZ-driven post-upgrade migration logic.
+// ---------------------------------------------------------------------------
+#[contractimpl]
+impl ConfigManagerContract {
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>, operator: Address) {
+        <Self as TimelockedUpgradeable>::execute(&env, operator, new_wasm_hash);
     }
 
-    fn _migrate(e: &Env, data: &Self::MigrationData) {
-        storage::save_version(e, data.version);
+    pub fn migrate(env: Env, migration_data: MigrationData, operator: Address) {
+        require_upgrader_auth(&env, &operator);
+        ensure_can_complete_migration(&env);
+        Self::_migrate(&env, &migration_data);
+        complete_migration(&env);
+    }
+}
+
+impl ConfigManagerContract {
+    pub(crate) fn _migrate(env: &Env, data: &MigrationData) {
+        storage::save_version(env, data.version);
+    }
+}
+
+fn require_upgrader_auth(env: &Env, operator: &Address) {
+    operator.require_auth();
+    let upgrader_role = Symbol::new(env, roles::UPGRADER);
+    if !has_role_local(env, &upgrader_role, operator) {
+        panic_with_error!(env, ConfigManagerError::Unauthorized);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TimelockedUpgradeable impl — hooks supply the contract-specific bits.
+// ---------------------------------------------------------------------------
+impl TimelockedUpgradeable for ConfigManagerContract {
+    fn _require_proposer(env: &Env, caller: &Address) {
+        require_local_role(env, caller, roles::UPGRADER);
+    }
+    fn _require_executor(env: &Env, caller: &Address) {
+        require_upgrader_auth(env, caller);
+    }
+    fn _require_canceller(env: &Env, caller: &Address) {
+        require_local_role(env, caller, roles::PAUSER);
+    }
+    fn _timelock_seconds(env: &Env) -> u64 {
+        storage::load_upgrade_timelock(env)
+    }
+    fn _panic_with_upgrade_error(env: &Env, err: UpgradeFailure) -> ! {
+        match err {
+            UpgradeFailure::NoPendingUpgrade => {
+                panic_with_error!(env, ConfigManagerError::NoPendingUpgrade)
+            }
+            UpgradeFailure::TimelockNotElapsed => {
+                panic_with_error!(env, ConfigManagerError::UpgradeTimelockNotElapsed)
+            }
+            UpgradeFailure::HashMismatch => {
+                panic_with_error!(env, ConfigManagerError::UpgradeHashMismatch)
+            }
+        }
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Covers:
 //!   - Basic read behavior for granted, revoked, and absent roles (1.2)
-//!   - TTL must be extended on read to prevent archival of live entries (H-2)
+//!   - TTL must be extended on read to prevent archival of live entries ()
 //!   - Guarded TTL: absent/deleted keys must not cause panic (F-1)
 
 use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env};
@@ -110,10 +110,10 @@ fn test_has_role_unknown_role_returns_false_not_panic() {
 }
 
 // ---------------------------------------------------------------------------
-// TTL extension on read (H-2)
+// TTL extension on read ()
 // ---------------------------------------------------------------------------
 
-/// H-2: `has_role` on an existing role entry must not panic — the
+/// `has_role` on an existing role entry must not panic — the
 /// implementation should extend the persistent entry's TTL on read.
 #[test]
 fn test_has_role_on_existing_role_does_not_panic() {
@@ -131,7 +131,7 @@ fn test_has_role_on_existing_role_does_not_panic() {
     );
 }
 
-/// H-2: `has_role` called on a non-existent entry must return false and
+/// `has_role` called on a non-existent entry must return false and
 /// must NOT panic even when TTL bumping is attempted on a missing key.
 #[test]
 fn test_has_role_on_nonexistent_entry_returns_false_without_panic() {
@@ -151,7 +151,7 @@ fn test_has_role_on_nonexistent_entry_returns_false_without_panic() {
     );
 }
 
-/// H-2: Calling `has_role` on a role that was previously revoked must
+/// Calling `has_role` on a role that was previously revoked must
 /// return false and must not panic (revoke removes the key; extend_ttl on
 /// a deleted key must be guarded).
 #[test]
@@ -180,7 +180,7 @@ fn test_has_role_after_revoke_returns_false_without_panic() {
 // Guarded TTL refresh (F-1)
 // ---------------------------------------------------------------------------
 
-/// F-1-a: After granting a role, `has_role` must return `true`. In a correct
+/// After granting a role, `has_role` must return `true`. In a correct
 /// implementation the TTL refresh keeps the entry live.
 #[test]
 fn test_ttl_refresh_has_role_returns_true_on_existing_entry() {
@@ -194,11 +194,11 @@ fn test_ttl_refresh_has_role_returns_true_on_existing_entry() {
 
     assert!(
         client.has_role(&keeper_role, &keeper),
-        "F-1-a: has_role must return true for an existing, live role entry (TTL refresh on read keeps it accessible)"
+        "has_role must return true for an existing, live role entry (TTL refresh on read keeps it accessible)"
     );
 }
 
-/// F-1-b: `has_role` on a key that was never written must return `false`
+/// `has_role` on a key that was never written must return `false`
 /// without panicking. An unconditional `extend_ttl` on a missing key would
 /// panic; the fix requires `try_extend_ttl` or a `has()` guard.
 #[test]
@@ -211,17 +211,17 @@ fn test_ttl_refresh_has_role_on_missing_key_does_not_panic() {
     let result = client.try_has_role(&role_keeper(&env), &stranger);
     assert!(
         result.is_ok(),
-        "F-1-b: has_role on a never-written key must not panic — try_extend_ttl must be guarded"
+        "has_role on a never-written key must not panic — try_extend_ttl must be guarded"
     );
     assert!(
         !result
-            .expect("F-1-b: try_has_role returned Err unexpectedly")
-            .expect("F-1-b: inner result conversion failed"),
-        "F-1-b: has_role must return false for a key that was never written"
+            .expect("try_has_role returned Err unexpectedly")
+            .expect("inner result conversion failed"),
+        "has_role must return false for a key that was never written"
     );
 }
 
-/// F-1-c: After `revoke_role` the persistent key is deleted. A subsequent
+/// After `revoke_role` the persistent key is deleted. A subsequent
 /// `has_role` call must return `false` and must NOT panic. An unguarded
 /// `extend_ttl` on the now-deleted key would cause a host trap.
 #[test]
@@ -238,13 +238,13 @@ fn test_ttl_refresh_has_role_after_revoke_does_not_panic() {
     let result = client.try_has_role(&keeper_role, &keeper);
     assert!(
         result.is_ok(),
-        "F-1-c: has_role after revoke must not panic — deleted key must be guarded before TTL bump"
+        "has_role after revoke must not panic — deleted key must be guarded before TTL bump"
     );
     assert!(
         !result
-            .expect("F-1-c: try_has_role returned Err unexpectedly")
-            .expect("F-1-c: inner result conversion failed"),
-        "F-1-c: has_role must return false after the role has been revoked"
+            .expect("try_has_role returned Err unexpectedly")
+            .expect("inner result conversion failed"),
+        "has_role must return false after the role has been revoked"
     );
 }
 

@@ -1,12 +1,12 @@
 pub use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
 
-/// Role identifiers — canonical strings are defined in the `shared` crate.
-/// Re-exported here so existing code referencing `roles::DEFAULT_ADMIN` etc. compiles unchanged.
+/// Role identifiers — canonical strings are defined in `shared::constants`.
 pub mod roles {
-    pub use shared::{
+    pub use shared::constants::{
         ROLE_ADMIN as DEFAULT_ADMIN,
         ROLE_UPGRADER as UPGRADER,
         ROLE_PAUSER as PAUSER,
         ROLE_KEEPER as KEEPER,
+        ROLE_ORACLE as ORACLE,
     };
 }

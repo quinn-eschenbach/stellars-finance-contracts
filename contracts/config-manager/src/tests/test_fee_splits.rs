@@ -1,10 +1,7 @@
-//! Tests for F-4: FeeSplits per-component floor validation.
+//! Tests for FeeSplits per-component floor validation.
 //!
 //! `update_fee_splits` must reject splits where any component is 0,
 //! even when the sum == 10_000.
-//!
-//! Invalid-input tests FAIL against the current implementation (no per-component check).
-//! Valid-input test PASSES (regression anchor).
 
 use soroban_sdk::Env;
 
@@ -12,7 +9,7 @@ use crate::{ConfigManagerError, FeeSplits};
 
 use super::helpers::{deploy_initialized, valid_splits};
 
-/// F-4-a: lp_bps = 0 must be rejected with InvalidFeeSplits (4).
+/// F-4-a: lp_bps = 0 must be rejected with InvalidFeeSplitZero (20).
 #[test]
 fn test_update_fee_splits_zero_lp_bps_errors() {
     let env = Env::default();
@@ -25,12 +22,12 @@ fn test_update_fee_splits_zero_lp_bps_errors() {
     assert!(result.is_err(), "F-4-a: lp_bps = 0 must return an error even though sum == 10_000");
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplits as u32),
-        "F-4-a: error code must be InvalidFeeSplits (4)"
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitZero as u32),
+        "F-4-a: error code must be InvalidFeeSplitZero (20)"
     );
 }
 
-/// F-4-b: keeper_bps = 0 must be rejected with InvalidFeeSplits (4).
+/// F-4-b: keeper_bps = 0 must be rejected with InvalidFeeSplitZero (20).
 #[test]
 fn test_update_fee_splits_zero_keeper_bps_errors() {
     let env = Env::default();
@@ -43,12 +40,12 @@ fn test_update_fee_splits_zero_keeper_bps_errors() {
     assert!(result.is_err(), "F-4-b: keeper_bps = 0 must return an error even though sum == 10_000");
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplits as u32),
-        "F-4-b: error code must be InvalidFeeSplits (4)"
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitZero as u32),
+        "F-4-b: error code must be InvalidFeeSplitZero (20)"
     );
 }
 
-/// F-4-c: dev_bps = 0 must be rejected with InvalidFeeSplits (4).
+/// F-4-c: dev_bps = 0 must be rejected with InvalidFeeSplitZero (20).
 #[test]
 fn test_update_fee_splits_zero_dev_bps_errors() {
     let env = Env::default();
@@ -61,8 +58,8 @@ fn test_update_fee_splits_zero_dev_bps_errors() {
     assert!(result.is_err(), "F-4-c: dev_bps = 0 must return an error even though sum == 10_000");
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplits as u32),
-        "F-4-c: error code must be InvalidFeeSplits (4)"
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitZero as u32),
+        "F-4-c: error code must be InvalidFeeSplitZero (20)"
     );
 }
 
@@ -82,7 +79,7 @@ fn test_update_fee_splits_valid_nonzero_components_succeeds() {
     assert_eq!(stored.lp_bps, 9_000, "stored lp_bps must match input");
 }
 
-/// F-4 adversarial: all-zero components must error with InvalidFeeSplits (4).
+/// F-4 adversarial: all-zero components must error with InvalidFeeSplitZero (20).
 #[test]
 fn test_update_fee_splits_all_zero_components_errors() {
     let env = Env::default();
@@ -95,8 +92,8 @@ fn test_update_fee_splits_all_zero_components_errors() {
     assert!(result.is_err(), "F-4 adversarial: all-zero FeeSplits must return an error");
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplits as u32),
-        "F-4 adversarial: error code must be InvalidFeeSplits (4)"
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitZero as u32),
+        "F-4 adversarial: error code must be InvalidFeeSplitZero (20)"
     );
 }
 
@@ -116,7 +113,7 @@ fn test_update_fee_splits_min_nonzero_components_wrong_sum_errors() {
     );
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplits as u32),
-        "F-4 boundary: error code must be InvalidFeeSplits (4)"
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitSum as u32),
+        "F-4 boundary: error code must be InvalidFeeSplitSum (22)"
     );
 }

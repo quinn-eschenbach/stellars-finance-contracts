@@ -38,3 +38,26 @@ pub struct BorrowRateUpdate {
     pub optimal_utilization_bps: i128,
     pub base_funding_rate_bps: i128,
 }
+
+#[contractevent(topics = ["upgtl"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeTimelockUpdate {
+    pub timelock_seconds: u64,
+}
+
+#[contractevent(topics = ["adminprop"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminProposed {
+    pub proposer: Address,
+    pub new_admin: Address,
+}
+
+#[contractevent(topics = ["admincxl"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminProposalCancelled {
+    pub canceller: Address,
+}
+
+// Upgrade events live in `interfaces::events` — the
+// `TimelockedUpgradeable` trait's default methods emit them, so no
+// per-contract definition is needed here.
