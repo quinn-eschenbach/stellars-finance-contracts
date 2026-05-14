@@ -14,13 +14,24 @@
 # as an external dependency — local quickstart, testnet, mainnet, all the
 # same to this compose.
 
+# Shared log driver caps. Without these every service grows an unbounded
+# JSON log file on the host — fine for a day, painful at a year.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: stellars
-      POSTGRES_PASSWORD: stellars
+      # Refuse to start without an explicit DB password — a hardcoded
+      # default would be a foot-gun in any shared env.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?must be set in .env.<network>}
       POSTGRES_DB: stellars
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -29,6 +40,11 @@ services:
       interval: 3s
       timeout: 2s
       retries: 20
+    # Per-service resource limits so a runaway query / OOM-y service cannot
+    # starve siblings on a single-host deploy.
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 200
     # No host port mapping by default — services reach it via the compose
     # network. Uncomment to expose for psql debugging.
     # ports:
@@ -45,10 +61,11 @@ services:
       dockerfile: docker/indexer.Dockerfile
       target: build
     restart: "no"
+    logging: *default-logging
     env_file:
       - ${ENV_FILE:-.env.local}
     environment:
-      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD:?must be set in .env.<network>}@postgres:5432/stellars
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,17 +81,29 @@ services:
         VITE_NETWORK: ${VITE_NETWORK:-local}
         VITE_API_URL: ${VITE_API_URL:-/api}
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - ${ENV_FILE:-.env.local}
     environment:
       # Override DB URL so the service uses the compose hostname even if
       # the source .env points at localhost.
-      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD:?must be set in .env.<network>}@postgres:5432/stellars
       API_PORT: "3030"
-      API_CORS_ORIGINS: "*"
+      # CORS origins must be explicit on shared / production envs. Local
+      # dev gets a permissive default via the substitution; testnet /
+      # mainnet operators set API_CORS_ORIGINS in .env.<network>.
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-*}
       STATIC_ROOT: /app/public
     ports:
       - "${API_PORT:-3030}:3030"
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 200
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3030/api/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,11 +115,20 @@ services:
       context: .
       dockerfile: docker/indexer.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - ${ENV_FILE:-.env.local}
     environment:
-      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD:?must be set in .env.<network>}@postgres:5432/stellars
       HEALTH_PORT: "3001"
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 200
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,10 +140,14 @@ services:
       context: .
       dockerfile: docker/keeper.Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - ${ENV_FILE:-.env.local}
     environment:
-      DATABASE_URL: postgresql://stellars:stellars@postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD:?must be set in .env.<network>}@postgres:5432/stellars
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
     depends_on:
       postgres:
         condition: service_healthy

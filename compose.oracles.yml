@@ -15,6 +15,13 @@
 #     for the publisher identity created by provision-keys.sh and granted
 #     ROLE_ORACLE by deploy-cex-oracles.sh)
 
+# Shared log driver caps across the bundle.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   oracle-binance:
     build:
@@ -23,8 +30,18 @@ services:
       args:
         ORACLE_PACKAGE: oracle-binance
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - ${ENV_FILE:-.env.local}
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3010/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   oracle-kucoin:
     build:
@@ -33,5 +50,15 @@ services:
       args:
         ORACLE_PACKAGE: oracle-kucoin
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - ${ENV_FILE:-.env.local}
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3010/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
