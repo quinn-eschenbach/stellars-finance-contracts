@@ -4,19 +4,6 @@ import type { u32, u64, i128 } from "@stellar/stellar-sdk/contract";
 export * from "@stellar/stellar-sdk";
 export * as contract from "@stellar/stellar-sdk/contract";
 export * as rpc from "@stellar/stellar-sdk/rpc";
-/**
- * A cached price entry for a single asset symbol.
- */
-export interface CachedPrice {
-    /**
-   * Ledger timestamp when this cache entry was written.
-   */
-    last_update: u64;
-    /**
-   * Price scaled by 1e7 (7 decimal places).
-   */
-    price: i128;
-}
 export declare const OracleRouterError: {
     1: {
         message: string;
@@ -28,14 +15,14 @@ export declare const OracleRouterError: {
         message: string;
     };
     /**
-     * All price sources returned data older than StalenessThreshold,
-     * or returned invalid (zero/negative) prices.
+     * Every oracle source returned data older than `staleness_threshold`,
+     * or returned invalid (zero/negative) prices, or a future timestamp.
      */
     4: {
         message: string;
     };
     /**
-     * Spread between primary oracle sources exceeds MaxDeviation.
+     * Spread between source prices exceeds `max_deviation_bps`.
      */
     5: {
         message: string;
@@ -53,9 +40,27 @@ export declare const OracleRouterError: {
         message: string;
     };
     /**
-     * Oracle configuration field is invalid (e.g., zero cache_duration).
+     * Oracle configuration field is invalid (e.g., zero threshold, out-of-range bps).
      */
     8: {
+        message: string;
+    };
+    /**
+     * Fewer than `min_required_sources` valid prices were returned.
+     */
+    9: {
+        message: string;
+    };
+    /**
+     * `set_oracle_sources` called with more than `MAX_ORACLE_SOURCES` entries.
+     */
+    10: {
+        message: string;
+    };
+    /**
+     * Deviation math would overflow on the supplied prices.
+     */
+    11: {
         message: string;
     };
 };
@@ -69,14 +74,11 @@ export type StorageKey = {
     tag: "OracleConfig";
     values: void;
 } | {
-    tag: "PrimarySources";
+    tag: "Sources";
     values: readonly [string];
 } | {
-    tag: "SecondarySources";
-    values: readonly [string];
-} | {
-    tag: "CachedPrice";
-    values: readonly [string];
+    tag: "PendingUpgrade";
+    values: void;
 } | {
     tag: "Version";
     values: void;
@@ -262,19 +264,24 @@ export interface MarketInfo {
     short_open_interest: i128;
 }
 /**
- * Global safety thresholds for price validation and caching.
+ * Global safety thresholds for price validation.
+ *
+ * OracleRouter has no cache — every `get_price` call queries sources fresh,
+ * so there is no separate cache-freshness knob.
  */
 export interface OracleConfig {
     /**
-   * Duration the internal price cache is valid before a fresh cross-contract
-   * call to external oracles is required (in seconds, e.g., 10).
-   */
-    cache_duration: u64;
-    /**
-   * Maximum allowed spread between primary oracle sources in basis points
-   * (e.g., 100 = 1%). If exceeded, trading for that asset is paused.
+   * Maximum allowed spread between oracle sources in basis points
+   * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
    */
     max_deviation_bps: i128;
+    /**
+   * Minimum number of source responses that must agree within
+   * `max_deviation_bps` for OracleRouter to return a price. Floored at
+   * `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
+   * `shared::constants::MAX_ORACLE_SOURCES`.
+   */
+    min_required_sources: u32;
     /**
    * Maximum age of an external SEP-40 price feed before it is rejected
    * as stale (in seconds).
@@ -286,6 +293,17 @@ export interface OracleConfig {
  */
 export interface MigrationData {
     version: u32;
+}
+/**
+ * Pending WASM upgrade — set by `propose_upgrade`, cleared by
+ * `cancel_upgrade`. Single shape across every protocol contract; each
+ * contract stores it under its own `StorageKey::PendingUpgrade` slot.
+ * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
+ * against the most recent `UpgradeProposed` event for the same contract.
+ */
+export interface PendingUpgrade {
+    eta: u64;
+    wasm_hash: Buffer;
 }
 /**
  * Defines how protocol revenue is split between parties.
@@ -356,6 +374,19 @@ export interface Client {
         config_manager_address: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a cancel_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    cancel_upgrade: ({ caller }: {
+        caller: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a propose_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    propose_upgrade: ({ caller, wasm_hash }: {
+        caller: string;
+        wasm_hash: Buffer;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a bump_oracle_state transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     bump_oracle_state: (options?: MethodOptions) => Promise<AssembledTransaction<null>>;
@@ -373,11 +404,10 @@ export interface Client {
     /**
      * Construct and simulate a set_oracle_sources transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    set_oracle_sources: ({ caller, symbol, primary, secondary }: {
+    set_oracle_sources: ({ caller, symbol, sources }: {
         caller: string;
         symbol: string;
-        primary: Array<string>;
-        secondary: Array<string>;
+        sources: Array<string>;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
 }
 export declare class Client extends ContractClient {
@@ -398,6 +428,8 @@ export declare class Client extends ContractClient {
         upgrade: (json: string) => AssembledTransaction<null>;
         get_price: (json: string) => AssembledTransaction<bigint>;
         initialize: (json: string) => AssembledTransaction<null>;
+        cancel_upgrade: (json: string) => AssembledTransaction<null>;
+        propose_upgrade: (json: string) => AssembledTransaction<null>;
         bump_oracle_state: (json: string) => AssembledTransaction<null>;
         get_oracle_config: (json: string) => AssembledTransaction<OracleConfig>;
         set_oracle_config: (json: string) => AssembledTransaction<null>;

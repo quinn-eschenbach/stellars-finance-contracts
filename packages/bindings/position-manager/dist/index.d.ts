@@ -95,6 +95,32 @@ export declare const PositionManagerError: {
     18: {
         message: string;
     };
+    /**
+     * Mark price at execution time exceeded the trader's `acceptable_price`.
+     */
+    19: {
+        message: string;
+    };
+    /**
+     * `set_max_leverage` called with a value below `MIN_LEVERAGE`. Use
+     * `disable_market` to take a market offline instead.
+     */
+    20: {
+        message: string;
+    };
+    /**
+     * Trading is disabled for this market — `enable_market` re-opens it.
+     */
+    21: {
+        message: string;
+    };
+    /**
+     * `decrease_position` called with `size_delta > pos.size`. Use
+     * `pos.size` (or simply close fully) instead of over-closing.
+     */
+    22: {
+        message: string;
+    };
 };
 export type StorageKey = {
     tag: "Initialized";
@@ -129,6 +155,12 @@ export type StorageKey = {
 } | {
     tag: "MaxLeverage";
     values: readonly [string];
+} | {
+    tag: "MarketDisabled";
+    values: readonly [string];
+} | {
+    tag: "PendingUpgrade";
+    values: void;
 } | {
     tag: "Position";
     values: readonly [PositionKey];
@@ -324,19 +356,24 @@ export interface MarketInfo {
     short_open_interest: i128;
 }
 /**
- * Global safety thresholds for price validation and caching.
+ * Global safety thresholds for price validation.
+ *
+ * OracleRouter has no cache — every `get_price` call queries sources fresh,
+ * so there is no separate cache-freshness knob.
  */
 export interface OracleConfig {
     /**
-   * Duration the internal price cache is valid before a fresh cross-contract
-   * call to external oracles is required (in seconds, e.g., 10).
-   */
-    cache_duration: u64;
-    /**
-   * Maximum allowed spread between primary oracle sources in basis points
-   * (e.g., 100 = 1%). If exceeded, trading for that asset is paused.
+   * Maximum allowed spread between oracle sources in basis points
+   * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
    */
     max_deviation_bps: i128;
+    /**
+   * Minimum number of source responses that must agree within
+   * `max_deviation_bps` for OracleRouter to return a price. Floored at
+   * `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
+   * `shared::constants::MAX_ORACLE_SOURCES`.
+   */
+    min_required_sources: u32;
     /**
    * Maximum age of an external SEP-40 price feed before it is rejected
    * as stale (in seconds).
@@ -348,6 +385,17 @@ export interface OracleConfig {
  */
 export interface MigrationData {
     version: u32;
+}
+/**
+ * Pending WASM upgrade — set by `propose_upgrade`, cleared by
+ * `cancel_upgrade`. Single shape across every protocol contract; each
+ * contract stores it under its own `StorageKey::PendingUpgrade` slot.
+ * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
+ * against the most recent `UpgradeProposed` event for the same contract.
+ */
+export interface PendingUpgrade {
+    eta: u64;
+    wasm_hash: Buffer;
 }
 /**
  * Defines how protocol revenue is split between parties.
@@ -456,6 +504,13 @@ export interface Client {
         symbol: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a enable_market transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    enable_market: ({ caller, symbol }: {
+        caller: string;
+        symbol: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a execute_order transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     execute_order: ({ caller, trader, symbol }: {
@@ -464,11 +519,31 @@ export interface Client {
         symbol: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a cancel_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    cancel_upgrade: ({ caller }: {
+        caller: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a disable_market transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    disable_market: ({ caller, symbol }: {
+        caller: string;
+        symbol: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a update_indices transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     update_indices: ({ caller, symbol }: {
         caller: string;
         symbol: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a propose_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    propose_upgrade: ({ caller, wasm_hash }: {
+        caller: string;
+        wasm_hash: Buffer;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a get_max_leverage transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -495,7 +570,7 @@ export interface Client {
     /**
      * Construct and simulate a increase_position transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    increase_position: ({ trader, symbol, size, collateral, is_long, take_profit, stop_loss }: {
+    increase_position: ({ trader, symbol, size, collateral, is_long, take_profit, stop_loss, acceptable_price }: {
         trader: string;
         symbol: string;
         size: i128;
@@ -503,7 +578,14 @@ export interface Client {
         is_long: boolean;
         take_profit: i128;
         stop_loss: i128;
+        acceptable_price: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a is_market_disabled transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    is_market_disabled: ({ symbol }: {
+        symbol: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<boolean>>;
     /**
      * Construct and simulate a liquidate_position transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -544,12 +626,17 @@ export declare class Client extends ContractClient {
         initialize: (json: string) => AssembledTransaction<null>;
         get_position: (json: string) => AssembledTransaction<Position>;
         bump_position: (json: string) => AssembledTransaction<null>;
+        enable_market: (json: string) => AssembledTransaction<null>;
         execute_order: (json: string) => AssembledTransaction<null>;
+        cancel_upgrade: (json: string) => AssembledTransaction<null>;
+        disable_market: (json: string) => AssembledTransaction<null>;
         update_indices: (json: string) => AssembledTransaction<null>;
+        propose_upgrade: (json: string) => AssembledTransaction<null>;
         get_max_leverage: (json: string) => AssembledTransaction<bigint>;
         set_max_leverage: (json: string) => AssembledTransaction<null>;
         decrease_position: (json: string) => AssembledTransaction<null>;
         increase_position: (json: string) => AssembledTransaction<null>;
+        is_market_disabled: (json: string) => AssembledTransaction<boolean>;
         liquidate_position: (json: string) => AssembledTransaction<null>;
         deleverage_position: (json: string) => AssembledTransaction<null>;
     };

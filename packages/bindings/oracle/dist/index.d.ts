@@ -215,19 +215,24 @@ export interface MarketInfo {
     short_open_interest: i128;
 }
 /**
- * Global safety thresholds for price validation and caching.
+ * Global safety thresholds for price validation.
+ *
+ * OracleRouter has no cache — every `get_price` call queries sources fresh,
+ * so there is no separate cache-freshness knob.
  */
 export interface OracleConfig {
     /**
-   * Duration the internal price cache is valid before a fresh cross-contract
-   * call to external oracles is required (in seconds, e.g., 10).
-   */
-    cache_duration: u64;
-    /**
-   * Maximum allowed spread between primary oracle sources in basis points
-   * (e.g., 100 = 1%). If exceeded, trading for that asset is paused.
+   * Maximum allowed spread between oracle sources in basis points
+   * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
    */
     max_deviation_bps: i128;
+    /**
+   * Minimum number of source responses that must agree within
+   * `max_deviation_bps` for OracleRouter to return a price. Floored at
+   * `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
+   * `shared::constants::MAX_ORACLE_SOURCES`.
+   */
+    min_required_sources: u32;
     /**
    * Maximum age of an external SEP-40 price feed before it is rejected
    * as stale (in seconds).
@@ -239,6 +244,17 @@ export interface OracleConfig {
  */
 export interface MigrationData {
     version: u32;
+}
+/**
+ * Pending WASM upgrade — set by `propose_upgrade`, cleared by
+ * `cancel_upgrade`. Single shape across every protocol contract; each
+ * contract stores it under its own `StorageKey::PendingUpgrade` slot.
+ * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
+ * against the most recent `UpgradeProposed` event for the same contract.
+ */
+export interface PendingUpgrade {
+    eta: u64;
+    wasm_hash: Buffer;
 }
 /**
  * Defines how protocol revenue is split between parties.

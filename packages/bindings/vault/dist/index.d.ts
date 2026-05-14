@@ -41,6 +41,19 @@ export declare const VaultError: {
     10: {
         message: string;
     };
+    /**
+     * `accrue_fees` would push `unclaimed_fees + reserved_usdc` above total_assets.
+     */
+    11: {
+        message: string;
+    };
+    /**
+     * `record_absorbed_collateral` saw a vault balance delta that differs from
+     * the supplied `amount` — PM and Vault disagree on what actually moved.
+     */
+    12: {
+        message: string;
+    };
 };
 export type VaultDataKey = {
     tag: "Initialized";
@@ -67,150 +80,12 @@ export type VaultDataKey = {
     tag: "Version";
     values: void;
 } | {
+    tag: "PendingUpgrade";
+    values: void;
+} | {
     tag: "LockupExpiresAt";
     values: readonly [string];
 };
-/**
- * Represents a single trader's open leveraged position.
- */
-export interface Position {
-    /**
-   * USDC collateral deposited by the trader.
-   */
-    collateral: i128;
-    /**
-   * Global borrow accumulator index at position open (for lazy fee calc).
-   */
-    entry_borrow_index: i128;
-    /**
-   * Global funding accumulator index at position open (for lazy fee calc).
-   */
-    entry_funding_index: i128;
-    /**
-   * Oracle price at the time the position was opened (scaled by 1e7).
-   */
-    entry_price: i128;
-    /**
-   * True for a long position, false for a short.
-   */
-    is_long: boolean;
-    /**
-   * Block timestamp when the position was last increased (anti-front-running lock).
-   */
-    last_increased_time: u64;
-    /**
-   * Notional size of the position in USDC.
-   */
-    size: i128;
-    /**
-   * Stop-loss price (scaled by 1e7). 0 = not set.
-   */
-    stop_loss: i128;
-    /**
-   * Take-profit price (scaled by 1e7). 0 = not set.
-   */
-    take_profit: i128;
-}
-/**
- * Global market state for a single tradeable asset symbol.
- */
-export interface MarketInfo {
-    /**
-   * Cumulative borrow fee index (grows monotonically with time).
-   */
-    acc_borrow_index: i128;
-    /**
-   * Cumulative funding rate index (signed; positive = longs pay shorts).
-   */
-    acc_funding_index: i128;
-    /**
-   * Volume-weighted average entry price of all active long positions.
-   */
-    global_long_avg_price: i128;
-    /**
-   * Volume-weighted average entry price of all active short positions.
-   */
-    global_short_avg_price: i128;
-    /**
-   * Timestamp of the last keeper index update.
-   */
-    last_index_update: u64;
-    /**
-   * Total notional size of all open long positions.
-   */
-    long_open_interest: i128;
-    /**
-   * Total notional size of all open short positions.
-   */
-    short_open_interest: i128;
-}
-/**
- * Global safety thresholds for price validation and caching.
- */
-export interface OracleConfig {
-    /**
-   * Duration the internal price cache is valid before a fresh cross-contract
-   * call to external oracles is required (in seconds, e.g., 10).
-   */
-    cache_duration: u64;
-    /**
-   * Maximum allowed spread between primary oracle sources in basis points
-   * (e.g., 100 = 1%). If exceeded, trading for that asset is paused.
-   */
-    max_deviation_bps: i128;
-    /**
-   * Maximum age of an external SEP-40 price feed before it is rejected
-   * as stale (in seconds).
-   */
-    staleness_threshold: u64;
-}
-/**
- * Data required during a WASM migration. Single definition for all contracts.
- */
-export interface MigrationData {
-    version: u32;
-}
-/**
- * Defines how protocol revenue is split between parties.
- * All values are in basis points (bps). Must sum to 10_000.
- */
-export interface FeeSplits {
-    dev_bps: u32;
-    keeper_bps: u32;
-    lp_bps: u32;
-}
-export declare const SharedError: {
-    /**
-     * Caller does not hold the required role. Discriminant matches every
-     * protocol contract's `Unauthorized = 3` so error codes are consistent.
-     */
-    3: {
-        message: string;
-    };
-};
-/**
- * Global protocol risk and timing parameters.
- */
-export interface ProtocolLimits {
-    adl_pnl_bps: u32;
-    adl_utilization_bps: u32;
-    cooldown_duration: u64;
-    funding_cut_bps: u32;
-    liquidation_threshold_bps: u32;
-    max_utilization_ratio: i128;
-    min_collateral: i128;
-    min_position_lifetime: u64;
-}
-/**
- * Borrow rate kink curve and funding rate parameters (all in basis points).
- */
-export interface BorrowRateConfig {
-    base_borrow_rate_bps: i128;
-    base_funding_rate_bps: i128;
-    optimal_utilization_bps: i128;
-    slope1_bps: i128;
-    slope2_bps: i128;
-}
 export interface OwnerTokensKey {
     index: u32;
     owner: string;
@@ -1389,6 +1264,163 @@ export type PausableStorageKey = {
     tag: "Paused";
     values: void;
 };
+/**
+ * Represents a single trader's open leveraged position.
+ */
+export interface Position {
+    /**
+   * USDC collateral deposited by the trader.
+   */
+    collateral: i128;
+    /**
+   * Global borrow accumulator index at position open (for lazy fee calc).
+   */
+    entry_borrow_index: i128;
+    /**
+   * Global funding accumulator index at position open (for lazy fee calc).
+   */
+    entry_funding_index: i128;
+    /**
+   * Oracle price at the time the position was opened (scaled by 1e7).
+   */
+    entry_price: i128;
+    /**
+   * True for a long position, false for a short.
+   */
+    is_long: boolean;
+    /**
+   * Block timestamp when the position was last increased (anti-front-running lock).
+   */
+    last_increased_time: u64;
+    /**
+   * Notional size of the position in USDC.
+   */
+    size: i128;
+    /**
+   * Stop-loss price (scaled by 1e7). 0 = not set.
+   */
+    stop_loss: i128;
+    /**
+   * Take-profit price (scaled by 1e7). 0 = not set.
+   */
+    take_profit: i128;
+}
+/**
+ * Global market state for a single tradeable asset symbol.
+ */
+export interface MarketInfo {
+    /**
+   * Cumulative borrow fee index (grows monotonically with time).
+   */
+    acc_borrow_index: i128;
+    /**
+   * Cumulative funding rate index (signed; positive = longs pay shorts).
+   */
+    acc_funding_index: i128;
+    /**
+   * Volume-weighted average entry price of all active long positions.
+   */
+    global_long_avg_price: i128;
+    /**
+   * Volume-weighted average entry price of all active short positions.
+   */
+    global_short_avg_price: i128;
+    /**
+   * Timestamp of the last keeper index update.
+   */
+    last_index_update: u64;
+    /**
+   * Total notional size of all open long positions.
+   */
+    long_open_interest: i128;
+    /**
+   * Total notional size of all open short positions.
+   */
+    short_open_interest: i128;
+}
+/**
+ * Global safety thresholds for price validation.
+ *
+ * OracleRouter has no cache — every `get_price` call queries sources fresh,
+ * so there is no separate cache-freshness knob.
+ */
+export interface OracleConfig {
+    /**
+   * Maximum allowed spread between oracle sources in basis points
+   * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
+   */
+    max_deviation_bps: i128;
+    /**
+   * Minimum number of source responses that must agree within
+   * `max_deviation_bps` for OracleRouter to return a price. Floored at
+   * `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
+   * `shared::constants::MAX_ORACLE_SOURCES`.
+   */
+    min_required_sources: u32;
+    /**
+   * Maximum age of an external SEP-40 price feed before it is rejected
+   * as stale (in seconds).
+   */
+    staleness_threshold: u64;
+}
+/**
+ * Data required during a WASM migration. Single definition for all contracts.
+ */
+export interface MigrationData {
+    version: u32;
+}
+/**
+ * Pending WASM upgrade — set by `propose_upgrade`, cleared by
+ * `cancel_upgrade`. Single shape across every protocol contract; each
+ * contract stores it under its own `StorageKey::PendingUpgrade` slot.
+ * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
+ * against the most recent `UpgradeProposed` event for the same contract.
+ */
+export interface PendingUpgrade {
+    eta: u64;
+    wasm_hash: Buffer;
+}
+/**
+ * Defines how protocol revenue is split between parties.
+ * All values are in basis points (bps). Must sum to 10_000.
+ */
+export interface FeeSplits {
+    dev_bps: u32;
+    keeper_bps: u32;
+    lp_bps: u32;
+}
+export declare const SharedError: {
+    /**
+     * Caller does not hold the required role. Discriminant matches every
+     * protocol contract's `Unauthorized = 3` so error codes are consistent.
+     */
+    3: {
+        message: string;
+    };
+};
+/**
+ * Global protocol risk and timing parameters.
+ */
+export interface ProtocolLimits {
+    adl_pnl_bps: u32;
+    adl_utilization_bps: u32;
+    cooldown_duration: u64;
+    funding_cut_bps: u32;
+    liquidation_threshold_bps: u32;
+    max_utilization_ratio: i128;
+    min_collateral: i128;
+    min_position_lifetime: u64;
+}
+/**
+ * Borrow rate kink curve and funding rate parameters (all in basis points).
+ */
+export interface BorrowRateConfig {
+    base_borrow_rate_bps: i128;
+    base_funding_rate_bps: i128;
+    optimal_utilization_bps: i128;
+    slope1_bps: i128;
+    slope2_bps: i128;
+}
 export interface Client {
     /**
      * Construct and simulate a mint transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -1585,6 +1617,9 @@ export interface Client {
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a accrue_fees transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Rejects when accruing would push `unclaimed_fees + reserved_usdc`
+     * above `total_assets`. PM cannot accumulate book-only fees beyond
+     * what is actually in the vault.
      */
     accrue_fees: ({ caller, amount }: {
         caller: string;
@@ -1648,6 +1683,13 @@ export interface Client {
         amount: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a cancel_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * PAUSER veto of a pending upgrade.
+     */
+    cancel_upgrade: ({ caller }: {
+        caller: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a free_liquidity transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     free_liquidity: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
@@ -1659,6 +1701,9 @@ export interface Client {
     }, options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
     /**
      * Construct and simulate a update_net_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Clamps `|pnl| ≤ total_assets` so a bug or compromise of PM cannot
+     * freeze every LP withdraw by pushing a non-recoverable value through
+     * this state-push entrypoint. Emits `PnlClamped` on truncation.
      */
     update_net_pnl: ({ caller, pnl }: {
         caller: string;
@@ -1670,6 +1715,17 @@ export interface Client {
     preview_deposit: ({ assets }: {
         assets: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
+    /**
+     * Construct and simulate a propose_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Propose a WASM upgrade. UPGRADER role only. Reads the timelock from
+     * ConfigManager and records `{wasm_hash, eta}` so the off-chain monitor
+     * can correlate with subsequent `upgrade()` events. On-chain enforcement
+     * is advisory — see `_require_auth` below.
+     */
+    propose_upgrade: ({ caller, wasm_hash }: {
+        caller: string;
+        wasm_hash: Buffer;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a bump_vault_state transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -1715,18 +1771,25 @@ export interface Client {
         amount: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a total_assets_excl_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Total assets minus only the fee buffer — PnL is excluded so consumers
+     * (PM's utilization gate) are not subject to the C-2 mark-price feedback
+     * loop. LP-facing flows still use `free_liquidity`.
+     */
+    total_assets_excl_pnl: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
+    /**
      * Construct and simulate a record_absorbed_collateral transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Notify the vault that PositionManager has just transferred `amount`
      * USDC of seized/loss-settlement collateral directly into the vault's
-     * wallet. This call does NOT move tokens — it only verifies the caller
-     * is PM, then emits an event so off-chain indexers can update their
-     * tracked total_assets in lockstep with the vault's actual on-chain
-     * balance. See ADR-0001 for why losses bypass `pay_profit`.
+     * wallet. This call does NOT move tokens, but it DOES verify the
+     * on-chain delta — `post - pre` must equal `amount`, otherwise PM and
+     * Vault have diverged and we panic. See ADR-0001.
      */
-    record_absorbed_collateral: ({ caller, trader, amount }: {
+    record_absorbed_collateral: ({ caller, trader, amount, pre_balance }: {
         caller: string;
         trader: string;
         amount: i128;
+        pre_balance: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
 }
 export declare class Client extends ContractClient {
@@ -1773,10 +1836,12 @@ export declare class Client extends ContractClient {
         claim_fees_to: (json: string) => AssembledTransaction<null>;
         reserved_usdc: (json: string) => AssembledTransaction<bigint>;
         transfer_from: (json: string) => AssembledTransaction<null>;
+        cancel_upgrade: (json: string) => AssembledTransaction<null>;
         free_liquidity: (json: string) => AssembledTransaction<bigint>;
         preview_redeem: (json: string) => AssembledTransaction<bigint>;
         update_net_pnl: (json: string) => AssembledTransaction<null>;
         preview_deposit: (json: string) => AssembledTransaction<bigint>;
+        propose_upgrade: (json: string) => AssembledTransaction<null>;
         bump_vault_state: (json: string) => AssembledTransaction<null>;
         preview_withdraw: (json: string) => AssembledTransaction<bigint>;
         convert_to_assets: (json: string) => AssembledTransaction<bigint>;
@@ -1784,6 +1849,7 @@ export declare class Client extends ContractClient {
         lockup_expires_at: (json: string) => AssembledTransaction<bigint>;
         release_liquidity: (json: string) => AssembledTransaction<null>;
         reserve_liquidity: (json: string) => AssembledTransaction<null>;
+        total_assets_excl_pnl: (json: string) => AssembledTransaction<bigint>;
         record_absorbed_collateral: (json: string) => AssembledTransaction<null>;
     };
 }

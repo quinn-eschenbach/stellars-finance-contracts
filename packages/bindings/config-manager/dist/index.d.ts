@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
 import { AssembledTransaction, Client as ContractClient, ClientOptions as ContractClientOptions, MethodOptions } from "@stellar/stellar-sdk/contract";
-import type { u32, u64, i128 } from "@stellar/stellar-sdk/contract";
+import type { u32, u64, i128, Option } from "@stellar/stellar-sdk/contract";
 export * from "@stellar/stellar-sdk";
 export * as contract from "@stellar/stellar-sdk/contract";
 export * as rpc from "@stellar/stellar-sdk/rpc";
@@ -26,6 +26,43 @@ export declare const ConfigManagerError: {
     5: {
         message: string;
     };
+    /**
+     * `set_upgrade_timelock` called with seconds below `MIN_UPGRADE_TIMELOCK`.
+     */
+    6: {
+        message: string;
+    };
+    /**
+     * `propose_admin(caller, new_admin)` rejected because `caller == new_admin`.
+     */
+    7: {
+        message: string;
+    };
+    /**
+     * `accept_admin` rejected — caller is not the currently pending admin.
+     */
+    8: {
+        message: string;
+    };
+    /**
+     * `accept_admin` rejected — there is no pending admin proposal.
+     */
+    9: {
+        message: string;
+    };
+    /**
+     * OZ-generated `upgrade()` rejected — no `propose_upgrade` was made
+     * before commit. The two-step upgrade flow requires a prior proposal.
+     */
+    10: {
+        message: string;
+    };
+    /**
+     * OZ-generated `upgrade()` rejected — timelock has not elapsed yet.
+     */
+    11: {
+        message: string;
+    };
 };
 export type StorageKey = {
     tag: "Initialized";
@@ -44,6 +81,15 @@ export type StorageKey = {
     values: void;
 } | {
     tag: "BorrowRateConfig";
+    values: void;
+} | {
+    tag: "UpgradeTimelock";
+    values: void;
+} | {
+    tag: "PendingAdmin";
+    values: void;
+} | {
+    tag: "PendingUpgrade";
     values: void;
 } | {
     tag: "Version";
@@ -237,19 +283,24 @@ export interface MarketInfo {
     short_open_interest: i128;
 }
 /**
- * Global safety thresholds for price validation and caching.
+ * Global safety thresholds for price validation.
+ *
+ * OracleRouter has no cache — every `get_price` call queries sources fresh,
+ * so there is no separate cache-freshness knob.
  */
 export interface OracleConfig {
     /**
-   * Duration the internal price cache is valid before a fresh cross-contract
-   * call to external oracles is required (in seconds, e.g., 10).
-   */
-    cache_duration: u64;
-    /**
-   * Maximum allowed spread between primary oracle sources in basis points
-   * (e.g., 100 = 1%). If exceeded, trading for that asset is paused.
+   * Maximum allowed spread between oracle sources in basis points
+   * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
    */
     max_deviation_bps: i128;
+    /**
+   * Minimum number of source responses that must agree within
+   * `max_deviation_bps` for OracleRouter to return a price. Floored at
+   * `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
+   * `shared::constants::MAX_ORACLE_SOURCES`.
+   */
+    min_required_sources: u32;
     /**
    * Maximum age of an external SEP-40 price feed before it is rejected
    * as stale (in seconds).
@@ -261,6 +312,17 @@ export interface OracleConfig {
  */
 export interface MigrationData {
     version: u32;
+}
+/**
+ * Pending WASM upgrade — set by `propose_upgrade`, cleared by
+ * `cancel_upgrade`. Single shape across every protocol contract; each
+ * contract stores it under its own `StorageKey::PendingUpgrade` slot.
+ * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
+ * against the most recent `UpgradeProposed` event for the same contract.
+ */
+export interface PendingUpgrade {
+    eta: u64;
+    wasm_hash: Buffer;
 }
 /**
  * Defines how protocol revenue is split between parties.
@@ -348,20 +410,43 @@ export interface Client {
         account: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a accept_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    accept_admin: ({ new_admin }: {
+        new_admin: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a propose_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    propose_admin: ({ caller, new_admin }: {
+        caller: string;
+        new_admin: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a cancel_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    cancel_upgrade: ({ caller }: {
+        caller: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
      * Construct and simulate a get_fee_splits transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     get_fee_splits: (options?: MethodOptions) => Promise<AssembledTransaction<FeeSplits>>;
     /**
-     * Construct and simulate a transfer_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Construct and simulate a propose_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    transfer_admin: ({ caller, new_admin }: {
+    propose_upgrade: ({ caller, wasm_hash }: {
         caller: string;
-        new_admin: string;
+        wasm_hash: Buffer;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a bump_config_state transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     bump_config_state: (options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a get_pending_admin transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_pending_admin: (options?: MethodOptions) => Promise<AssembledTransaction<Option<string>>>;
     /**
      * Construct and simulate a update_fee_splits transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -373,6 +458,23 @@ export interface Client {
      * Construct and simulate a get_protocol_limits transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     get_protocol_limits: (options?: MethodOptions) => Promise<AssembledTransaction<ProtocolLimits>>;
+    /**
+     * Construct and simulate a get_upgrade_timelock transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_upgrade_timelock: (options?: MethodOptions) => Promise<AssembledTransaction<u64>>;
+    /**
+     * Construct and simulate a set_upgrade_timelock transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_upgrade_timelock: ({ caller, seconds }: {
+        caller: string;
+        seconds: u64;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a cancel_admin_proposal transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    cancel_admin_proposal: ({ caller }: {
+        caller: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a get_borrow_rate_config transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -412,11 +514,18 @@ export declare class Client extends ContractClient {
         grant_role: (json: string) => AssembledTransaction<null>;
         initialize: (json: string) => AssembledTransaction<null>;
         revoke_role: (json: string) => AssembledTransaction<null>;
+        accept_admin: (json: string) => AssembledTransaction<null>;
+        propose_admin: (json: string) => AssembledTransaction<null>;
+        cancel_upgrade: (json: string) => AssembledTransaction<null>;
         get_fee_splits: (json: string) => AssembledTransaction<FeeSplits>;
-        transfer_admin: (json: string) => AssembledTransaction<null>;
+        propose_upgrade: (json: string) => AssembledTransaction<null>;
         bump_config_state: (json: string) => AssembledTransaction<null>;
+        get_pending_admin: (json: string) => AssembledTransaction<Option<string>>;
         update_fee_splits: (json: string) => AssembledTransaction<null>;
         get_protocol_limits: (json: string) => AssembledTransaction<ProtocolLimits>;
+        get_upgrade_timelock: (json: string) => AssembledTransaction<bigint>;
+        set_upgrade_timelock: (json: string) => AssembledTransaction<null>;
+        cancel_admin_proposal: (json: string) => AssembledTransaction<null>;
         get_borrow_rate_config: (json: string) => AssembledTransaction<BorrowRateConfig>;
         update_protocol_limits: (json: string) => AssembledTransaction<null>;
         update_borrow_rate_config: (json: string) => AssembledTransaction<null>;
