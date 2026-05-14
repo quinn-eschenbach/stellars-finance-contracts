@@ -38,7 +38,7 @@ const EVENT_KIND = xdr.ScSpecEntryKind.scSpecEntryEventV0().value;
 const TOPIC_LOCATION = xdr.ScSpecEventParamLocationV0
   .scSpecEventParamLocationTopicList().value;
 
-function extractEventSpecs(spec: ContractSpec): Map<string, EventFieldSpec> {
+function extractEventSpecs(spec: ContractSpec, contractId: string): Map<string, EventFieldSpec> {
   const result = new Map<string, EventFieldSpec>();
 
   for (const entry of spec.entries) {
@@ -62,6 +62,16 @@ function extractEventSpecs(spec: ContractSpec): Map<string, EventFieldSpec> {
       }
     }
 
+    // Two events on the same contract sharing the same topic name would
+    // silently overwrite in the spec map, leaving one variant unparseable.
+    // Detect at startup so the operator catches it before traffic arrives.
+    if (result.has(topicName)) {
+      throw new Error(
+        `[spec-parser] duplicate event topic "${topicName}" in contract ${contractId} — ` +
+          `two #[contractevent] declarations share the same topic name, which would cause silent parse collisions`,
+      );
+    }
+
     result.set(topicName, { topicFields, dataFields });
   }
 
@@ -77,7 +87,7 @@ export function buildContractSpecMaps(
 ): ContractSpecMaps {
   const maps: ContractSpecMaps = new Map();
   for (const { contractId, spec } of contracts) {
-    maps.set(contractId, extractEventSpecs(spec));
+    maps.set(contractId, extractEventSpecs(spec, contractId));
   }
   return maps;
 }

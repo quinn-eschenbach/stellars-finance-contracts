@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb, indexerCursor } from "@stellars/db";
 import { Client as VaultClient } from "@stellars/bindings/vault";
 import { Client as PMClient } from "@stellars/bindings/position-manager";
@@ -13,9 +13,33 @@ import { buildRoutes } from "./handlers/index.js";
 import { startHealthServer, updateHealth } from "./health.js";
 import { runOraclePoller } from "./oracle-poller.js";
 
+/**
+ * Local-dev guard: refuse to start if another indexer holds the advisory
+ * lock for this DB. We only hold the lock for the lifetime of this process —
+ * dropping the connection releases it. The lock key is an arbitrary 64-bit
+ * constant; collisions across services are avoided by picking a unique value.
+ */
+const INDEXER_ADVISORY_LOCK_KEY = 0x53_74_6c_72_5f_49_64_78n; // "Stlr_Idx"
+
 async function main() {
   const config = loadConfig();
   const db = getDb();
+  // pg_try_advisory_lock guards against accidental double-start in local dev
+  // (per-region DBs make true coordination moot in prod). The lock is held
+  // by THIS pool connection — once the process exits the lock is released.
+  // If we can't acquire it, another indexer is already running.
+  const acquired = await db.execute(
+    sql`SELECT pg_try_advisory_lock(${INDEXER_ADVISORY_LOCK_KEY}::bigint) as locked`,
+  );
+  const lockRow = (acquired as unknown as { rows: { locked: boolean }[] }).rows[0];
+  if (!lockRow?.locked) {
+    console.error(
+      `[indexer] could not acquire pg_try_advisory_lock(${INDEXER_ADVISORY_LOCK_KEY}). Another indexer is already running against this DB.`,
+    );
+    process.exit(1);
+  }
+  console.log(`[indexer] acquired advisory lock`);
+
   const env = { rpcUrl: config.rpcUrl, networkPassphrase: config.networkPassphrase };
   const server = rpcServer(env);
   const routes = buildRoutes(config.contracts);
@@ -80,58 +104,65 @@ async function main() {
       try {
         const { events, latestLedger, nextCursor } = await fetchEvents(server, startLedger, contractIds, cursor);
 
-        for (const rawEvent of events) {
-          const handler = routes[rawEvent.contractId];
-          if (!handler) {
-            console.warn(`[indexer] no route for contract ${rawEvent.contractId} — event id=${rawEvent.id} ledger=${rawEvent.ledger}`);
-            continue;
+        // Wrap (handler calls + cursor advance) in a transaction so a crash
+        // between the two cannot leave the cursor stale (replaying events)
+        // or the handlers ahead (skipping events on restart). The whole
+        // page commits atomically.
+        await db.transaction(async (tx) => {
+          for (const rawEvent of events) {
+            const handler = routes[rawEvent.contractId];
+            if (!handler) {
+              console.warn(`[indexer] no route for contract ${rawEvent.contractId} — event id=${rawEvent.id} ledger=${rawEvent.ledger}`);
+              continue;
+            }
+
+            const parsed = parseEvent(rawEvent, specMaps);
+            if (!parsed) {
+              console.warn(`[indexer] parseEvent returned null — contract=${rawEvent.contractId} ledger=${rawEvent.ledger} id=${rawEvent.id} (unknown topic0 in spec map?)`);
+              continue;
+            }
+            try {
+              // The handler signature accepts `Db`; passing the drizzle tx
+              // works at runtime because both expose the same insert / update /
+              // select methods. Cast through unknown to satisfy drizzle's
+              // distinct PgTransaction vs NodePgDatabase types.
+              await handler(tx as unknown as typeof db, parsed);
+            } catch (err) {
+              // Surface handler errors but keep going — a single bad event
+              // shouldn't abort the whole page. The cursor still advances
+              // (the bad event has already been logged for follow-up).
+              console.error(`Handler error for ${parsed.topic0} in ${rawEvent.contractId}:`, err);
+            }
           }
 
-          const parsed = parseEvent(rawEvent, specMaps);
-          if (!parsed) {
-            console.warn(`[indexer] parseEvent returned null — contract=${rawEvent.contractId} ledger=${rawEvent.ledger} id=${rawEvent.id} (unknown topic0 in spec map?)`);
-            continue;
+          if (nextCursor && nextCursor !== cursor) {
+            const lastEvent = events[events.length - 1];
+            const lastLedgerCloseTime = lastEvent
+              ? Math.floor(new Date(lastEvent.ledgerClosedAt).getTime() / 1000)
+              : Math.floor(Date.now() / 1000);
+            await tx
+              .insert(indexerCursor)
+              .values({
+                id: 1,
+                last_ledger: latestLedger,
+                last_cursor: nextCursor,
+                last_ledger_close_time: lastLedgerCloseTime.toString(),
+              })
+              .onConflictDoUpdate({
+                target: indexerCursor.id,
+                set: {
+                  last_ledger: latestLedger,
+                  last_cursor: nextCursor,
+                  last_ledger_close_time: lastLedgerCloseTime.toString(),
+                  updated_at: new Date(),
+                },
+              });
           }
-          try {
-            await handler(db, parsed);
-          } catch (err) {
-            console.error(`Handler error for ${parsed.topic0} in ${rawEvent.contractId}:`, err);
-          }
-        }
+        });
 
-        // Always advance cursor — even on empty pages — so we don't re-scan
-        // ledgers we've already inspected. The RPC returns a cursor pointing at
-        // the next ledger past the scanned window regardless of event count.
         if (nextCursor && nextCursor !== cursor) {
           cursor = nextCursor;
           startLedger = latestLedger;
-
-          // Most-recent observed close time: prefer the last event's
-          // ledgerClosedAt; fall back to wall time when the page is empty
-          // (we just polled successfully, so the chain is at latestLedger
-          // as of approximately now).
-          const lastEvent = events[events.length - 1];
-          const lastLedgerCloseTime = lastEvent
-            ? Math.floor(new Date(lastEvent.ledgerClosedAt).getTime() / 1000)
-            : Math.floor(Date.now() / 1000);
-
-          await db
-            .insert(indexerCursor)
-            .values({
-              id: 1,
-              last_ledger: startLedger,
-              last_cursor: cursor,
-              last_ledger_close_time: lastLedgerCloseTime.toString(),
-            })
-            .onConflictDoUpdate({
-              target: indexerCursor.id,
-              set: {
-                last_ledger: startLedger,
-                last_cursor: cursor,
-                last_ledger_close_time: lastLedgerCloseTime.toString(),
-                updated_at: new Date(),
-              },
-            });
         }
 
         updateHealth(latestLedger);

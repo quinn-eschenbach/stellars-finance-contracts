@@ -38,6 +38,10 @@ interface BorrowRateUpdateData {
   base_funding_rate_bps: bigint;
 }
 
+interface UpgradeTimelockUpdateData {
+  timelock_seconds: bigint;
+}
+
 export async function handleConfigManagerEvent(db: Db, event: ParsedEvent) {
   switch (event.topic0) {
     case "feecfg":
@@ -48,9 +52,24 @@ export async function handleConfigManagerEvent(db: Db, event: ParsedEvent) {
       return handleBorrowRates(db, event);
     case "role":
       return handleRole(db, event);
+    case "upgtl":
+      return handleUpgradeTimelock(db, event);
     default:
       break;
   }
+}
+
+/**
+ * The upgrade timelock value flowing through ConfigManager. For now logged
+ * only — adding a dedicated DB column requires schema migration; the value
+ * is also queryable via get_upgrade_timelock so the monitoring path doesn't
+ * strictly need this row.
+ */
+async function handleUpgradeTimelock(_db: Db, event: ParsedEvent) {
+  const d = event.data as UpgradeTimelockUpdateData;
+  console.log(
+    `[config-manager] UpgradeTimelockUpdate ledger=${event.ledger} timelock_seconds=${d.timelock_seconds}`,
+  );
 }
 
 async function handleFeeSplits(db: Db, event: ParsedEvent) {

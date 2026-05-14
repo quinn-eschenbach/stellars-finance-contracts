@@ -31,11 +31,29 @@ interface TransferData {
 interface PayProfitData {
   trader: string;
   amount: bigint;
+  /** Absolute total_assets after this payout. Used to set
+   *  vault_state.total_assets directly, bypassing arithmetic deltas that
+   *  could double-count on replay. */
+  new_total_assets: bigint;
 }
 
 interface AbsorbedCollateralData {
   trader: string;
   amount: bigint;
+  /** Same absolute-snapshot pattern as PayProfit. */
+  new_total_assets: bigint;
+}
+
+/** Emitted by Vault after deposit / mint / withdraw / redeem so the indexer
+ *  can write absolute total_assets without re-deriving from OZ's bare
+ *  Deposit/Withdraw events (which don't carry the post-write balance). */
+interface TotalAssetsUpdateData {
+  new_total_assets: bigint;
+}
+
+interface PnlClampedData {
+  requested: bigint;
+  clamped: bigint;
 }
 
 interface ReserveData {
@@ -126,6 +144,10 @@ export async function handleVaultEvent(db: Db, event: ParsedEvent) {
       return handlePause(db, event);
     case "lockup":
       return handleLockup(db, event);
+    case "total":
+      return handleTotalAssetsUpdate(db, event);
+    case "pnl_clamp":
+      return handlePnlClamped(db, event);
     default:
       break;
   }
@@ -153,6 +175,10 @@ async function handleLockup(db: Db, event: ParsedEvent) {
 
 async function handleDeposit(db: Db, event: ParsedEvent) {
   const d = event.data as DepositData;
+  // The bare OZ Deposit event no longer drives `total_assets` — the Vault
+  // contract emits a separate TotalAssetsUpdate carrying the absolute value,
+  // and `handleTotalAssetsUpdate` is the authoritative writer. Here we only
+  // record the per-user deposit row + bump shares.
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
@@ -162,15 +188,13 @@ async function handleDeposit(db: Db, event: ParsedEvent) {
     assets: toNumericString(d.assets),
     shares: toNumericString(d.shares),
   });
-  const assets = toNumericString(d.assets);
   const shares = toNumericString(d.shares);
   await db
     .insert(vaultState)
-    .values({ id: SINGLETON_ID, total_assets: assets, total_shares: shares, updated_at_ledger: event.ledger })
+    .values({ id: SINGLETON_ID, total_shares: shares, updated_at_ledger: event.ledger })
     .onConflictDoUpdate({
       target: vaultState.id,
       set: {
-        total_assets: sql`${vaultState.total_assets}::numeric + ${assets}::numeric`,
         total_shares: sql`${vaultState.total_shares}::numeric + ${shares}::numeric`,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
@@ -181,6 +205,8 @@ async function handleDeposit(db: Db, event: ParsedEvent) {
 
 async function handleWithdraw(db: Db, event: ParsedEvent) {
   const d = event.data as WithdrawData;
+  // TotalAssetsUpdate carries the post-write absolute total (handled
+  // separately). We only bookkeep the per-user withdraw row + shares.
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
@@ -190,12 +216,10 @@ async function handleWithdraw(db: Db, event: ParsedEvent) {
     assets: toNumericString(d.assets),
     shares: toNumericString(d.shares),
   });
-  const assets = toNumericString(d.assets);
   const shares = toNumericString(d.shares);
   await db
     .update(vaultState)
     .set({
-      total_assets: sql`${vaultState.total_assets}::numeric - ${assets}::numeric`,
       total_shares: sql`${vaultState.total_shares}::numeric - ${shares}::numeric`,
       updated_at_ledger: event.ledger,
       updated_at: new Date(),
@@ -219,13 +243,14 @@ async function handleTransfer(db: Db, event: ParsedEvent) {
 
 /**
  * Direct collateral inflow from PositionManager during liquidation /
- * loss-settlement paths that bypass pay_profit (see ADR-0001). The vault
- * has already received the tokens; we just bump our tracked total_assets
- * so the DB stays in lockstep with the on-chain balance.
+ * loss-settlement paths that bypass pay_profit (see ADR-0001). The event
+ * carries `new_total_assets` so we set the absolute value rather than
+ * incrementing — eliminates double-counting on any kind of replay.
  */
 async function handleAbsorbedCollateral(db: Db, event: ParsedEvent) {
   const d = event.data as AbsorbedCollateralData;
   const amount = toNumericString(d.amount);
+  const newTotalAssets = toNumericString(d.new_total_assets);
   await db.insert(vaultEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
@@ -236,24 +261,33 @@ async function handleAbsorbedCollateral(db: Db, event: ParsedEvent) {
     shares: "0",
   });
   await db
-    .update(vaultState)
-    .set({
-      total_assets: sql`${vaultState.total_assets}::numeric + ${amount}::numeric`,
+    .insert(vaultState)
+    .values({
+      id: SINGLETON_ID,
+      total_assets: newTotalAssets,
       updated_at_ledger: event.ledger,
-      updated_at: new Date(),
     })
-    .where(eq(vaultState.id, SINGLETON_ID));
+    .onConflictDoUpdate({
+      target: vaultState.id,
+      set: {
+        total_assets: newTotalAssets,
+        updated_at_ledger: event.ledger,
+        updated_at: new Date(),
+      },
+    });
   await recomputeFreeLiquidity(db, event.ledger);
 }
 
 /**
- * Vault paid `amount` to `trader` to settle a profitable close. Always
- * decrements vault total_assets — the loss path is handled separately by
- * handleAbsorbedCollateral (ADR-0001).
+ * Vault paid `amount` to `trader` to settle a profitable close. The event
+ * carries the post-payout absolute total_assets, so we set the value
+ * directly instead of subtracting — a replay just re-asserts the same
+ * absolute value, no double-debit.
  */
 async function handlePayProfit(db: Db, event: ParsedEvent) {
   const d = event.data as PayProfitData;
   const amount = toNumericString(d.amount);
+  const newTotalAssets = toNumericString(d.new_total_assets);
   await db.insert(payProfitEvents).values({
     tx_hash: event.txHash,
     ledger: event.ledger,
@@ -264,12 +298,51 @@ async function handlePayProfit(db: Db, event: ParsedEvent) {
   await db
     .update(vaultState)
     .set({
-      total_assets: sql`${vaultState.total_assets}::numeric - ${amount}::numeric`,
+      total_assets: newTotalAssets,
       updated_at_ledger: event.ledger,
       updated_at: new Date(),
     })
     .where(eq(vaultState.id, SINGLETON_ID));
   await recomputeFreeLiquidity(db, event.ledger);
+}
+
+/**
+ * TotalAssetsUpdate is emitted by every LP-facing entrypoint (deposit,
+ * mint, withdraw, redeem) so the indexer doesn't have to compute arithmetic
+ * deltas from the OZ deposit/withdraw events. Setting the absolute value
+ * is replay-safe.
+ */
+async function handleTotalAssetsUpdate(db: Db, event: ParsedEvent) {
+  const d = event.data as TotalAssetsUpdateData;
+  const newTotalAssets = toNumericString(d.new_total_assets);
+  await db
+    .insert(vaultState)
+    .values({
+      id: SINGLETON_ID,
+      total_assets: newTotalAssets,
+      updated_at_ledger: event.ledger,
+    })
+    .onConflictDoUpdate({
+      target: vaultState.id,
+      set: {
+        total_assets: newTotalAssets,
+        updated_at_ledger: event.ledger,
+        updated_at: new Date(),
+      },
+    });
+  await recomputeFreeLiquidity(db, event.ledger);
+}
+
+/**
+ * PnlClamped fires when PM pushed an `update_net_pnl` value outside
+ * `|pnl| ≤ total_assets` and Vault truncated it. There's no dedicated
+ * table — we log so on-call sees the bound trip.
+ */
+async function handlePnlClamped(_db: Db, event: ParsedEvent) {
+  const d = event.data as PnlClampedData;
+  console.warn(
+    `[vault] PnlClamped ledger=${event.ledger} requested=${d.requested} clamped=${d.clamped}`,
+  );
 }
 
 async function handleReserve(db: Db, event: ParsedEvent) {

@@ -15,7 +15,12 @@ interface PriceFetchData {
 interface OracleConfigUpdateData {
   staleness: bigint;
   deviation: bigint;
-  cache_duration: bigint;
+  min_required_sources: number;
+}
+
+interface OracleSourcesUpdateData {
+  symbol: string;
+  sources: string[];
 }
 
 export async function handleOracleRouterEvent(db: Db, event: ParsedEvent) {
@@ -24,6 +29,8 @@ export async function handleOracleRouterEvent(db: Db, event: ParsedEvent) {
       return handlePrice(db, event);
     case "orccfg":
       return handleOracleConfig(db, event);
+    case "orcsrc":
+      return handleOracleSources(db, event);
     default:
       break;
   }
@@ -47,6 +54,19 @@ async function handleOracleConfig(db: Db, event: ParsedEvent) {
     timestamp: unixSeconds(event.timestamp),
     staleness: toNumericString(d.staleness),
     deviation: toNumericString(d.deviation),
-    cache_duration: toNumericString(d.cache_duration),
+    min_required_sources: d.min_required_sources,
   });
+}
+
+/**
+ * OracleSourcesUpdate fires every time the admin rotates a symbol's source
+ * list. Off-chain monitoring should pick up these events to detect
+ * unauthorised rotations. For now we just log — a dedicated
+ * `oracle_source_events` table can be added if richer querying is needed.
+ */
+async function handleOracleSources(_db: Db, event: ParsedEvent) {
+  const d = event.data as OracleSourcesUpdateData;
+  console.log(
+    `[oracle-router] OracleSourcesUpdate ledger=${event.ledger} symbol=${d.symbol} sources=[${d.sources.join(",")}]`,
+  );
 }

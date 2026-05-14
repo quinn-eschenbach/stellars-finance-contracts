@@ -1,4 +1,9 @@
-import { getNetworkConfig, type ContractInfo, type Network } from "@stellars/config";
+import {
+  getNetworkConfig,
+  INDEXER_POLL_INTERVAL_MS,
+  type ContractInfo,
+  type Network,
+} from "@stellars/config";
 
 export interface IndexerConfig {
   databaseUrl: string;
@@ -25,7 +30,7 @@ export function loadConfig(): IndexerConfig {
     network,
     rpcUrl: networkConfig.rpcUrl,
     networkPassphrase: networkConfig.networkPassphrase,
-    pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 3000),
+    pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? INDEXER_POLL_INTERVAL_MS),
     healthPort: Number(process.env.HEALTH_PORT ?? 3001),
     tickers: networkConfig.tickers,
     contracts: {

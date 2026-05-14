@@ -31,6 +31,10 @@ interface DecreasePositionData {
   funding_fee: bigint;
   mark_price: bigint;
   is_full_close: boolean;
+  /** Absolute post-decrease size + collateral so the indexer can set
+   *  positions table values directly without arithmetic deltas. */
+  new_total_size: bigint;
+  new_total_collateral: bigint;
 }
 
 interface LiquidateData {
@@ -235,30 +239,22 @@ async function handleDecrease(db: Db, event: ParsedEvent) {
       .delete(positions)
       .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
   } else {
-    const existing = await db
-      .select()
-      .from(positions)
-      .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)))
-      .limit(1);
-    if (existing.length > 0) {
-      const pos = existing[0];
-      const oldSize = BigInt(pos.size);
-      const delta = BigInt(toNumericString(d.size_delta));
-      const newSize = oldSize - delta;
-      const newCollateral = oldSize > 0n
-        ? (BigInt(pos.collateral) * newSize) / oldSize
-        : 0n;
-      await db
-        .update(positions)
-        .set({
-          size: String(newSize),
-          collateral: String(newCollateral),
-          updated_at_ledger: event.ledger,
-          updated_at_tx: event.txHash,
-          updated_at: new Date(),
-        })
-        .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
-    }
+    // Write absolute values from the event payload instead of re-deriving
+    // via (oldSize - delta) + proportional-collateral math. The contract
+    // has already done that calculation; we just persist its result, which
+    // makes a replay set the same row twice rather than double-debit.
+    const newSize = toNumericString(d.new_total_size);
+    const newCollateral = toNumericString(d.new_total_collateral);
+    await db
+      .update(positions)
+      .set({
+        size: newSize,
+        collateral: newCollateral,
+        updated_at_ledger: event.ledger,
+        updated_at_tx: event.txHash,
+        updated_at: new Date(),
+      })
+      .where(and(eq(positions.trader, d.trader), eq(positions.symbol, d.symbol)));
   }
 
   await db.insert(trades).values({
