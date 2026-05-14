@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@stellars/config": "workspace:*",
     "@stellars/db": "workspace:*",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.38.0",

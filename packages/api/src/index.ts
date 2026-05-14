@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
+import { sql } from "drizzle-orm";
 import { getDb } from "@stellars/db";
 import { loadConfig } from "./config.js";
 import { Broadcaster } from "./broadcaster.js";
@@ -23,7 +24,22 @@ async function main() {
   // All API routes live under /api so the same server can serve the SPA at
   // /. In dev the vite proxy passes `/api/*` straight through; the dev path
   // and prod path now share semantics.
-  app.get("/api/healthz", (c) => c.json({ ok: true }));
+  //
+  // Healthz actually probes upstream dependencies. A 200 here promises the
+  // API can serve queries; without the DB ping and the broadcaster check
+  // it would be just "process is alive", which masks degraded states from
+  // k8s/load-balancers.
+  app.get("/api/healthz", async (c) => {
+    try {
+      await db.execute(sql`SELECT 1`);
+    } catch (err) {
+      return c.json({ ok: false, reason: `db: ${(err as Error).message}` }, 503);
+    }
+    if (!broadcaster.connected) {
+      return c.json({ ok: false, reason: "broadcaster disconnected" }, 503);
+    }
+    return c.json({ ok: true });
+  });
   app.route("/api", buildRestRoutes(db));
   app.route("/api/stream", buildSseRoutes(db, broadcaster));
 

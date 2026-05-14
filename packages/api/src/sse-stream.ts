@@ -1,6 +1,10 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { CHANNELS, type ChannelPayloads } from "@stellars/db";
+import {
+  SSE_BUFFER_MAX_LEN,
+  SSE_HEARTBEAT_INTERVAL_MS,
+} from "@stellars/config";
 import type { Notification, Subscribable } from "./broadcaster.js";
 
 /**
@@ -48,12 +52,21 @@ export function streamFromChannel<K extends ChannelKey>(
   opts: StreamFromChannelOpts<K>,
 ) {
   return streamSSE(c, async (s) => {
-    const queue = makeQueue<Notification>();
+    const queue = makeQueue<Notification>(SSE_BUFFER_MAX_LEN);
     const unsub = await br.subscribe(CHANNELS[opts.channelKey], (n) => {
       const payload = n.payload as ChannelPayloads[K] | null;
       if (opts.filter && !opts.filter(payload)) return;
       queue.push(n);
     });
+    // 15s heartbeat keeps the connection alive through load balancers /
+    // proxies that idle-close silent streams. Browsers also use ping events
+    // to detect a dead connection earlier than the TCP timeout.
+    const heartbeat = setInterval(() => {
+      s.writeSSE({ event: "ping", data: "" }).catch(() => {
+        // Write failures here mean the stream is dead — the for-await loop
+        // will surface that on its next iteration; nothing for us to do here.
+      });
+    }, SSE_HEARTBEAT_INTERVAL_MS);
     // s.onAbort fires when the client disconnects (or hono aborts the
     // stream); closing the queue unblocks the for-await so the `finally`
     // below runs and unsub() removes our broadcaster handle.
@@ -61,11 +74,20 @@ export function streamFromChannel<K extends ChannelKey>(
     try {
       for await (const n of queue) {
         const payload = n.payload as ChannelPayloads[K] | null;
+        // A broadcaster resync notification means the LISTEN socket
+        // reconnected — the client may have missed events while we were
+        // down. Surface as an SSE `resync` event so the consumer can
+        // re-fetch state.
+        if (payload && typeof payload === "object" && "__resync" in payload) {
+          await s.writeSSE({ event: "resync", data: "" });
+          continue;
+        }
         const ev = await opts.project(payload);
         if (!ev) continue;
         await s.writeSSE({ event: ev.event, id: ev.id, data: JSON.stringify(ev.data) });
       }
     } finally {
+      clearInterval(heartbeat);
       unsub();
     }
   });
@@ -77,16 +99,30 @@ export function streamFromChannel<K extends ChannelKey>(
  * for-await, close to unblock a pending next()." Promoting it to a public
  * module would buy nothing today (one consumer); keeping it local keeps the
  * abort/cleanup invariants concentrated here.
+ *
+ * `maxLen` caps the buffered backlog so a slow consumer + busy channel
+ * cannot OOM the API. Drop-oldest policy: the newest events are the most
+ * relevant to a real-time SSE consumer, so we discard the oldest pending
+ * notifications when overrun.
  */
-function makeQueue<T>(): AsyncIterable<T> & { push: (v: T) => void; close: () => void } {
+function makeQueue<T>(maxLen: number): AsyncIterable<T> & { push: (v: T) => void; close: () => void } {
   const buf: T[] = [];
   const waiters: Array<(v: IteratorResult<T>) => void> = [];
   let closed = false;
+  let dropped = 0;
   const push = (v: T) => {
     if (closed) return;
     if (waiters.length > 0) {
       waiters.shift()!({ value: v, done: false });
     } else {
+      if (buf.length >= maxLen) {
+        // Drop oldest. Count drops to surface in logs periodically.
+        buf.shift();
+        dropped += 1;
+        if (dropped === 1 || dropped % 100 === 0) {
+          console.warn(`[sse-stream] queue overflow — dropped=${dropped}`);
+        }
+      }
       buf.push(v);
     }
   };

@@ -31,18 +31,26 @@ export interface Subscribable {
 
 export class Broadcaster implements Subscribable {
   private client: pg.Client;
+  private databaseUrl: string;
   private subscribers: Map<string, Set<Subscriber>> = new Map();
   private listening: Set<string> = new Set();
-  private connected = false;
+  private connectedFlag = false;
+  private shuttingDown = false;
+  private reconnectAttempt = 0;
 
   constructor(databaseUrl: string) {
-    this.client = new pg.Client({ connectionString: databaseUrl });
+    this.databaseUrl = databaseUrl;
+    this.client = this.makeClient();
   }
 
-  async connect(): Promise<void> {
-    if (this.connected) return;
-    await this.client.connect();
-    this.client.on("notification", (msg) => {
+  /** Public read-only view of connection state — used by /healthz. */
+  get connected(): boolean {
+    return this.connectedFlag && !this.shuttingDown;
+  }
+
+  private makeClient(): pg.Client {
+    const client = new pg.Client({ connectionString: this.databaseUrl });
+    client.on("notification", (msg) => {
       const channel = msg.channel;
       const payload = msg.payload ? safeJsonParse(msg.payload) : null;
       const subs = this.subscribers.get(channel);
@@ -55,12 +63,73 @@ export class Broadcaster implements Subscribable {
         }
       }
     });
-    this.connected = true;
+    // Register error + end handlers and trigger reconnect. Without these
+    // a 5-second TCP blip silently kills every SSE stream.
+    client.on("error", (err) => {
+      console.error(`[broadcaster] pg client error: ${err.message}`);
+      this.handleDisconnect();
+    });
+    client.on("end", () => {
+      console.warn("[broadcaster] pg client ended");
+      this.handleDisconnect();
+    });
+    return client;
+  }
+
+  private handleDisconnect(): void {
+    if (this.shuttingDown) return;
+    if (!this.connectedFlag) return;
+    this.connectedFlag = false;
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
+    if (this.shuttingDown) return;
+    this.reconnectAttempt += 1;
+    // Exponential backoff with a 30s cap and small jitter.
+    const baseMs = 500 * Math.pow(2, Math.min(this.reconnectAttempt, 6));
+    const cappedMs = Math.min(baseMs, 30_000);
+    const delayMs = Math.floor(cappedMs + Math.random() * 200);
+    console.log(`[broadcaster] reconnecting in ${delayMs}ms (attempt ${this.reconnectAttempt})`);
+    setTimeout(async () => {
+      if (this.shuttingDown) return;
+      try {
+        this.client = this.makeClient();
+        await this.client.connect();
+        // Re-issue LISTEN for every previously subscribed channel.
+        for (const channel of this.listening) {
+          await this.client.query(`LISTEN ${pgIdent(channel)}`);
+        }
+        this.connectedFlag = true;
+        this.reconnectAttempt = 0;
+        // Notify subscribers that they may have missed events while we were
+        // gone. Each subscriber is responsible for re-fetching state.
+        for (const [channel, subs] of this.subscribers) {
+          for (const sub of subs) {
+            try {
+              sub({ channel, payload: { __resync: true } });
+            } catch (err) {
+              console.error(`[broadcaster] resync delivery to ${channel} threw:`, err);
+            }
+          }
+        }
+        console.log(`[broadcaster] reconnected, re-LISTENed ${this.listening.size} channels`);
+      } catch (err) {
+        console.error(`[broadcaster] reconnect failed: ${(err as Error).message}`);
+        this.scheduleReconnect();
+      }
+    }, delayMs);
+  }
+
+  async connect(): Promise<void> {
+    if (this.connectedFlag) return;
+    await this.client.connect();
+    this.connectedFlag = true;
   }
 
   /** Subscribe to a channel. Returns an unsubscribe function. */
   async subscribe(channel: string, fn: Subscriber): Promise<() => void> {
-    if (!this.connected) await this.connect();
+    if (!this.connectedFlag) await this.connect();
     if (!this.listening.has(channel)) {
       await this.client.query(`LISTEN ${pgIdent(channel)}`);
       this.listening.add(channel);
@@ -77,9 +146,10 @@ export class Broadcaster implements Subscribable {
   }
 
   async close(): Promise<void> {
-    if (!this.connected) return;
+    this.shuttingDown = true;
+    if (!this.connectedFlag) return;
     await this.client.end();
-    this.connected = false;
+    this.connectedFlag = false;
   }
 }
 
