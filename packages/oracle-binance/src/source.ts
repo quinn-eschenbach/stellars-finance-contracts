@@ -1,4 +1,5 @@
 import type { PriceSource } from "@stellars/oracle-base";
+import { ORACLE_FETCH_TIMEOUT_MS, ORACLE_USER_AGENT } from "@stellars/config";
 
 /**
  * Map protocol tickers (BTCUSD) to Binance's spot symbols (BTCUSDT).
@@ -12,11 +13,26 @@ const SYMBOL_MAP: Record<string, string> = {
   XLMUSD: "XLMUSDT",
 };
 
-const ENDPOINT = "https://api.binance.com/api/v3/ticker/price";
+/**
+ * Use bookTicker mid instead of `ticker/price` (last trade). lastPrice on
+ * thin venues is movable by a single market order; the bid/ask mid is
+ * anchored to the depth of book on both sides.
+ */
+const ENDPOINT = "https://api.binance.com/api/v3/ticker/bookTicker";
 
-interface BinanceTickerResponse {
+interface BinanceBookTickerResponse {
   symbol: string;
-  price: string;
+  bidPrice: string;
+  bidQty: string;
+  askPrice: string;
+  askQty: string;
+}
+
+async function fetchWithTimeout(url: string): Promise<Response> {
+  return fetch(url, {
+    signal: AbortSignal.timeout(ORACLE_FETCH_TIMEOUT_MS),
+    headers: { "User-Agent": ORACLE_USER_AGENT },
+  });
 }
 
 export const binanceSource: PriceSource = {
@@ -27,15 +43,24 @@ export const binanceSource: PriceSource = {
       throw new Error(`binance: no symbol mapping for ticker ${ticker}`);
     }
     const url = `${ENDPOINT}?symbol=${encodeURIComponent(cexSymbol)}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) {
-      throw new Error(`binance: HTTP ${res.status} for ${cexSymbol}`);
+      // 429 / 418 / Retry-After: surface upstream so the loop can back off.
+      const retryAfter = res.headers.get("retry-after");
+      const suffix = retryAfter ? ` retry-after=${retryAfter}` : "";
+      throw new Error(`binance: HTTP ${res.status} for ${cexSymbol}${suffix}`);
     }
-    const json = (await res.json()) as BinanceTickerResponse;
-    const price = Number.parseFloat(json.price);
-    if (!Number.isFinite(price) || price <= 0) {
-      throw new Error(`binance: bad price '${json.price}' for ${cexSymbol}`);
+    const json = (await res.json()) as BinanceBookTickerResponse;
+    const bid = Number.parseFloat(json.bidPrice);
+    const ask = Number.parseFloat(json.askPrice);
+    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0) {
+      throw new Error(
+        `binance: bad bookTicker bid=${json.bidPrice} ask=${json.askPrice} for ${cexSymbol}`,
+      );
     }
-    return price;
+    if (ask < bid) {
+      throw new Error(`binance: crossed book ask=${ask} < bid=${bid} for ${cexSymbol}`);
+    }
+    return (bid + ask) / 2;
   },
 };

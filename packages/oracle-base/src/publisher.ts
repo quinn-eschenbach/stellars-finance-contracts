@@ -1,10 +1,11 @@
 import { Client as OracleClient } from "@stellars/bindings/oracle";
 import { client } from "@stellars/protocol-clients";
 import { keypairSigner } from "@stellars/protocol-clients/node";
-import type { OracleEnv } from "./config.js";
+import { PRECISION as CONFIG_PRECISION } from "@stellars/config";
+import { scrubOracleEnv, type OracleEnv } from "./config.js";
 
 /** Contract-side fixed-point scaling: prices stored as i128 = floor(usd * 1e7). */
-export const PRECISION = 10_000_000n;
+export const PRECISION = CONFIG_PRECISION;
 
 export interface OraclePublisher {
   publicKey: string;
@@ -14,6 +15,10 @@ export interface OraclePublisher {
 
 export function createPublisher(env: OracleEnv): OraclePublisher {
   const signer = keypairSigner(env.oracleSecret, env.networkPassphrase);
+  // Scrub the seed from the long-lived OracleEnv object now that the
+  // Keypair-bearing signer has been derived. Subsequent heap dumps,
+  // serialisation of `env`, or accidental console.log(env) will not leak it.
+  scrubOracleEnv(env);
   const oracleClient = client(
     OracleClient,
     { rpcUrl: env.rpcUrl, networkPassphrase: env.networkPassphrase },

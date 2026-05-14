@@ -93,7 +93,28 @@ async function tickOnce(
     return;
   }
 
-  if (!shouldPush(lastPush.get(ticker), scaled, policy)) return;
+  const prev = lastPush.get(ticker);
+
+  // Reject outlier ticks before they can be published. A single bad CEX
+  // print that moves >maxDeltaBpsPerTick from the prior fresh price is
+  // dropped here and the next poll re-evaluates.
+  if (prev) {
+    const deltaBps = absDeltaBps(scaled, prev.scaledPrice);
+    if (deltaBps > BigInt(policy.maxDeltaBpsPerTick)) {
+      console.error(
+        `${tag} reject ${ticker} delta=${deltaBps}bps > maxDeltaBpsPerTick=${policy.maxDeltaBpsPerTick}bps (usd=${usd.toFixed(4)} prev=${prev.scaledPrice})`,
+      );
+      return;
+    }
+    // Minimum interval between two consecutive pushes for the same symbol.
+    // Even if the price drifted enough, throttle the on-chain push.
+    const sinceLastPushMs = Date.now() - prev.at;
+    if (sinceLastPushMs < policy.minIntervalBetweenPushesMs) {
+      return;
+    }
+  }
+
+  if (!shouldPush(prev, scaled, policy)) return;
 
   try {
     await publisher.setPrice(ticker, scaled);
@@ -104,6 +125,12 @@ async function tickOnce(
   }
 }
 
+function absDeltaBps(a: bigint, b: bigint): bigint {
+  if (b <= 0n) return 0n;
+  const diff = a > b ? a - b : b - a;
+  return (diff * 10_000n) / b;
+}
+
 function shouldPush(prev: LastPush | undefined, next: bigint, policy: PushPolicy): boolean {
   if (!prev) return true;
   const ageMs = Date.now() - prev.at;
@@ -111,8 +138,7 @@ function shouldPush(prev: LastPush | undefined, next: bigint, policy: PushPolicy
   // Compare against the *previous* price as the denominator — this matches how
   // the OracleRouter computes deviation, so our publisher won't accidentally
   // sit on a price the router would reject as drifted.
-  const diff = next > prev.scaledPrice ? next - prev.scaledPrice : prev.scaledPrice - next;
-  const deltaBps = (diff * 10_000n) / prev.scaledPrice;
+  const deltaBps = absDeltaBps(next, prev.scaledPrice);
   return deltaBps >= BigInt(policy.pushOnDeltaBps);
 }
 

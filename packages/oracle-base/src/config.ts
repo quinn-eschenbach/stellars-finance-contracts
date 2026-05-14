@@ -23,6 +23,15 @@ export function loadOracleEnv(args: { secretEnv: string; oracleContract: string 
   if (!oracleSecret) {
     throw new Error(`${args.secretEnv} environment variable is required`);
   }
+  // Refuse to start in production unless the operator explicitly opts in
+  // to plaintext secret material. The expected path is a secrets manager
+  // (Infisical, KMS, Vault Transit) injecting the value, NOT a static .env.
+  // ALLOW_PLAINTEXT_KEY=1 documents that the operator knows the risk.
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PLAINTEXT_KEY !== "1") {
+    throw new Error(
+      `${args.secretEnv}: plaintext seed in NODE_ENV=production requires ALLOW_PLAINTEXT_KEY=1`,
+    );
+  }
   if (!args.oracleContract) {
     throw new Error(
       "oracle contract address is empty — run scripts/deploy-cex-oracles.sh first",
@@ -36,4 +45,16 @@ export function loadOracleEnv(args: { secretEnv: string; oracleContract: string 
     oracleSecret,
     oracleContract: args.oracleContract,
   };
+}
+
+/**
+ * Best-effort wipe of a string in place. JS strings are immutable in the
+ * language model — this is purely defensive cleanup of an env-var derived
+ * value where we want to drop the reference and trim retained heap. The
+ * real defense is the secrets-manager + KMS path; this function only stops
+ * us from leaking the secret via a stale `OracleEnv` long-lived reference.
+ */
+export function scrubOracleEnv(env: OracleEnv): void {
+  // Replace the string with an empty one so subsequent reads see nothing.
+  (env as { oracleSecret: string }).oracleSecret = "";
 }

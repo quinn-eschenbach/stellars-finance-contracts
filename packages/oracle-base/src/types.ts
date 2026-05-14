@@ -1,3 +1,9 @@
+import {
+  ORACLE_MAX_DELTA_BPS_PER_TICK,
+  ORACLE_MIN_INTERVAL_BETWEEN_PUSHES_MS,
+  ORACLE_POLL_INTERVAL_MS,
+} from "@stellars/config";
+
 /**
  * A price source fetches the current spot price for a protocol ticker
  * (e.g. "BTCUSD") and returns it as a USD number. Each source handles its
@@ -25,16 +31,30 @@ export interface PriceSource {
  *
  * The CEX is polled every `pollIntervalMs` regardless; thresholds only
  * gate the on-chain submission to keep fee burn predictable.
+ *
+ * `maxDeltaBpsPerTick` is a HARD upper bound — if the upstream CEX returns
+ * a price that moved more than this since the last fresh tick, we reject
+ * the tick entirely (do NOT publish) and log. This stops a single outlier
+ * print from poisoning the on-chain median.
  */
 export interface PushPolicy {
   pollIntervalMs: number;
   pushOnDeltaBps: number;
   pushOnStaleSec: number;
+  /** Reject any tick whose delta vs the prior price exceeds this. */
+  maxDeltaBpsPerTick: number;
+  /** Minimum interval between consecutive on-chain pushes per symbol. */
+  minIntervalBetweenPushesMs: number;
 }
 
-/** Default policy — 1s poll, 5 bps move OR 5 s staleness triggers a push. */
+/**
+ * Default policy. Values come from @stellars/config so every off-chain
+ * service shares the same source of truth.
+ */
 export const DEFAULT_POLICY: PushPolicy = {
-  pollIntervalMs: 1_000,
+  pollIntervalMs: ORACLE_POLL_INTERVAL_MS,
   pushOnDeltaBps: 5,
   pushOnStaleSec: 5,
+  maxDeltaBpsPerTick: ORACLE_MAX_DELTA_BPS_PER_TICK,
+  minIntervalBetweenPushesMs: ORACLE_MIN_INTERVAL_BETWEEN_PUSHES_MS,
 };
