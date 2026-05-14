@@ -60,6 +60,45 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+# Mainnet guardrails.
+#   1. Typed confirmation prompt — no accidental `NETWORK_KEY=mainnet make deploy`
+#      run-throughs.
+#   2. Idempotency: refuse if addresses.json already has mainnet contracts.
+#      Use scripts/upgrade.sh for re-deploys.
+#   3. Role separation: ADMIN must not be deploying with UPGRADER + PAUSER
+#      bundled in. The caller must explicitly supply UPGRADER_ADDR and
+#      PAUSER_ADDR as separate accounts.
+if [[ "$NETWORK_KEY" == "mainnet" ]]; then
+  read -r -p "type MAINNET to confirm deploy to mainnet: " _confirm
+  if [[ "$_confirm" != "MAINNET" ]]; then
+    echo "❌ Aborted — confirmation string did not match."
+    exit 1
+  fi
+  existing=$(jq -r '.mainnet.contracts.vault.address // empty' "$ADDRESSES_FILE" 2>/dev/null || true)
+  if [[ -n "$existing" ]]; then
+    echo "❌ Mainnet already has a vault deployed at $existing."
+    echo "    Use scripts/upgrade.sh for redeploys, or hand-edit addresses.json if rotating."
+    exit 1
+  fi
+  if [[ -z "${UPGRADER_ADDR:-}" ]] || [[ -z "${PAUSER_ADDR:-}" ]]; then
+    echo "❌ Mainnet deploy requires UPGRADER_ADDR and PAUSER_ADDR to be distinct from ADMIN."
+    echo "    Set both env vars before running."
+    exit 1
+  fi
+  if [[ "$UPGRADER_ADDR" == "$ADMIN_ADDR" ]] || [[ "$PAUSER_ADDR" == "$ADMIN_ADDR" ]]; then
+    echo "❌ UPGRADER_ADDR and PAUSER_ADDR must NOT equal the admin address."
+    exit 1
+  fi
+fi
+
+# Backup addresses.json before mutation so a botched run can be reverted
+# with a single mv.
+if [[ -f "$ADDRESSES_FILE" ]]; then
+  backup="$ADDRESSES_FILE.bak.$(date +%s)"
+  cp "$ADDRESSES_FILE" "$backup"
+  echo "Backed up addresses.json → $backup"
+fi
+
 current_ledger() {
   curl -sf "$RPC_URL" \
     -X POST -H 'Content-Type: application/json' \
@@ -91,20 +130,44 @@ echo "Admin:  $ADMIN_ADDR"
 echo "Keeper: $KEEPER_ADDR"
 
 # ---------- Build ----------
+# Explicitly run the optimize target so the script resolves `.optimized.wasm`
+# below. The Makefile's `deploy` target also depends on `optimize` but
+# operators sometimes invoke this script directly; this keeps the
+# prerequisite local.
 echo ""
-echo "=== Building WASMs ==="
-(cd "$ROOT" && make build)
+echo "=== Building + optimizing WASMs ==="
+(cd "$ROOT" && make optimize)
 
 # ---------- Helper ----------
 deploy() {
   local name=$1
-  local wasm="$WASM_DIR/$(echo "$name" | tr '-' '_').wasm"
-  echo "Deploying $name..." >&2
-  stellar contract deploy \
+  local wasm="$WASM_DIR/$(echo "$name" | tr '-' '_').optimized.wasm"
+  if [[ ! -f "$wasm" ]]; then
+    echo "❌ Optimized WASM missing: $wasm" >&2
+    echo "    Run 'make optimize' first." >&2
+    exit 1
+  fi
+  echo "Deploying $name (optimized)..." >&2
+  local contract_id
+  contract_id=$(stellar contract deploy \
     --wasm "$wasm" \
     --source admin \
     --rpc-url "$RPC_URL" \
-    --network-passphrase "$NETWORK_PASSPHRASE"
+    --network-passphrase "$NETWORK_PASSPHRASE")
+  # Post-deploy WASM hash verification. Confirm the on-chain bytecode matches
+  # the file we built — catches a registry/proxy-injection where the deployed
+  # code differs from what we sha256'd.
+  local expected_hash actual_hash
+  expected_hash=$(shasum -a 256 "$wasm" | awk '{print $1}')
+  actual_hash=$(stellar contract info build-meta --id "$contract_id" \
+    --rpc-url "$RPC_URL" \
+    --network-passphrase "$NETWORK_PASSPHRASE" 2>/dev/null \
+    | grep -oE 'sha256[: ]+[0-9a-f]+' | awk -F'[: ]+' '{print $2}' || true)
+  if [[ -n "$actual_hash" ]] && [[ "$expected_hash" != "$actual_hash" ]]; then
+    echo "❌ WASM hash mismatch for $name: expected=$expected_hash actual=$actual_hash" >&2
+    exit 1
+  fi
+  echo "$contract_id"
 }
 
 invoke() {
@@ -151,8 +214,9 @@ echo "  config-manager.initialize(admin)"
 invoke --id "$CM_ID" -- initialize \
   --admin_address "$ADMIN_ADDR"
 
-echo "  oracle-router.initialize(config_manager)"
+echo "  oracle-router.initialize(admin, config_manager)"
 invoke --id "$OR_ID" -- initialize \
+  --admin "$ADMIN_ADDR" \
   --config_manager_address "$CM_ID"
 
 echo "  oracle.initialize(config_manager)"

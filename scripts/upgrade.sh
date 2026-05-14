@@ -87,8 +87,19 @@ invoke() {
 }
 
 # ---------- Build ----------
-echo "=== Building WASMs ==="
-(cd "$ROOT" && make build)
+# Upgrade ships the optimized WASM, not the bloated raw output.
+echo "=== Building + optimizing WASMs ==="
+(cd "$ROOT" && make optimize)
+
+# Mainnet confirmation prompt. A single typo in NETWORK_KEY would otherwise
+# push fresh bytecode to mainnet without any operator awareness.
+if [[ "$NETWORK_KEY" == "mainnet" ]]; then
+  read -r -p "type MAINNET to confirm upgrade on mainnet: " _confirm
+  if [[ "$_confirm" != "MAINNET" ]]; then
+    echo "❌ Aborted — confirmation string did not match."
+    exit 1
+  fi
+fi
 
 # ---------- Upgrade each ----------
 echo ""
@@ -96,9 +107,9 @@ echo "=== Upgrading contracts on '$NETWORK_KEY' (operator $ADMIN_ADDR) ==="
 for entry in "${TARGETS[@]}"; do
   wasm_name="${entry%%:*}"
   addr_key="${entry##*:}"
-  wasm_path="$WASM_DIR/$(echo "$wasm_name" | tr '-' '_').wasm"
+  wasm_path="$WASM_DIR/$(echo "$wasm_name" | tr '-' '_').optimized.wasm"
   if [[ ! -f "$wasm_path" ]]; then
-    echo "❌ WASM not found: $wasm_path"
+    echo "❌ Optimized WASM not found: $wasm_path — run 'make optimize' first"
     exit 1
   fi
   contract_id=$(jq -r --arg n "$NETWORK_KEY" --arg k "$addr_key" '.[$n].contracts[$k].address' "$ADDRESSES_FILE")
