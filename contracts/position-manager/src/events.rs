@@ -31,6 +31,10 @@ pub struct DecreasePosition {
     pub funding_fee: i128,
     pub mark_price: i128,
     pub is_full_close: bool,
+    /// Absolute position size after this decrease.
+    pub new_total_size: i128,
+    /// Absolute position collateral after this decrease.
+    pub new_total_collateral: i128,
 }
 
 #[contractevent(topics = ["liq"], data_format = "vec")]
@@ -114,3 +118,23 @@ pub struct Pause {
     pub is_paused: bool,
     pub caller: Address,
 }
+
+#[contractevent(topics = ["mkt_dis"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketDisabled {
+    #[topic]
+    pub symbol: Symbol,
+    pub caller: Address,
+}
+
+#[contractevent(topics = ["mkt_ena"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketEnabled {
+    #[topic]
+    pub symbol: Symbol,
+    pub caller: Address,
+}
+
+// Upgrade events live in `interfaces::events` — the
+// `TimelockedUpgradeable` trait's default methods emit them, so no
+// per-contract definition is needed here.

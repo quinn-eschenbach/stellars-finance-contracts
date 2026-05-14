@@ -17,6 +17,7 @@ use crate::math;
 use crate::storage;
 use crate::tick::{MarketTick, PositionEvaluation};
 use crate::types::Position;
+use crate::vault_view::VaultView;
 
 /// Reason a Close was triggered. Determines fee distribution.
 pub enum CloseType {
@@ -31,7 +32,9 @@ pub enum CloseType {
 // ---------------------------------------------------------------------------
 
 pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_delta: i128) {
-    let market_tick = MarketTick::refresh(env, symbol);
+    let vault_addr = storage::get_vault_address(env);
+    let view = VaultView::refresh(env, &vault_addr);
+    let market_tick = MarketTick::refresh(env, symbol, &view);
     let mark_price = market_tick.mark_price;
 
     let pos = storage::get_position(env, trader, symbol)
@@ -44,8 +47,13 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         panic_with_error!(env, PositionManagerError::PositionNotOldEnough);
     }
 
-    // Clamp to position size.
-    let actual_delta = if size_delta >= pos.size { pos.size } else { size_delta };
+    // Reject over-close rather than silently clamping. Callers explicitly
+    // request a size; an over-large delta indicates a bug or stale client
+    // state and must surface as an error.
+    if size_delta > pos.size {
+        panic_with_error!(env, PositionManagerError::SizeDeltaExceedsPosition);
+    }
+    let actual_delta = size_delta;
     let is_full_close = actual_delta == pos.size;
 
     // Proportional collateral.
@@ -70,6 +78,8 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         None,
     );
 
+    let new_total_size = pos.size - actual_delta;
+    let new_total_collateral = if is_full_close { 0 } else { pos.collateral - collateral_delta };
     events::DecreasePosition {
         trader: trader.clone(),
         symbol: symbol.clone(),
@@ -79,6 +89,8 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
         funding_fee: eval.funding_fee,
         mark_price,
         is_full_close,
+        new_total_size,
+        new_total_collateral,
     }
     .publish(env);
 }
@@ -88,7 +100,9 @@ pub fn do_decrease_position(env: &Env, trader: &Address, symbol: &Symbol, size_d
 // ---------------------------------------------------------------------------
 
 pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symbol: &Symbol) {
-    let market_tick = MarketTick::refresh(env, symbol);
+    let vault_addr = storage::get_vault_address(env);
+    let view = VaultView::refresh(env, &vault_addr);
+    let market_tick = MarketTick::refresh(env, symbol, &view);
     let mark_price = market_tick.mark_price;
 
     let pos = storage::get_position(env, trader, symbol)
@@ -97,7 +111,7 @@ pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symb
     let eval = market_tick.evaluate(&pos, pos.size, pos.collateral);
 
     let limits = load_limits(env);
-    let threshold_amount = pos.collateral * (limits.liquidation_threshold_bps as i128) / math::BPS;
+    let threshold_amount = pos.collateral * (limits.liquidation_threshold_bps as i128) / shared::constants::BPS;
     if eval.health >= threshold_amount {
         panic_with_error!(env, PositionManagerError::HealthFactorOk);
     }
@@ -137,23 +151,30 @@ pub fn do_liquidate_position(env: &Env, caller: &Address, trader: &Address, symb
 // ---------------------------------------------------------------------------
 
 pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
-    let market_tick = MarketTick::refresh(env, symbol);
-    let mark_price = market_tick.mark_price;
-
-    // Check ADL trigger conditions: PnL-based OR utilization-based.
+    // Vault snapshot first — both ADL trigger ratios use the safe (PnL-
+    // excluded) basis so an oracle wick cannot shrink the denominator and
+    // spuriously fire ADL. Same defense as the audit C-2 utilization fix,
+    // applied here to close the remaining ADL path that was using raw
+    // `total_assets`.
+    //
+    // Sensitivity note: `safe_basis = total_assets - unclaimed_fees` is
+    // strictly ≤ `total_assets`, so both ADL ratios are now *more sensitive*
+    // — ADL fires slightly more aggressively for a given combined_pnl or
+    // reserved level. The magnitude depends on the unclaimed_fees buildup,
+    // which is bounded by Vault's `accrue_fees` invariant
+    // (`unclaimed_fees + reserved <= total_assets`) and reset by admin
+    // `claim_fees` calls. Operators should treat the ADL thresholds in
+    // `ProtocolLimits` as upper bounds on the safe-basis ratio, not on the
+    // raw `total_assets` ratio.
     let vault_addr = storage::get_vault_address(env);
-    let vault = VaultClient::new(env, &vault_addr);
-    let total_reserved = vault.reserved_usdc();
-    let total_assets = vault.total_assets();
+    let view = VaultView::refresh(env, &vault_addr);
+    let market_tick = MarketTick::refresh(env, symbol, &view);
+    let mark_price = market_tick.mark_price;
 
     let limits = load_limits(env);
     let combined_pnl = storage::get_realized_pnl(env) + storage::get_total_unrealized_pnl(env);
-    let pnl_ratio = if total_assets > 0 && combined_pnl > 0 {
-        combined_pnl * math::BPS / total_assets
-    } else {
-        0
-    };
-    let utilization = math::calc_utilization_bps(total_reserved, total_assets);
+    let pnl_ratio = view.adl_pnl_ratio_bps(combined_pnl);
+    let utilization = view.utilization_bps();
 
     if pnl_ratio <= limits.adl_pnl_bps as i128 && utilization <= limits.adl_utilization_bps as i128
     {
@@ -200,7 +221,9 @@ pub fn do_deleverage_position(env: &Env, trader: &Address, symbol: &Symbol) {
 // ---------------------------------------------------------------------------
 
 pub fn do_execute_order(env: &Env, keeper: &Address, trader: &Address, symbol: &Symbol) {
-    let market_tick = MarketTick::refresh(env, symbol);
+    let vault_addr = storage::get_vault_address(env);
+    let view = VaultView::refresh(env, &vault_addr);
+    let market_tick = MarketTick::refresh(env, symbol, &view);
     let mark_price = market_tick.mark_price;
 
     let pos = storage::get_position(env, trader, symbol)
@@ -287,15 +310,40 @@ pub(crate) fn execute_close(
 
     // ----- Cluster 1: settlement -----
 
+    // Strict zero-sum funding. When this position is on the
+    // receiver side, scale its funding accrual by min(payer_oi, receiver_oi)
+    // / receiver_oi so total received cannot exceed total paid.
+    //   - funding_fee > 0  → position receives funding → scale
+    //   - funding_fee <= 0 → position pays funding → no adjustment
+    // Receiver side OI: pos.is_long ? long_oi : short_oi (this position's side).
+    // Payer side OI: opposite. We use the AFTER-decrement OI implied by the
+    // tick snapshot, which is fine for the per-position fee computation.
+    let zero_sum_funding = if eval.funding_fee > 0 {
+        let (payer_oi, receiver_oi) = if pos.is_long {
+            (market.short_open_interest, market.long_open_interest)
+        } else {
+            (market.long_open_interest, market.short_open_interest)
+        };
+        if receiver_oi <= 0 {
+            0
+        } else if payer_oi >= receiver_oi {
+            eval.funding_fee
+        } else {
+            eval.funding_fee * payer_oi / receiver_oi
+        }
+    } else {
+        eval.funding_fee
+    };
+
     // Funding-cut comes off the trader's funding accrual when funding is
     // positive (longs paid shorts and the protocol takes its slice).
-    let funding_protocol_cut = if eval.funding_fee > 0 {
+    let funding_protocol_cut = if zero_sum_funding > 0 {
         let limits = load_limits(env);
-        eval.funding_fee * (limits.funding_cut_bps as i128) / math::BPS
+        zero_sum_funding * (limits.funding_cut_bps as i128) / shared::constants::BPS
     } else {
         0
     };
-    let effective_funding = eval.funding_fee - funding_protocol_cut;
+    let effective_funding = zero_sum_funding - funding_protocol_cut;
 
     // Recompute health with the cut deducted.
     let health = math::calc_health(collateral_delta, eval.pnl, eval.borrow_fee, effective_funding);
@@ -319,9 +367,12 @@ pub(crate) fn execute_close(
         vault.pay_profit(&contract_addr, trader, &vault_to_trader);
     }
     if pm_to_vault > 0 {
-        // Loss path bypasses pay_profit (see ADR-0001).
+        // Loss path bypasses pay_profit (see ADR-0001). Snapshot the vault's
+        // balance pre-transfer so `record_absorbed_collateral` can verify
+        // `post - pre == amount`.
+        let pre_balance = token.balance(&vault_addr);
         token.transfer(&contract_addr, &vault_addr, &pm_to_vault);
-        vault.record_absorbed_collateral(&contract_addr, trader, &pm_to_vault);
+        vault.record_absorbed_collateral(&contract_addr, trader, &pm_to_vault, &pre_balance);
     }
     if pm_to_trader > 0 {
         token.transfer(&contract_addr, trader, &pm_to_trader);
@@ -417,11 +468,11 @@ fn distribute_fees(
 
     let keeper_share = match close_type {
         CloseType::OrderExecution | CloseType::Liquidation => {
-            total_fees * (fee_splits.keeper_bps as i128) / math::BPS
+            total_fees * (fee_splits.keeper_bps as i128) / shared::constants::BPS
         }
         _ => 0,
     };
-    let dev_share = total_fees * (fee_splits.dev_bps as i128) / math::BPS;
+    let dev_share = total_fees * (fee_splits.dev_bps as i128) / shared::constants::BPS;
 
     // Only accrue non-LP portion to unclaimed_fees.
     let non_lp_fees = keeper_share + dev_share;

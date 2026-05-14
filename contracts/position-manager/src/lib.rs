@@ -9,6 +9,7 @@ mod math;
 pub mod storage;
 mod tick;
 mod types;
+mod vault_view;
 
 #[cfg(test)]
 mod tests;

@@ -1,12 +1,7 @@
 // Pure financial calculation functions — no Env dependency.
-// All prices scaled by PRECISION (1e7). Index accumulators scaled by INDEX_PRECISION (1e14).
+// All numerical constants live in `shared::constants` (single source of truth).
 
-#[allow(dead_code)]
-pub const PRECISION: i128 = 10_000_000; // 1e7
-pub const INDEX_PRECISION: i128 = 100_000_000_000_000; // 1e14
-pub const BPS: i128 = 10_000;
-pub const SECONDS_PER_YEAR: u64 = 31_536_000; // 365 days
-pub const MAX_LEVERAGE_CAP: i128 = 200;
+use shared::constants::{BPS, INDEX_PRECISION, SECONDS_PER_YEAR};
 
 
 pub fn calc_unrealized_pnl(

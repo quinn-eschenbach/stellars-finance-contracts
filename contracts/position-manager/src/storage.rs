@@ -33,6 +33,8 @@ pub enum StorageKey {
     LastUnpauseTime,
     // Per-market max leverage (instance storage, admin-configured)
     MaxLeverage(Symbol),
+    // Per-market disabled flag — opens rejected when true.
+    MarketDisabled(Symbol),
     // Per-position state (persistent storage)
     Position(PositionKey),
     // Per-market global state (persistent storage)
@@ -172,7 +174,7 @@ pub fn set_market_unrealized_pnl(env: &Env, symbol: &Symbol, value: i128) {
     env.storage().persistent().set(&key, &value);
     env.storage()
         .persistent()
-        .extend_ttl(&key, shared::SHARED_THRESHOLD, shared::SHARED_BUMP);
+        .extend_ttl(&key, shared::constants::SHARED_THRESHOLD, shared::constants::SHARED_BUMP);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +207,7 @@ pub fn set_position(env: &Env, trader: &Address, symbol: &Symbol, position: &Pos
     env.storage().persistent().set(&key, position);
     env.storage()
         .persistent()
-        .extend_ttl(&key, shared::SHARED_THRESHOLD, shared::SHARED_BUMP);
+        .extend_ttl(&key, shared::constants::SHARED_THRESHOLD, shared::constants::SHARED_BUMP);
 }
 
 pub fn bump_position_ttl(env: &Env, trader: &Address, symbol: &Symbol) {
@@ -215,7 +217,7 @@ pub fn bump_position_ttl(env: &Env, trader: &Address, symbol: &Symbol) {
     });
     env.storage()
         .persistent()
-        .extend_ttl(&key, shared::SHARED_THRESHOLD, shared::SHARED_BUMP);
+        .extend_ttl(&key, shared::constants::SHARED_THRESHOLD, shared::constants::SHARED_BUMP);
 }
 
 pub fn delete_position(env: &Env, trader: &Address, symbol: &Symbol) {
@@ -239,8 +241,8 @@ pub fn get_market(env: &Env, symbol: &Symbol) -> MarketInfo {
         global_short_avg_price: 0,
         long_open_interest: 0,
         short_open_interest: 0,
-        acc_borrow_index: crate::math::INDEX_PRECISION,
-        acc_funding_index: crate::math::INDEX_PRECISION,
+        acc_borrow_index: shared::constants::INDEX_PRECISION,
+        acc_funding_index: shared::constants::INDEX_PRECISION,
         last_index_update: env.ledger().timestamp(),
     })
 }
@@ -250,7 +252,7 @@ pub fn set_market(env: &Env, symbol: &Symbol, market: &MarketInfo) {
     env.storage().persistent().set(&key, market);
     env.storage()
         .persistent()
-        .extend_ttl(&key, shared::SHARED_THRESHOLD, shared::SHARED_BUMP);
+        .extend_ttl(&key, shared::constants::SHARED_THRESHOLD, shared::constants::SHARED_BUMP);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,3 +285,52 @@ pub fn set_max_leverage(env: &Env, symbol: &Symbol, value: i128) {
     let key = StorageKey::MaxLeverage(symbol.clone());
     env.storage().instance().set(&key, &value);
 }
+
+pub fn bump_market_ttl(env: &Env, symbol: &Symbol) {
+    let key = StorageKey::Market(symbol.clone());
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, shared::constants::SHARED_THRESHOLD, shared::constants::SHARED_BUMP);
+}
+
+/// Extend the TTL of the `MarketUnrealizedPnl(symbol)` persistent slot.
+/// Must travel alongside `bump_market_ttl` so that a market without recent
+/// trades cannot have its `MarketUnrealizedPnl` archived while
+/// `TotalUnrealizedPnl` (instance storage) still carries its contribution.
+/// No-ops when the slot has never been written, which is harmless because
+/// archival is impossible for a never-existing key.
+pub fn bump_market_unrealized_pnl_ttl(env: &Env, symbol: &Symbol) {
+    let key = StorageKey::MarketUnrealizedPnl(symbol.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(
+                &key,
+                shared::constants::SHARED_THRESHOLD,
+                shared::constants::SHARED_BUMP,
+            );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Instance storage: MarketDisabled (per-market)
+// ---------------------------------------------------------------------------
+
+pub fn is_market_disabled(env: &Env, symbol: &Symbol) -> bool {
+    env.storage()
+        .instance()
+        .get(&StorageKey::MarketDisabled(symbol.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_market_disabled(env: &Env, symbol: &Symbol, disabled: bool) {
+    let key = StorageKey::MarketDisabled(symbol.clone());
+    if disabled {
+        env.storage().instance().set(&key, &true);
+    } else {
+        env.storage().instance().remove(&key);
+    }
+}
+
+// Pending upgrade storage now lives in `interfaces::upgrade` under a shared
+// Symbol key — used by the `TimelockedUpgradeable` trait's default methods.

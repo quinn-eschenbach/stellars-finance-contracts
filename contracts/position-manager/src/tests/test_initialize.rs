@@ -221,7 +221,7 @@ fn test_increase_position_before_init_reverts() {
     let (env, client, _vault, _config_mgr, _oracle, _admin) = setup_test();
     let trader = Address::generate(&env);
     let symbol = symbol_short!("BTC");
-    client.increase_position(&trader, &symbol, &1000_i128, &100_i128, &true, &0, &0);
+    client.increase_position(&trader, &symbol, &1000_i128, &100_i128, &true, &0, &0, &0i128);
 }
 
 #[test]

@@ -46,24 +46,35 @@ pub fn require_not_paused(env: &Env) {
 // Role guards (via ConfigManager cross-contract call)
 // ---------------------------------------------------------------------------
 
-/// Panics with `Unauthorized` (error 7) if `caller` does not have the KEEPER role
-/// according to the ConfigManager.
+/// Cross-contract role check + per-contract panic. Panics with
+/// `PositionManagerError::Unauthorized` (code 7) on failure so the panic
+/// code identifies the source contract.
+fn require_role_or_panic(env: &Env, caller: &Address, role: &str) {
+    caller.require_auth();
+    let config_mgr = storage::get_config_manager(env);
+    if !shared::has_role(env, &config_mgr, role, caller) {
+        panic_with_error!(env, PositionManagerError::Unauthorized);
+    }
+}
+
+/// Panics with `Unauthorized` (error 7) if `caller` does not have the KEEPER role.
 pub fn require_keeper(env: &Env, caller: &Address) {
-    let config_mgr = storage::get_config_manager(env);
-    shared::require_role(env, caller, &config_mgr, shared::ROLE_KEEPER);
+    require_role_or_panic(env, caller, shared::constants::ROLE_KEEPER);
 }
 
-/// Panics with `Unauthorized` (error 7) if `caller` does not have the PAUSER role
-/// according to the ConfigManager.
+/// Panics with `Unauthorized` (error 7) if `caller` does not have the PAUSER role.
 pub fn require_pauser(env: &Env, caller: &Address) {
-    let config_mgr = storage::get_config_manager(env);
-    shared::require_role(env, caller, &config_mgr, shared::ROLE_PAUSER);
+    require_role_or_panic(env, caller, shared::constants::ROLE_PAUSER);
 }
 
-/// Panics with `Unauthorized` if `caller` does not have the ADMIN role.
+/// Panics with `Unauthorized` (error 7) if `caller` does not have the ADMIN role.
 pub fn require_admin(env: &Env, caller: &Address) {
-    let config_mgr = storage::get_config_manager(env);
-    shared::require_role(env, caller, &config_mgr, shared::ROLE_ADMIN);
+    require_role_or_panic(env, caller, shared::constants::ROLE_ADMIN);
+}
+
+/// Panics with `Unauthorized` (error 7) if `caller` does not have the UPGRADER role.
+pub fn require_upgrader(env: &Env, caller: &Address) {
+    require_role_or_panic(env, caller, shared::constants::ROLE_UPGRADER);
 }
 
 // ---------------------------------------------------------------------------
@@ -142,17 +153,29 @@ pub fn do_increase_position(
     is_long: bool,
     take_profit: i128,
     stop_loss: i128,
+    acceptable_price: i128,
 ) {
-    // Refresh indices and snapshot fresh market state + mark price.
-    let market_tick = MarketTick::refresh(env, symbol);
+    // Snapshot vault state once before the mark price is fetched, then
+    // refresh indices (the tick uses `view.utilization_bps()` internally for
+    // the borrow-rate update, so both refreshes use the same basis).
+    let vault_addr = storage::get_vault_address(env);
+    let view = crate::vault_view::VaultView::refresh(env, &vault_addr);
+    let market_tick = MarketTick::refresh(env, symbol, &view);
     let mark_price = market_tick.mark_price;
     let mut market = market_tick.market;
 
-    let vault_addr = storage::get_vault_address(env);
-    let vault = VaultClient::new(env, &vault_addr);
+    // acceptable_price slippage. Passing 0 opts out. For longs the mark must
+    // be at-or-below acceptable; for shorts at-or-above.
+    if acceptable_price > 0 {
+        if is_long && mark_price > acceptable_price {
+            panic_with_error!(env, PositionManagerError::SlippageExceeded);
+        }
+        if !is_long && mark_price < acceptable_price {
+            panic_with_error!(env, PositionManagerError::SlippageExceeded);
+        }
+    }
 
-    // Transfer USDC collateral from trader to PM.
-    transfer_collateral_in(env, trader, collateral);
+    let vault = VaultClient::new(env, &vault_addr);
 
     let existing = storage::get_position(env, trader, symbol);
 
@@ -238,18 +261,21 @@ pub fn do_increase_position(
         market.short_open_interest += size;
     }
 
-    // Check utilization cap BEFORE committing (read from ConfigManager).
+    // Check utilization cap BEFORE committing. Use the snapshot's safe
+    // basis — the mark-price-insensitive denominator — so a wicking oracle
+    // cannot bias whether opens pass the cap. Computed against the
+    // POST-reserve value (`old_reserved + size`) so we never overshoot.
     let limits = load_limits(env);
-    let old_reserved = vault.reserved_usdc();
-    let new_reserved = old_reserved + size;
-    let free_liq = vault.free_liquidity();
-    // total_assets ≈ vault's total deposits = free_liq + old_reserved
-    // (free_liq already has old_reserved subtracted by the vault)
-    let total_assets = free_liq + old_reserved;
-    let util_bps = math::calc_utilization_bps(new_reserved, total_assets);
+    let new_reserved = view.reserved + size;
+    let util_bps = math::calc_utilization_bps(new_reserved, view.safe_basis);
     if util_bps > limits.max_utilization_ratio {
         panic_with_error!(env, PositionManagerError::UtilizationCapBreached);
     }
+
+    // CEI ordering: every check has now passed. Move collateral from trader
+    // to PM AFTER validation so a reverted open never strands the trader's
+    // funds in PM.
+    transfer_collateral_in(env, trader, collateral);
 
     // Reserve liquidity in vault — Vault's ReservedUsdc is the single source of truth.
     let contract_addr = env.current_contract_address();

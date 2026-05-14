@@ -20,8 +20,9 @@ use soroban_sdk::{
 use crate::contract::PositionManagerContract;
 use crate::math::{
     accumulate_borrow_index, accumulate_funding_index, calc_borrow_rate, calc_funding_rate,
-    calc_utilization_bps, INDEX_PRECISION,
+    calc_utilization_bps,
 };
+use shared::constants::INDEX_PRECISION;
 use crate::storage;
 use crate::types::MarketInfo;
 use crate::PositionManagerClient;
@@ -142,33 +143,27 @@ fn setup() -> UpdateIndicesFixture {
 
     let oracle_router_id = env.register(OracleRouterContract, ());
     let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
-    oracle_router_client.initialize(&config_id);
+    oracle_router_client.initialize(&admin, &config_id);
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
             max_deviation_bps: 500,
             staleness_threshold: 86400,
-            cache_duration: 10,
+            min_required_sources: 1,
         },
     );
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("BTC"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("ETH"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
     oracle_router_client.set_oracle_sources(
         &admin,
         &Symbol::new(&env, "SOL"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
 
     // -- Initialize PositionManager --
     pm_client.initialize(&admin, &vault_id, &config_id, &oracle_router_id);
@@ -283,14 +278,12 @@ fn test_update_indices_reverts_when_paused() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_update_indices_reverts_unauthorized_caller() {
     // Scenario: A caller without the KEEPER role attempts to call
-    // update_indices. Must revert with Unauthorized.
-    // Note: SharedError::Unauthorized = 3, which is the error code from
-    // shared::require_role. The PositionManagerError::Unauthorized = 7.
-    // Depending on implementation, this may be error code 3 or 7.
-    // We use error code 3 here since require_keeper delegates to shared::require_role.
+    // update_indices. Must revert with PositionManagerError::Unauthorized (7) —
+    // the panic now comes from PM's wrapper (not shared::require_role) so the
+    // code identifies the source contract.
     let f = setup();
     let symbol = Symbol::new(&f.env, "BTC");
 

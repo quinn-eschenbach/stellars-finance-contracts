@@ -33,7 +33,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::PositionManagerContract;
-use crate::math::PRECISION;
+use shared::constants::PRECISION;
 use crate::storage;
 use crate::PositionManagerClient;
 
@@ -182,28 +182,24 @@ fn setup_full<'a>() -> TestFixture<'a> {
     // --- 4. OracleRouter ---
     let oracle_router_id = env.register(OracleRouterContract, ());
     let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
-    oracle_router_client.initialize(&config_id);
+    oracle_router_client.initialize(&admin, &config_id);
 
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
             max_deviation_bps: 500,
             staleness_threshold: 3600,
-            cache_duration: 10,
+            min_required_sources: 1,
         },
     );
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("BTC"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("ETH"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
 
     // --- 5. PositionManager (register first to get address for Vault init) ---
     let pm_id = env.register(PositionManagerContract, ());
@@ -276,7 +272,7 @@ fn open_btc_position(f: &TestFixture, is_long: bool) {
         &DEFAULT_COLLATERAL,
         &is_long,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -289,7 +285,7 @@ fn open_btc_position_with_tp_sl(f: &TestFixture, is_long: bool, tp: i128, sl: i1
         &DEFAULT_COLLATERAL,
         &is_long,
         &tp,
-        &sl,
+        &sl, &0i128
     );
 }
 
@@ -875,9 +871,9 @@ fn test_execute_order_no_position_reverts() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_execute_order_not_keeper_reverts() {
-    // Non-keeper caller attempts execute_order -> SharedError::Unauthorized (3).
+    // Non-keeper caller attempts execute_order → PositionManagerError::Unauthorized (7).
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
@@ -1171,7 +1167,7 @@ fn test_increase_position_updates_tp_sl() {
         &DEFAULT_COLLATERAL,
         &true,
         &tp2,
-        &sl2,
+        &sl2, &0i128
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
@@ -1204,7 +1200,7 @@ fn test_increase_position_zero_tp_sl_preserves_existing() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
@@ -1234,7 +1230,7 @@ fn test_increase_position_invalid_tp_reverts() {
         &DEFAULT_COLLATERAL,
         &true,
         &invalid_tp,
-        &valid_sl,
+        &valid_sl, &0i128
     );
 }
 
@@ -1254,7 +1250,7 @@ fn test_increase_position_invalid_sl_reverts() {
         &DEFAULT_COLLATERAL,
         &true,
         &valid_tp,
-        &invalid_sl,
+        &invalid_sl, &0i128
     );
 }
 
@@ -1274,7 +1270,7 @@ fn test_increase_position_new_short_with_tp_sl() {
         &DEFAULT_COLLATERAL,
         &false,
         &tp,
-        &sl,
+        &sl, &0i128
     );
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
@@ -1298,7 +1294,7 @@ fn test_increase_position_short_invalid_tp_above_entry_reverts() {
         &DEFAULT_COLLATERAL,
         &false,
         &invalid_tp,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -1406,7 +1402,7 @@ fn test_execute_order_does_not_affect_other_positions() {
         &(2_000 * USDC_UNIT),
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 
     // Price rises above TP

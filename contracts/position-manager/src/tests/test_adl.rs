@@ -26,7 +26,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::PositionManagerContract;
-use crate::math::PRECISION;
+use shared::constants::PRECISION;
 use crate::storage;
 use crate::PositionManagerClient;
 
@@ -167,21 +167,19 @@ fn setup_adl<'a>() -> TestFixture<'a> {
     // --- 4. OracleRouter ---
     let oracle_router_id = env.register(OracleRouterContract, ());
     let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
-    oracle_router_client.initialize(&config_id);
+    oracle_router_client.initialize(&admin, &config_id);
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
             max_deviation_bps: 500,
             staleness_threshold: 3600,
-            cache_duration: 10,
+            min_required_sources: 1,
         },
     );
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("BTC"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
 
     // --- 5. PositionManager ---
     let pm_id = env.register(PositionManagerContract, ());
@@ -312,21 +310,19 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
 
     let oracle_router_id = env.register(OracleRouterContract, ());
     let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
-    oracle_router_client.initialize(&config_id);
+    oracle_router_client.initialize(&admin, &config_id);
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
             max_deviation_bps: 500,
             staleness_threshold: 3600,
-            cache_duration: 10,
+            min_required_sources: 1,
         },
     );
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("BTC"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
 
     let pm_id = env.register(PositionManagerContract, ());
     let pm_client = PositionManagerClient::new(&env, &pm_id);
@@ -419,10 +415,10 @@ fn test_adl_reverts_not_initialized() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_adl_reverts_unauthorized_caller() {
     // Scenario: A non-KEEPER address attempts ADL. Must revert with
-    // the shared Unauthorized error (error 3).
+    // PositionManagerError::Unauthorized (7) — panic comes from PM's wrapper.
     let f = setup_no_adl();
     let random_caller = Address::generate(&f.env);
 
@@ -446,7 +442,7 @@ fn test_adl_reverts_when_utilization_is_normal() {
     let size = 10_000 * USDC_UNIT;
     let collateral = 1_000 * USDC_UNIT;
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
 
     // Advance time past oracle cache
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
@@ -470,7 +466,7 @@ fn test_adl_reverts_at_50_percent_utilization() {
     f.usdc_client.mint(&f.trader, &(collateral * 2));
 
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
 
     advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, BTC_PRICE);
 
@@ -495,7 +491,7 @@ fn test_adl_succeeds_when_reserved_exceeds_95_percent() {
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
 
     // Manually push total_reserved above 95% to simulate ADL condition.
     // In production this could happen if the vault's total_assets decreases
@@ -536,7 +532,7 @@ fn test_adl_profitable_long_trader_receives_profits() {
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
 
     // Push reserved above 95% threshold (utilization > 9500 bps)
     force_reserved(&f, 96_000 * USDC_UNIT);
@@ -578,7 +574,7 @@ fn test_adl_deletes_position_and_decreases_oi() {
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
 
     let market_before = f.pm_client.get_market(&symbol);
 
@@ -620,7 +616,7 @@ fn test_adl_decreases_total_reserved() {
     let size = 80_000 * USDC_UNIT;
     let collateral = 8_000 * USDC_UNIT;
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
 
     // Push reserved above 95% (utilization > 9500 bps)
     force_reserved(&f, 96_000 * USDC_UNIT);
@@ -656,7 +652,7 @@ fn test_adl_succeeds_when_paused() {
     let size = 84_000 * USDC_UNIT;
     let collateral = 8_400 * USDC_UNIT;
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
 
     force_reserved(&f, 96_000 * USDC_UNIT);
 
@@ -692,13 +688,13 @@ fn test_adl_does_not_affect_other_traders_positions() {
     let size1 = 40_000 * USDC_UNIT;
     let collateral1 = 4_000 * USDC_UNIT;
     f.pm_client
-        .increase_position(&f.trader, &symbol, &size1, &collateral1, &true, &0, &0);
+        .increase_position(&f.trader, &symbol, &size1, &collateral1, &true, &0, &0, &0i128);
 
     // Trader2: small position
     let size2 = 40_000 * USDC_UNIT;
     let collateral2 = 4_000 * USDC_UNIT;
     f.pm_client
-        .increase_position(&trader2, &symbol, &size2, &collateral2, &true, &0, &0);
+        .increase_position(&trader2, &symbol, &size2, &collateral2, &true, &0, &0, &0i128);
 
     // Push reserved above 95% (utilization > 9500 bps)
     force_reserved(&f, 96_000 * USDC_UNIT);

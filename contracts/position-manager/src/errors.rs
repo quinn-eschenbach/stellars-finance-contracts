@@ -34,4 +34,21 @@ pub enum PositionManagerError {
     AdlTargetNotProfitable = 17,
     /// Max leverage exceeds the absolute safety cap (200x).
     LeverageCapExceeded = 18,
+    /// Mark price at execution time exceeded the trader's `acceptable_price`.
+    SlippageExceeded = 19,
+    /// `set_max_leverage` called with a value below `MIN_LEVERAGE`. Use
+    /// `disable_market` to take a market offline instead.
+    LeverageBelowFloor = 20,
+    /// Trading is disabled for this market — `enable_market` re-opens it.
+    MarketDisabled = 21,
+    /// `decrease_position` called with `size_delta > pos.size`. Use
+    /// `pos.size` (or simply close fully) instead of over-closing.
+    SizeDeltaExceedsPosition = 22,
+    /// `upgrade` rejected — no `propose_upgrade` was made before commit.
+    NoPendingUpgrade = 23,
+    /// `upgrade` rejected — timelock has not elapsed yet.
+    UpgradeTimelockNotElapsed = 24,
+    /// `upgrade` rejected — `new_wasm_hash` does not match the proposed
+    /// `PendingUpgrade.wasm_hash`.
+    UpgradeHashMismatch = 25,
 }

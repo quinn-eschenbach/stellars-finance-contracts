@@ -8,4 +8,5 @@ mod test_math;
 mod test_storage;
 mod test_tp_sl;
 mod test_update_indices;
+mod test_upgrade_timelock_enforcement;
 mod test_views;

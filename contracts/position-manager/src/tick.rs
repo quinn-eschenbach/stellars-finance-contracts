@@ -7,13 +7,14 @@
 
 use soroban_sdk::{Env, Symbol};
 
-use interfaces::{ConfigManagerClient, MarketInfo, OracleRouterClient, VaultClient};
+use interfaces::{ConfigManagerClient, MarketInfo, OracleRouterClient};
 use shared::BorrowRateConfig;
 
 use crate::events;
 use crate::math;
 use crate::storage;
 use crate::types::Position;
+use crate::vault_view::VaultView;
 
 pub struct MarketTick {
     pub market: MarketInfo,
@@ -31,7 +32,12 @@ impl MarketTick {
     /// Refresh borrow/funding indices for `symbol`, persist the updated
     /// Market, fetch the current mark price, push the resulting unrealized
     /// PnL to the Vault, and return the resulting tick.
-    pub fn refresh(env: &Env, symbol: &Symbol) -> Self {
+    ///
+    /// `view` supplies the vault state snapshot used for utilization — every
+    /// utilization read funnels through `VaultView::utilization_bps()` so
+    /// the safe (PnL-excluded) basis is enforced at the type layer rather
+    /// than by callsite discipline.
+    pub fn refresh(env: &Env, symbol: &Symbol, view: &VaultView) -> Self {
         let mut market = storage::get_market(env, symbol);
         let now = env.ledger().timestamp();
 
@@ -47,12 +53,7 @@ impl MarketTick {
 
         if time_delta > 0 {
             let rate_config = load_borrow_rate_config(env);
-            let vault_addr = storage::get_vault_address(env);
-            let vault = VaultClient::new(env, &vault_addr);
-            let total_reserved = vault.reserved_usdc();
-            let free_liq = vault.free_liquidity();
-            let total_assets = free_liq + total_reserved;
-            let util_bps = math::calc_utilization_bps(total_reserved, total_assets);
+            let util_bps = view.utilization_bps();
             let borrow_rate = math::calc_borrow_rate(
                 util_bps,
                 rate_config.base_borrow_rate_bps,

@@ -10,7 +10,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::PositionManagerContract;
-use crate::math::PRECISION;
+use shared::constants::PRECISION;
 use crate::PositionManagerClient;
 
 use config_manager::{ConfigManagerClient, ConfigManagerContract};
@@ -120,21 +120,19 @@ fn setup_full<'a>() -> TestFixture<'a> {
 
     let oracle_router_id = env.register(OracleRouterContract, ());
     let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
-    oracle_router_client.initialize(&config_id);
+    oracle_router_client.initialize(&admin, &config_id);
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
             max_deviation_bps: 500,
             staleness_threshold: 3600,
-            cache_duration: 10,
+            min_required_sources: 1,
         },
     );
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("BTC"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
 
     let pm_id = env.register(PositionManagerContract, ());
     let pm_client = PositionManagerClient::new(&env, &pm_id);
@@ -200,7 +198,7 @@ fn test_bump_position_succeeds_on_existing_position() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
     // Should not panic
     f.pm_client.bump_position(&f.trader, &symbol_short!("BTC"));
@@ -218,7 +216,7 @@ fn test_bump_position_callable_by_anyone() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
     // Calling with the trader's address should work regardless of who submits the tx
     f.pm_client.bump_position(&f.trader, &symbol_short!("BTC"));
@@ -243,7 +241,7 @@ fn test_execute_order_allowed_when_paused() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
     let tp = 55_000 * PRECISION;
     f.pm_client
@@ -285,7 +283,7 @@ fn test_get_position_returns_correct_data() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
     let pos = f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
     assert_eq!(pos.size, DEFAULT_SIZE);
@@ -311,8 +309,8 @@ fn test_get_market_returns_defaults_for_unknown_symbol() {
     let market = f.pm_client.get_market(&symbol_short!("ETH"));
     assert_eq!(market.long_open_interest, 0);
     assert_eq!(market.short_open_interest, 0);
-    assert_eq!(market.acc_borrow_index, crate::math::INDEX_PRECISION);
-    assert_eq!(market.acc_funding_index, crate::math::INDEX_PRECISION);
+    assert_eq!(market.acc_borrow_index, shared::constants::INDEX_PRECISION);
+    assert_eq!(market.acc_funding_index, shared::constants::INDEX_PRECISION);
 }
 
 #[test]
@@ -325,7 +323,7 @@ fn test_get_market_returns_correct_oi_after_increase() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
     let market = f.pm_client.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, DEFAULT_SIZE);
@@ -348,7 +346,7 @@ fn test_increase_position_reverts_when_paused() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
@@ -365,7 +363,7 @@ fn test_unpause_allows_increase_position_again() {
         &DEFAULT_COLLATERAL,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
     let pos = f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
     assert_eq!(pos.size, DEFAULT_SIZE);

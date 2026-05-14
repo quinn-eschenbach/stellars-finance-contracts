@@ -29,7 +29,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::PositionManagerContract;
-use crate::math::PRECISION;
+use shared::constants::PRECISION;
 use crate::storage;
 use crate::PositionManagerClient;
 
@@ -176,21 +176,19 @@ fn setup_full<'a>() -> TestFixture<'a> {
     // --- 4. OracleRouter ---
     let oracle_router_id = env.register(OracleRouterContract, ());
     let oracle_router_client = OracleRouterClient::new(&env, &oracle_router_id);
-    oracle_router_client.initialize(&config_id);
+    oracle_router_client.initialize(&admin, &config_id);
     oracle_router_client.set_oracle_config(
         &admin,
         &OracleConfig {
             max_deviation_bps: 500,
             staleness_threshold: 3600,
-            cache_duration: 10,
+            min_required_sources: 1,
         },
     );
     oracle_router_client.set_oracle_sources(
         &admin,
         &symbol_short!("BTC"),
-        &vec![&env, oracle_id.clone()],
-        &vec![&env],
-    );
+        &vec![&env, oracle_id.clone()]);
 
     // --- 5. PositionManager ---
     let pm_id = env.register(PositionManagerContract, ());
@@ -248,7 +246,7 @@ fn open_long_position(f: &TestFixture, size: i128, collateral: i128) {
         &collateral,
         &true,
         &0,
-        &0,
+        &0, &0i128
     );
 }
 
