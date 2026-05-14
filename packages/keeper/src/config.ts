@@ -1,4 +1,8 @@
-import { getNetworkConfig, type ContractInfo, type Network } from "@stellars/config";
+import {
+  getNetworkConfig,
+  type ContractInfo,
+  type Network,
+} from "@stellars/config";
 
 export interface KeeperConfig {
   databaseUrl: string;
@@ -28,6 +32,14 @@ export function loadConfig(): KeeperConfig {
   const keeperSecret = process.env.KEEPER_SECRET ?? "";
   if (!keeperSecret) {
     throw new Error("KEEPER_SECRET environment variable is required");
+  }
+  // Refuse to start in production unless the operator opted in to a
+  // plaintext-env-injected seed (the expected mainnet path is a secrets
+  // manager + sidecar-derived signer, not static env).
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PLAINTEXT_KEY !== "1") {
+    throw new Error(
+      "KEEPER_SECRET: plaintext seed in NODE_ENV=production requires ALLOW_PLAINTEXT_KEY=1",
+    );
   }
 
   const databaseUrl = process.env.DATABASE_URL ?? "";

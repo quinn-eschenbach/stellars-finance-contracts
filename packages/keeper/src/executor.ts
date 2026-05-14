@@ -1,6 +1,11 @@
 import { Client as PositionManagerClient } from "@stellars/bindings/position-manager";
 import { client } from "@stellars/protocol-clients";
 import { keypairSigner } from "@stellars/protocol-clients/node";
+import {
+  KEEPER_DAILY_FEE_BUDGET_STROOPS,
+  KEEPER_MAX_FEE_STROOPS,
+  KEEPER_TX_TIMEOUT_SECONDS,
+} from "@stellars/config";
 import type { KeeperConfig } from "./config.js";
 
 /**
@@ -46,11 +51,21 @@ function classify(err: unknown): { expected: boolean; reason: string } {
   return { expected, reason };
 }
 
-type SignAndSendable = { signAndSend: () => Promise<unknown> };
+type SignAndSendable = {
+  signAndSend: (opts?: { timeoutInSeconds?: number }) => Promise<unknown>;
+};
+
+function startOfDayUtc(ms: number): number {
+  return Math.floor(ms / 86_400_000) * 86_400_000;
+}
 
 export function createExecutor(config: KeeperConfig): Executor {
   const signer = keypairSigner(config.keeperSecret, config.networkPassphrase);
   const publicKey = signer.publicKey;
+  // Drop the seed reference from the long-lived config object now that the
+  // signer has been derived. A subsequent JSON.stringify(config) or
+  // accidental console.log(config) cannot leak the seed.
+  (config as { keeperSecret: string }).keeperSecret = "";
 
   const pmClient = client(
     PositionManagerClient,
@@ -58,6 +73,28 @@ export function createExecutor(config: KeeperConfig): Executor {
     config.contracts.positionManager.address,
     signer,
   );
+
+  // Per-day fee budget. The keeper refuses to submit once today's cumulative
+  // submission fees exceed KEEPER_DAILY_FEE_BUDGET_STROOPS. Reset at UTC
+  // midnight. A circuit-breaker against an adversary crafting expensive
+  // simulations that drain the keeper's XLM.
+  let dailyFeeSpentStroops = 0n;
+  let dailyBudgetWindowStart = startOfDayUtc(Date.now());
+  function refreshDailyBudget(): void {
+    const today = startOfDayUtc(Date.now());
+    if (today !== dailyBudgetWindowStart) {
+      dailyBudgetWindowStart = today;
+      dailyFeeSpentStroops = 0n;
+    }
+  }
+  function attemptCharge(estimatedStroops: bigint): boolean {
+    refreshDailyBudget();
+    if (dailyFeeSpentStroops + estimatedStroops > BigInt(KEEPER_DAILY_FEE_BUDGET_STROOPS)) {
+      return false;
+    }
+    dailyFeeSpentStroops += estimatedStroops;
+    return true;
+  }
 
   /**
    * Build (which simulates), then sign and send. Two failure points:
@@ -71,6 +108,14 @@ export function createExecutor(config: KeeperConfig): Executor {
     label: string,
     build: () => Promise<unknown>,
   ): Promise<SubmitOutcome> {
+    // Reserve budget pessimistically against KEEPER_MAX_FEE_STROOPS — every
+    // submission can cost up to this amount per the protocol fee model.
+    if (!attemptCharge(BigInt(KEEPER_MAX_FEE_STROOPS))) {
+      const reason = `daily fee budget ${KEEPER_DAILY_FEE_BUDGET_STROOPS} stroops exhausted`;
+      console.error(`[keeper] ${label} — refused: ${reason}`);
+      return { kind: "rejected", expected: false, reason };
+    }
+
     let tx: SignAndSendable;
     try {
       tx = (await build()) as SignAndSendable;
@@ -85,7 +130,12 @@ export function createExecutor(config: KeeperConfig): Executor {
     }
 
     try {
-      await tx.signAndSend();
+      // Explicit `timeoutInSeconds` caps how long signAndSend polls
+      // getTransaction(hash) for inclusion. After the cap we treat the tx
+      // as failed regardless of ledger outcome — the dedup ghost will
+      // expire and the next tick can retry if the underlying condition
+      // still holds.
+      await tx.signAndSend({ timeoutInSeconds: KEEPER_TX_TIMEOUT_SECONDS });
       console.log(`[keeper] ${label} — submitted`);
       return { kind: "submitted" };
     } catch (err) {

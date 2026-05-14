@@ -11,7 +11,13 @@ import {
   type PositionRow,
 } from "./scanner.js";
 
-export const DEDUP_TTL_MS = 60_000;
+import {
+  KEEPER_INDEX_UPDATE_DEDUP_TTL_MS,
+  KEEPER_LIQUIDATION_DEDUP_TTL_MS,
+} from "@stellars/config";
+
+export const DEDUP_TTL_MS = KEEPER_LIQUIDATION_DEDUP_TTL_MS;
+const INDICES_DEDUP_TTL_MS = KEEPER_INDEX_UPDATE_DEDUP_TTL_MS;
 
 export function posKey(trader: string, symbol: string): string {
   return `${trader}:${symbol}`;
@@ -146,14 +152,24 @@ async function runColdTick(
   const { skip } = checkStaleness(world, config, "cold");
   if (skip) return;
 
-  // Step 1: Update stale indices. Indices have no per-(trader, symbol) dedup
-  // key — the executor's sim gate rejects redundant updates cheaply.
+  // Step 1: Update stale indices. Per-symbol dedup avoids re-submitting the
+  // same updateIndices when the indexer is lagging — without it, two
+  // consecutive cold-loop ticks both observe the same stale last_index_update
+  // and double-fire.
   for (const market of world.markets) {
     if (world.vault?.is_paused) break;
     const lastUpdate = toBigInt(market.last_index_update);
     const elapsed = world.now - lastUpdate;
     if (elapsed > BigInt(config.indexUpdateThresholdSec)) {
-      await serialize(() => executor.updateIndices(market.symbol));
+      const key = `indices:${market.symbol}`;
+      if (!dedup.claim(key, INDICES_DEDUP_TTL_MS)) continue;
+      const outcome = await serialize(() => executor.updateIndices(market.symbol));
+      if (outcome.kind === "rejected" && !outcome.expected) {
+        // Release the dedup slot on unexpected failure so the next tick can
+        // try again immediately; expected rejections (e.g. paused) hold the
+        // slot for the full TTL.
+        dedup.release(key);
+      }
     }
   }
 
