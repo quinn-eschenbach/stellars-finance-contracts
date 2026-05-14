@@ -25,8 +25,7 @@ impl Oracle for OracleContract {
         if !storage::is_initialized(&env) {
             panic_with_error!(&env, OracleError::NotInitialized);
         }
-        let config_mgr = storage::get_config_manager(&env);
-        shared::require_role(&env, &caller, &config_mgr, shared::ROLE_ORACLE);
+        require_oracle_role(&env, &caller);
 
         storage::set_price(&env, &symbol, price);
         storage::set_last_update(&env, &symbol, env.ledger().timestamp());
@@ -47,11 +46,29 @@ impl UpgradeableMigratableInternal for OracleContract {
     type MigrationData = interfaces::MigrationData;
 
     fn _require_auth(e: &Env, operator: &Address) {
-        let config_mgr = storage::get_config_manager(e);
-        shared::require_role(e, operator, &config_mgr, shared::ROLE_UPGRADER);
+        require_upgrader_role(e, operator);
     }
 
     fn _migrate(e: &Env, data: &Self::MigrationData) {
         storage::save_version(e, data.version);
     }
+}
+
+/// Cross-contract role check + per-contract panic. Panics with
+/// `OracleError::Unauthorized` (code 3) on failure so the panic code
+/// identifies the source contract.
+fn require_role_or_panic(env: &Env, caller: &Address, role: &str) {
+    caller.require_auth();
+    let config_mgr = storage::get_config_manager(env);
+    if !shared::has_role(env, &config_mgr, role, caller) {
+        panic_with_error!(env, OracleError::Unauthorized);
+    }
+}
+
+fn require_oracle_role(env: &Env, caller: &Address) {
+    require_role_or_panic(env, caller, shared::constants::ROLE_ORACLE);
+}
+
+fn require_upgrader_role(env: &Env, caller: &Address) {
+    require_role_or_panic(env, caller, shared::constants::ROLE_UPGRADER);
 }
