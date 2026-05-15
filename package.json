@@ -13,5 +13,11 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "pnpm": {
+    "overrides": {
+      "@tanstack/react-router@1.169.5": "1.168.25",
+      "@tanstack/react-router@1.169.8": "1.168.25"
+    }
   }
 }

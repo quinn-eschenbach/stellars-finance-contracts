@@ -309,7 +309,9 @@ function TpSlEditor({ symbol, isLong, entryPrice, initialTp, initialSl, onClose 
 
 function scaledToInput(scaled: bigint): string {
   if (scaled <= 0n) return "";
-  return formatPrice(scaled, 7).replace(/\.?0+$/, "");
+  // Strip thousand-separator commas — parsePrice's regex rejects them, so
+  // saving an unedited initial value would otherwise fail with "invalid TP".
+  return formatPrice(scaled, 7).replace(/,/g, "").replace(/\.?0+$/, "");
 }
 
 function safeParsePrice(input: string): bigint | "invalid" {
