@@ -51,11 +51,6 @@ interface TotalAssetsUpdateData {
   new_total_assets: bigint;
 }
 
-interface PnlClampedData {
-  requested: bigint;
-  clamped: bigint;
-}
-
 interface ReserveData {
   amount: bigint;
   new_total: bigint;
@@ -146,8 +141,6 @@ export async function handleVaultEvent(db: Db, event: ParsedEvent) {
       return handleLockup(db, event);
     case "total":
       return handleTotalAssetsUpdate(db, event);
-    case "pnl_clamp":
-      return handlePnlClamped(db, event);
     default:
       break;
   }
@@ -331,18 +324,6 @@ async function handleTotalAssetsUpdate(db: Db, event: ParsedEvent) {
       },
     });
   await recomputeFreeLiquidity(db, event.ledger);
-}
-
-/**
- * PnlClamped fires when PM pushed an `update_net_pnl` value outside
- * `|pnl| ≤ total_assets` and Vault truncated it. There's no dedicated
- * table — we log so on-call sees the bound trip.
- */
-async function handlePnlClamped(_db: Db, event: ParsedEvent) {
-  const d = event.data as PnlClampedData;
-  console.warn(
-    `[vault] PnlClamped ledger=${event.ledger} requested=${d.requested} clamped=${d.clamped}`,
-  );
 }
 
 async function handleReserve(db: Db, event: ParsedEvent) {

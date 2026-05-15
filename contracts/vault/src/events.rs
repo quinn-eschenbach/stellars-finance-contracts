@@ -69,16 +69,6 @@ pub struct UpdateNetPnl {
     pub pnl: i128,
 }
 
-/// Emitted by `update_net_pnl` when the supplied `requested` value exceeded
-/// `±total_assets` and was truncated to `clamped` before being stored.
-/// Bounded-trust guard against PM compromise pushing a non-recoverable value.
-#[contractevent(topics = ["pnl_clamp"], data_format = "vec")]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PnlClamped {
-    pub requested: i128,
-    pub clamped: i128,
-}
-
 /// Absolute total_assets snapshot, emitted by every LP-facing entrypoint so
 /// off-chain indexers can replay state without arithmetic deltas.
 #[contractevent(topics = ["total"], data_format = "vec")]

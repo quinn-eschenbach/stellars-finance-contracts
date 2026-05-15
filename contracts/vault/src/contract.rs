@@ -296,25 +296,11 @@ impl VaultContract {
         shared::bump_instance_ttl(&env);
     }
 
-    /// Clamps `|pnl| ≤ total_assets` so a bug or compromise of PM cannot
-    /// freeze every LP withdraw by pushing a non-recoverable value through
-    /// this state-push entrypoint. Emits `PnlClamped` on truncation.
     pub fn update_net_pnl(env: Env, caller: Address, pnl: i128) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
-        let total = Vault::total_assets(&env);
-        let clamped = if pnl > total {
-            total
-        } else if pnl < -total {
-            -total
-        } else {
-            pnl
-        };
-        if clamped != pnl {
-            vault_events::PnlClamped { requested: pnl, clamped }.publish(&env);
-        }
-        vault_storage::set_net_global_trader_pnl(&env, clamped);
-        vault_events::UpdateNetPnl { pnl: clamped }.publish(&env);
+        vault_storage::set_net_global_trader_pnl(&env, pnl);
+        vault_events::UpdateNetPnl { pnl }.publish(&env);
         shared::bump_instance_ttl(&env);
     }
 
