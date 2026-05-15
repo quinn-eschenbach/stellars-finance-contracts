@@ -9,36 +9,36 @@
     ],
     "contracts": {
       "vault": {
-        "address": "CDUI6RQZBV4NJ6ED32ZBTKONYV6VBQLQXBGRV32ELLJEPT3KMMFTEF3I",
-        "startLedger": 131
+        "address": "CCIXSGUSESO6NKXG5BWKYWZUFPNVZHRAOIFB77BUHKMELOJJBNNAQJ2L",
+        "startLedger": 137
       },
       "positionManager": {
-        "address": "CBNLPI4F2JI3K5UXSKA4DCASJCKTPIGPFYSXTFCX5TY3QMW56FFMTF6O",
-        "startLedger": 135
+        "address": "CC7B7B7VZRJGGHOQEFRNCV3CGMCB6WIYFECZY67JSS56SWPGEWIXNKQH",
+        "startLedger": 141
       },
       "configManager": {
-        "address": "CDB6BRQJUTUG24WBMFXBVTP5OSWJDSVZ4R64F5RR27OTRK2RDUY3UWD3",
-        "startLedger": 119
-      },
-      "oracleRouter": {
-        "address": "CAY236MGVIBMY7FW2DDMLT44M2HD3ALX7X7LCSHV2FXELSSZHOKLNAMC",
-        "startLedger": 123
-      },
-      "oracle": {
-        "address": "CDG3YOMHM6REOB7JHIV352DJQZTTLF3UFZJSEJYN7ZX6RSMI6RIDZMRK",
+        "address": "CDPOMSQ6OQ6J2IRI7WB4ABDCTL3UVMJNOLTLJXZLI6UHIWJXDPMRN3NS",
         "startLedger": 125
       },
+      "oracleRouter": {
+        "address": "CD72BSJSVSQNGG33G2KWKQCWWF7QCQU5NAOHA6OLYR56HHG5GM4QCPNX",
+        "startLedger": 127
+      },
+      "oracle": {
+        "address": "CAELW5YN3KTR6IRJFMQTZ4EOUDEZH6JA6LZ5ZE7WU6FQ3O4DPBPSJQG4",
+        "startLedger": 131
+      },
       "binanceOracle": {
-        "address": "CD6VTI6MS7E4WPJ36LAYK7UIFSXKLY2IFG7KMTBHJ3DODEQBSX4XEZXO",
-        "startLedger": 169
+        "address": "CCHDXYNGSR3XH4DGAVXPXXPS5DLR2XCQ5UP2F7RPEYVXGGG6YRR7ZDVK",
+        "startLedger": 180
       },
       "kucoinOracle": {
-        "address": "CA5DIBLHDYE5CCLMA5J2A6QSLNR7T7QIUNEOBEQUAVUKNWWMPNCAGXPD",
-        "startLedger": 172
+        "address": "CDBBWLYIET2VQEHPHZ2YMPYTD6KILFDALEWVU4PD7WUUEZ6HDFVSXQTF",
+        "startLedger": 181
       },
       "mockToken": {
-        "address": "CAUQEPIEB24TZ5KVA75IBEU32BZABEOMELKEVTNHVSDYSC6RZJ66CIAL",
-        "startLedger": 127
+        "address": "CCPOTE5JJYDYHQXRU6KI2P6FBFXZDBOURQFRIVDQSSNC23A7HK2QOSIG",
+        "startLedger": 135
       }
     }
   },
