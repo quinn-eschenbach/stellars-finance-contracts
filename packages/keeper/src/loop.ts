@@ -156,8 +156,17 @@ async function runColdTick(
   // same updateIndices when the indexer is lagging — without it, two
   // consecutive cold-loop ticks both observe the same stale last_index_update
   // and double-fire.
+  //
+  // Skip markets with zero open interest. A market with no positions has no
+  // fees to accumulate, so `update_indices` is a no-op on-chain; firing it
+  // anyway burns gas indefinitely on fresh markets where `last_index_update`
+  // never gets persisted (the contract's `get_market` default reads back
+  // `last_index_update = now`, so the `time_delta > 0` branch never runs and
+  // the indexer never sees an `UpdateIndices` event to mirror).
   for (const market of world.markets) {
     if (world.vault?.is_paused) break;
+    const totalOi = toBigInt(market.long_open_interest) + toBigInt(market.short_open_interest);
+    if (totalOi === 0n) continue;
     const lastUpdate = toBigInt(market.last_index_update);
     const elapsed = world.now - lastUpdate;
     if (elapsed > BigInt(config.indexUpdateThresholdSec)) {
