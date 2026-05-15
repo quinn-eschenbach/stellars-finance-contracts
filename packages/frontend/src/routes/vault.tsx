@@ -46,11 +46,11 @@ function VaultPage() {
             emphasis
           />
           <HeroStat
-            label="Free liquidity"
+            label="Idle funds"
             value={<NumberFlowUsd value={vault.data.free_liquidity} decimals={0} />}
           />
           <HeroStat
-            label="Reserved"
+            label="Active funds"
             value={<NumberFlowUsd value={vault.data.reserved_usdc} decimals={0} />}
           />
         </div>
@@ -66,8 +66,8 @@ function VaultPage() {
               <div className="space-y-3 font-mono text-sm">
                 <Row label="Total assets" value={<NumberFlowUsd value={vault.data.total_assets} />} />
                 <div className="hairline" />
-                <Row label="Free liquidity" value={<NumberFlowUsd value={vault.data.free_liquidity} />} />
-                <Row label="Reserved" value={<NumberFlowUsd value={vault.data.reserved_usdc} />} />
+                <Row label="Idle funds" value={<NumberFlowUsd value={vault.data.free_liquidity} />} />
+                <Row label="Active funds" value={<NumberFlowUsd value={vault.data.reserved_usdc} />} />
                 <div className="hairline" />
                 <Row
                   label="Net trader PnL"

@@ -25,9 +25,11 @@ interface PositionRowProps {
    * projection inputs (vault, config, market) are loaded.
    */
   tick?: MarketTick | null;
+  /** When true, hide Close/Edit actions — used on other traders' position pages. */
+  readOnly?: boolean;
 }
 
-export function PositionRow({ position, markPrice, tick }: PositionRowProps) {
+export function PositionRow({ position, markPrice, tick, readOnly = false }: PositionRowProps) {
   const address = useAddress();
   const [editing, setEditing] = useState(false);
 
@@ -106,14 +108,16 @@ export function PositionRow({ position, markPrice, tick }: PositionRowProps) {
           </span>
           <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover/link:opacity-100" />
         </Link>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={close.isPending}
-          onClick={() => close.mutate()}
-        >
-          {close.isPending ? "Closing…" : "Close"}
-        </Button>
+        {!readOnly && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={close.isPending}
+            onClick={() => close.mutate()}
+          >
+            {close.isPending ? "Closing…" : "Close"}
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-border/40 px-4 py-3.5 md:grid-cols-4">
@@ -184,18 +188,20 @@ export function PositionRow({ position, markPrice, tick }: PositionRowProps) {
             <span className="tabular-nums">{sl > 0n ? <NumberFlowUsd value={sl} decimals="adaptive" /> : <span className="text-muted-foreground/40">—</span>}</span>
           </span>
         </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setEditing((v) => !v)}
-          className="h-7 px-2.5 text-[11px]"
-        >
-          <Pencil className="h-3 w-3" />
-          {editing ? "Cancel" : "Edit"}
-        </Button>
+        {!readOnly && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setEditing((v) => !v)}
+            className="h-7 px-2.5 text-[11px]"
+          >
+            <Pencil className="h-3 w-3" />
+            {editing ? "Cancel" : "Edit"}
+          </Button>
+        )}
       </div>
 
-      {editing && (
+      {!readOnly && editing && (
         <TpSlEditor
           symbol={position.symbol}
           isLong={position.is_long}

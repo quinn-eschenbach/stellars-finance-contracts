@@ -201,7 +201,7 @@ function InsightsPage() {
       <Section
         eyebrow="04"
         title="Vault detail"
-        sub="LP-side balance sheet — what's deployed, reserved, accrued, and free."
+        sub="LP-side balance sheet — what's deployed, active as margin, accrued, and idle."
       >
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Kpi
@@ -211,14 +211,14 @@ function InsightsPage() {
             }
           />
           <Kpi
-            label="Reserved (margin)"
+            label="Active funds (margin)"
             value={
               vault.data ? <NumberFlowUsd value={vault.data.reserved_usdc} decimals={2} /> : "—"
             }
             tone="default"
           />
           <Kpi
-            label="Free liquidity"
+            label="Idle funds"
             value={
               vault.data ? <NumberFlowUsd value={vault.data.free_liquidity} decimals={2} /> : "—"
             }

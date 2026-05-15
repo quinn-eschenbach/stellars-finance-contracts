@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Flame, Skull } from "lucide-react";
 import { useLeaderboard } from "@/api/hooks";
 import { Card } from "@/components/ui/card";
@@ -132,9 +132,13 @@ function RankRow({
       </td>
       <td className="px-4 py-3.5">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-foreground/95">
+          <Link
+            to="/positions/$address"
+            params={{ address: row.trader }}
+            className="font-mono text-xs text-foreground/95 transition-colors hover:text-ember"
+          >
             {shortAddress(row.trader, 6, 4)}
-          </span>
+          </Link>
           {isMe && (
             <span className="rounded-full bg-ember/15 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.22em] text-ember">
               you

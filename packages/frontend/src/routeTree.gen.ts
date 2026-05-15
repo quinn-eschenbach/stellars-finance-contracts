@@ -10,22 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
-import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as MarketsRouteImport } from './routes/markets'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as InsightsRouteImport } from './routes/insights'
 import { Route as FaucetRouteImport } from './routes/faucet'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TradeSymbolRouteImport } from './routes/trade.$symbol'
+import { Route as PositionsAddressRouteImport } from './routes/positions.$address'
 
 const VaultRoute = VaultRouteImport.update({
   id: '/vault',
   path: '/vault',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PortfolioRoute = PortfolioRouteImport.update({
-  id: '/portfolio',
-  path: '/portfolio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MarketsRoute = MarketsRouteImport.update({
@@ -58,6 +53,11 @@ const TradeSymbolRoute = TradeSymbolRouteImport.update({
   path: '/trade/$symbol',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PositionsAddressRoute = PositionsAddressRouteImport.update({
+  id: '/positions/$address',
+  path: '/positions/$address',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -65,8 +65,8 @@ export interface FileRoutesByFullPath {
   '/insights': typeof InsightsRoute
   '/leaderboard': typeof LeaderboardRoute
   '/markets': typeof MarketsRoute
-  '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
+  '/positions/$address': typeof PositionsAddressRoute
   '/trade/$symbol': typeof TradeSymbolRoute
 }
 export interface FileRoutesByTo {
@@ -75,8 +75,8 @@ export interface FileRoutesByTo {
   '/insights': typeof InsightsRoute
   '/leaderboard': typeof LeaderboardRoute
   '/markets': typeof MarketsRoute
-  '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
+  '/positions/$address': typeof PositionsAddressRoute
   '/trade/$symbol': typeof TradeSymbolRoute
 }
 export interface FileRoutesById {
@@ -86,8 +86,8 @@ export interface FileRoutesById {
   '/insights': typeof InsightsRoute
   '/leaderboard': typeof LeaderboardRoute
   '/markets': typeof MarketsRoute
-  '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
+  '/positions/$address': typeof PositionsAddressRoute
   '/trade/$symbol': typeof TradeSymbolRoute
 }
 export interface FileRouteTypes {
@@ -98,8 +98,8 @@ export interface FileRouteTypes {
     | '/insights'
     | '/leaderboard'
     | '/markets'
-    | '/portfolio'
     | '/vault'
+    | '/positions/$address'
     | '/trade/$symbol'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -108,8 +108,8 @@ export interface FileRouteTypes {
     | '/insights'
     | '/leaderboard'
     | '/markets'
-    | '/portfolio'
     | '/vault'
+    | '/positions/$address'
     | '/trade/$symbol'
   id:
     | '__root__'
@@ -118,8 +118,8 @@ export interface FileRouteTypes {
     | '/insights'
     | '/leaderboard'
     | '/markets'
-    | '/portfolio'
     | '/vault'
+    | '/positions/$address'
     | '/trade/$symbol'
   fileRoutesById: FileRoutesById
 }
@@ -129,8 +129,8 @@ export interface RootRouteChildren {
   InsightsRoute: typeof InsightsRoute
   LeaderboardRoute: typeof LeaderboardRoute
   MarketsRoute: typeof MarketsRoute
-  PortfolioRoute: typeof PortfolioRoute
   VaultRoute: typeof VaultRoute
+  PositionsAddressRoute: typeof PositionsAddressRoute
   TradeSymbolRoute: typeof TradeSymbolRoute
 }
 
@@ -141,13 +141,6 @@ declare module '@tanstack/react-router' {
       path: '/vault'
       fullPath: '/vault'
       preLoaderRoute: typeof VaultRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/portfolio': {
-      id: '/portfolio'
-      path: '/portfolio'
-      fullPath: '/portfolio'
-      preLoaderRoute: typeof PortfolioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/markets': {
@@ -192,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TradeSymbolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/positions/$address': {
+      id: '/positions/$address'
+      path: '/positions/$address'
+      fullPath: '/positions/$address'
+      preLoaderRoute: typeof PositionsAddressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -201,8 +201,8 @@ const rootRouteChildren: RootRouteChildren = {
   InsightsRoute: InsightsRoute,
   LeaderboardRoute: LeaderboardRoute,
   MarketsRoute: MarketsRoute,
-  PortfolioRoute: PortfolioRoute,
   VaultRoute: VaultRoute,
+  PositionsAddressRoute: PositionsAddressRoute,
   TradeSymbolRoute: TradeSymbolRoute,
 }
 export const routeTree = rootRouteImport

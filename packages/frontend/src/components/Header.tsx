@@ -3,19 +3,32 @@ import { useWallet } from "@/wallet/WalletProvider";
 import { Button } from "@/components/ui/button";
 import { shortAddress } from "@/lib/utils";
 
-const NAV: ReadonlyArray<{
-  to: "/markets" | "/portfolio" | "/vault" | "/leaderboard" | "/faucet";
-  label: string;
-}> = [
-  { to: "/markets", label: "Markets" },
-  { to: "/leaderboard", label: "Leaderboard" },
-  { to: "/portfolio", label: "Portfolio" },
-  { to: "/vault", label: "Vault" },
-  { to: "/faucet", label: "Faucet" },
+type NavItem =
+  | { kind: "static"; to: "/markets" | "/vault" | "/leaderboard" | "/faucet"; label: string }
+  | { kind: "positions"; label: string };
+
+const NAV: ReadonlyArray<NavItem> = [
+  { kind: "static", to: "/markets", label: "Markets" },
+  { kind: "static", to: "/leaderboard", label: "Leaderboard" },
+  { kind: "positions", label: "Positions" },
+  { kind: "static", to: "/vault", label: "Vault" },
+  { kind: "static", to: "/faucet", label: "Faucet" },
 ];
+
+const NAV_LINK_CLASS = `
+  rounded-full px-3.5 py-1.5 text-[13px] font-medium
+  text-muted-foreground transition-all duration-200
+  hover:bg-foreground/[0.06] hover:text-foreground
+  data-[status=active]:bg-foreground
+  data-[status=active]:text-background
+  data-[status=active]:shadow-[0_1px_0_0_rgba(255,255,255,0.25)_inset,0_4px_14px_-6px_rgba(0,0,0,0.5)]
+  data-[status=active]:hover:bg-foreground
+  data-[status=active]:hover:text-background
+`;
 
 export function Header() {
   const { status, connect, refreshing } = useWallet();
+  const connectedAddress = status.kind === "ok" ? status.address : null;
 
   return (
     <header className="sticky top-0 z-30 w-full border-b border-border/40 bg-background/40 backdrop-blur-xl">
@@ -30,24 +43,29 @@ export function Header() {
         </Link>
 
         <nav className="hidden items-center gap-0.5 rounded-full border border-border/40 bg-card/30 p-1 backdrop-blur-md md:flex">
-          {NAV.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="
-                rounded-full px-3.5 py-1.5 text-[13px] font-medium
-                text-muted-foreground transition-all duration-200
-                hover:bg-foreground/[0.06] hover:text-foreground
-                data-[status=active]:bg-foreground
-                data-[status=active]:text-background
-                data-[status=active]:shadow-[0_1px_0_0_rgba(255,255,255,0.25)_inset,0_4px_14px_-6px_rgba(0,0,0,0.5)]
-                data-[status=active]:hover:bg-foreground
-                data-[status=active]:hover:text-background
-              "
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV.map((item) => {
+            if (item.kind === "positions") {
+              // Positions link is parameterised on the connected wallet
+              // address. Skip when nothing is connected — the page can only
+              // be reached via a Leaderboard row in that case.
+              if (!connectedAddress) return null;
+              return (
+                <Link
+                  key="positions"
+                  to="/positions/$address"
+                  params={{ address: connectedAddress }}
+                  className={NAV_LINK_CLASS}
+                >
+                  {item.label}
+                </Link>
+              );
+            }
+            return (
+              <Link key={item.to} to={item.to} className={NAV_LINK_CLASS}>
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {status.kind === "ok" ? (

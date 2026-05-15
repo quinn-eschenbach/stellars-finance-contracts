@@ -1,43 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Wallet2 } from "lucide-react";
-import { useAddress } from "@/wallet/WalletProvider";
 import { usePositions, usePrices } from "@/api/hooks";
 import { useMarketTick } from "@/api/marketTick";
 import { useStreamPositions, useStreamPrices } from "@/api/sse";
+import { useAddress } from "@/wallet/WalletProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PositionRow } from "@/components/trade/PositionRow";
+import { shortAddress } from "@/lib/utils";
 import type { PositionRow as PositionRowData } from "@/api/types";
 
-export const Route = createFileRoute("/portfolio")({
-  component: PortfolioPage,
+export const Route = createFileRoute("/positions/$address")({
+  component: PositionsPage,
 });
 
-function PortfolioPage() {
-  const address = useAddress();
+function PositionsPage() {
+  const { address } = Route.useParams();
+  const me = useAddress();
+  const isMe = !!me && me === address;
+
   const positions = usePositions(address);
   const prices = usePrices();
   useStreamPositions(address);
   useStreamPrices();
-
-  if (!address) {
-    return (
-      <div className="mx-auto max-w-md animate-fade-up">
-        <Card>
-          <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-            <span className="grid h-14 w-14 place-items-center rounded-full border border-border/50 bg-card/40 text-muted-foreground">
-              <Wallet2 className="h-6 w-6" />
-            </span>
-            <div className="space-y-1">
-              <h2 className="font-display text-2xl tracking-tightest text-foreground">No wallet</h2>
-              <p className="max-w-xs text-sm text-muted-foreground">
-                Connect a Freighter wallet to view your positions and PnL.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   const priceBySymbol = new Map((prices.data ?? []).map((p) => [p.symbol, p.price]));
   const count = positions.data?.length ?? 0;
@@ -47,11 +30,14 @@ function PortfolioPage() {
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/30 pb-5">
         <div className="space-y-1">
           <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            Account
+            {isMe ? "Account" : "Trader"}
           </span>
           <h1 className="font-display text-5xl tracking-tightest text-foreground md:text-6xl">
-            Portfolio
+            {isMe ? "Positions" : `${shortAddress(address, 6, 4)}`}
           </h1>
+          {!isMe && (
+            <p className="font-mono text-[11px] tabular-nums text-muted-foreground/70">{address}</p>
+          )}
         </div>
         <div className="pill font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
           {count} open {count === 1 ? "position" : "positions"}
@@ -79,6 +65,7 @@ function PortfolioPage() {
                 key={p.id}
                 position={p}
                 markPrice={priceBySymbol.get(p.symbol)}
+                readOnly={!isMe}
               />
             ))}
           </div>
@@ -97,10 +84,12 @@ function PortfolioPage() {
 function ProjectedPositionRow({
   position,
   markPrice,
+  readOnly,
 }: {
   position: PositionRowData;
   markPrice?: string;
+  readOnly: boolean;
 }) {
   const tick = useMarketTick(position.symbol);
-  return <PositionRow position={position} markPrice={markPrice} tick={tick} />;
+  return <PositionRow position={position} markPrice={markPrice} tick={tick} readOnly={readOnly} />;
 }
