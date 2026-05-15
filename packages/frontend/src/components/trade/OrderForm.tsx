@@ -28,6 +28,10 @@ interface OrderFormProps {
 
 const QUICK_AMOUNTS = ["100", "500", "1000", "5000"];
 
+const SLIPPAGE_PRESETS_BPS = [10, 50, 100] as const; // 0.1%, 0.5%, 1%
+const DEFAULT_SLIPPAGE_BPS = 50;
+const MAX_SLIPPAGE_BPS = 5000; // 50% — beyond this, just pass 0 to opt out
+
 /**
  * Market-order open form. Order state is owned by the parent so the chart
  * can render entry / liquidation price lines for the staged order. TP/SL
@@ -50,6 +54,8 @@ export function OrderForm({
   const [tpInput, setTpInput] = useState("");
   const [slInput, setSlInput] = useState("");
   const [showTpSl, setShowTpSl] = useState(false);
+  const [slippageBps, setSlippageBps] = useState<number>(DEFAULT_SLIPPAGE_BPS);
+  const [slippageCustom, setSlippageCustom] = useState("");
 
   const collateralScaled = useMemo(() => {
     try {
@@ -85,6 +91,16 @@ export function OrderForm({
         ? validateSl(BigInt(markPrice), slScaled, isLong)
         : null;
 
+  // `acceptable_price` worst-case the trade is willing to fill at.
+  // Long: mark * (1 + slippage); Short: mark * (1 - slippage).
+  // Pass 0 to opt out — match the contract convention.
+  const acceptablePrice = useMemo(() => {
+    if (!markPrice || slippageBps <= 0) return 0n;
+    const mark = BigInt(markPrice);
+    const delta = (mark * BigInt(slippageBps)) / 10_000n;
+    return isLong ? mark + delta : mark - delta;
+  }, [markPrice, slippageBps, isLong]);
+
   const open = useTxMutation({
     action: `Open ${cappedLeverage}× ${isLong ? "long" : "short"} ${symbol}`,
     successDetail: `Position opened on ${symbol} with ${collateralInput} USDC.`,
@@ -101,6 +117,7 @@ export function OrderForm({
         is_long: isLong,
         take_profit: typeof tpScaled === "bigint" ? tpScaled : 0n,
         stop_loss: typeof slScaled === "bigint" ? slScaled : 0n,
+        acceptable_price: acceptablePrice,
       });
     },
   });
@@ -229,12 +246,28 @@ export function OrderForm({
         )}
       </div>
 
+      {/* Slippage tolerance — chip presets + custom input */}
+      <SlippageRow
+        bps={slippageBps}
+        setBps={setSlippageBps}
+        customInput={slippageCustom}
+        setCustomInput={setSlippageCustom}
+      />
+
       {/* Order summary */}
       <div className="space-y-1.5 rounded-xl border border-border/40 bg-background/30 p-3.5">
         <Row label="Size" value={<NumberFlowUsd value={sizeScaled} />} />
         <Row
           label="Mark price"
           value={markPrice ? <NumberFlowUsd value={markPrice} decimals="adaptive" /> : "—"}
+        />
+        <Row
+          label={isLong ? "Max fill price" : "Min fill price"}
+          value={
+            acceptablePrice > 0n
+              ? <NumberFlowUsd value={acceptablePrice} decimals="adaptive" />
+              : "Any"
+          }
         />
         <Row
           label="Est. liq. price"
@@ -375,4 +408,80 @@ function Row({
       <span className={cn("tabular-nums", tone === "warn" && "text-bear/90")}>{value}</span>
     </div>
   );
+}
+
+function SlippageRow({
+  bps,
+  setBps,
+  customInput,
+  setCustomInput,
+}: {
+  bps: number;
+  setBps: (n: number) => void;
+  customInput: string;
+  setCustomInput: (s: string) => void;
+}) {
+  const isPreset = (SLIPPAGE_PRESETS_BPS as readonly number[]).includes(bps);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>Slippage tolerance</Label>
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/80">
+          {formatBps(bps)}
+        </span>
+      </div>
+      <div className="flex gap-1.5">
+        {SLIPPAGE_PRESETS_BPS.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            onClick={() => {
+              setBps(preset);
+              setCustomInput("");
+            }}
+            className={cn(
+              "flex-1 rounded-lg border border-border/50 bg-card/30 px-2 py-1 font-mono text-[11px] tracking-tight text-muted-foreground transition-all hover:border-ember/50 hover:bg-card/60 hover:text-foreground",
+              bps === preset && !customInput && "border-ember/60 bg-ember/10 text-foreground",
+            )}
+          >
+            {formatBps(preset)}
+          </button>
+        ))}
+        <Input
+          type="text"
+          inputMode="decimal"
+          value={customInput}
+          onChange={(e) => {
+            const v = e.target.value;
+            setCustomInput(v);
+            const parsed = parseSlippagePct(v);
+            if (parsed !== null) setBps(parsed);
+            else if (v.trim() === "") setBps(DEFAULT_SLIPPAGE_BPS);
+          }}
+          placeholder="custom %"
+          className={cn(
+            "h-7 flex-[1.2] px-2 font-mono text-[11px]",
+            !isPreset && customInput && "border-ember/60 bg-ember/5",
+          )}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Format bps as a percent string ("50" → "0.5%"). */
+function formatBps(bps: number): string {
+  const pct = bps / 100;
+  return pct >= 1 ? `${pct.toFixed(pct % 1 === 0 ? 0 : 2)}%` : `${pct.toFixed(2)}%`;
+}
+
+/** Parse a user-typed percent ("0.5" or "0.5%") to bps. Returns null if invalid or out of range. */
+function parseSlippagePct(input: string): number | null {
+  const trimmed = input.trim().replace(/%$/, "");
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  const pct = Number(trimmed);
+  if (!Number.isFinite(pct) || pct < 0) return null;
+  const bps = Math.round(pct * 100);
+  if (bps > MAX_SLIPPAGE_BPS) return null;
+  return bps;
 }

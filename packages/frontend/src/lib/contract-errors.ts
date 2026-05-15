@@ -39,6 +39,13 @@ const positionManager: ErrorTable = {
     16: { name: "BelowMinCollateral", message: "Collateral is below the protocol minimum." },
     17: { name: "AdlTargetNotProfitable", message: "ADL target position isn't profitable." },
     18: { name: "LeverageCapExceeded", message: "Max leverage exceeds the safety cap (200×)." },
+    19: { name: "SlippageExceeded", message: "Mark price moved past your slippage tolerance. Raise slippage or retry." },
+    20: { name: "LeverageBelowFloor", message: "Max leverage is below the protocol floor." },
+    21: { name: "MarketDisabled", message: "This market is disabled for opens. Closes still work." },
+    22: { name: "SizeDeltaExceedsPosition", message: "Close size exceeds the open position size." },
+    23: { name: "NoPendingUpgrade", message: "No pending upgrade to commit." },
+    24: { name: "UpgradeTimelockNotElapsed", message: "Upgrade timelock has not elapsed yet." },
+    25: { name: "UpgradeHashMismatch", message: "Proposed and committed WASM hashes don't match." },
   },
 };
 
