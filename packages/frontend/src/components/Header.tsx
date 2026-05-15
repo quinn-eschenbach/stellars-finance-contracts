@@ -83,7 +83,7 @@ export function Header() {
           </div>
         ) : (
           <Button onClick={connect} disabled={refreshing} variant="primary" size="sm">
-            {status.kind === "missing" ? "Install Freighter" : "Connect Wallet"}
+            Connect Wallet
           </Button>
         )}
       </div>

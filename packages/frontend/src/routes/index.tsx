@@ -316,7 +316,7 @@ function ClosingCta() {
             Ready to <span className="italic">trade?</span>
           </h2>
           <p className="mx-auto max-w-md text-sm text-muted-foreground">
-            Connect a Freighter wallet, claim testnet USDC from the faucet, and open your first
+            Connect a Stellar wallet, claim testnet USDC from the faucet, and open your first
             position.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">

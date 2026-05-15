@@ -18,9 +18,9 @@ test.describe("Home", () => {
     await expect(page.getByText("ETHUSD").first()).toBeVisible();
   });
 
-  test("offers an Install Freighter CTA when the extension isn't detected", async ({ page }) => {
+  test("offers a Connect Wallet CTA when nothing is connected", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("button", { name: /install freighter/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /connect wallet/i })).toBeVisible();
   });
 
   test("shows TVL pulled from the vault endpoint", async ({ page }) => {

@@ -14,8 +14,8 @@ import { queryKeys, useLockup, useWalletBalance } from "@/api/hooks";
 /**
  * Deposit + withdraw forms for the vault. Both use the OZ FungibleVault
  * methods; deposit pulls USDC from the user's wallet via Soroban auth
- * propagation (no separate approve step needed — Freighter signs the
- * outer tx and the inner token.transfer auth comes along).
+ * propagation (no separate approve step needed — the connected wallet
+ * signs the outer tx and the inner token.transfer auth comes along).
  */
 export function VaultActions() {
   const address = useAddress();

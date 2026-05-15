@@ -79,7 +79,7 @@ function FaucetPage() {
         <CardContent className="space-y-5">
           {!address ? (
             <p className="rounded-xl border border-dashed border-border/50 bg-background/30 px-4 py-6 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              Connect your Freighter wallet to continue
+              Connect a Stellar wallet to continue
             </p>
           ) : (
             <>

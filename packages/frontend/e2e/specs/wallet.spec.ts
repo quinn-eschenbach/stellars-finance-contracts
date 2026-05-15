@@ -8,7 +8,7 @@ test.describe("Wallet connect", () => {
     await setWalletState(page, "missing");
     await installApiMocks(page);
     await page.goto("/");
-    await expect(page.getByRole("button", { name: /install freighter/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /connect wallet/i })).toBeVisible();
   });
 
   test("clicking Connect Wallet (extension present, not allowed) updates UI to connected", async ({ page }) => {
