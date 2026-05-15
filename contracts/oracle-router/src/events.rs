@@ -9,13 +9,14 @@ pub struct PriceFetch {
     pub timestamp: u64,
 }
 
-/// Emitted by `set_oracle_config`. No cache — every `get_price` queries
-/// sources fresh, so there's no `cache_duration` field.
+/// Emitted by `set_oracle_config` whenever the global safety thresholds
+/// change. Mirrors every field of the on-chain `OracleConfig` struct.
 #[contractevent(topics = ["orccfg"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleConfigUpdate {
     pub staleness: u64,
     pub deviation: i128,
+    pub cache_duration: u64,
     pub min_required_sources: u32,
 }
 

@@ -3,7 +3,7 @@ use soroban_sdk::{contractclient, Address, BytesN, Env, Symbol, Vec};
 use crate::types::OracleConfig;
 
 /// OracleRouter contract interface.
-/// SEP-40 median aggregation, no cache — every `get_price` re-queries sources.
+/// SEP-40 median aggregation with a per-symbol price cache.
 #[contractclient(name = "OracleRouterClient")]
 pub trait OracleRouter {
     /// Initialize the oracle router and link it to the ConfigManager.
@@ -12,7 +12,8 @@ pub trait OracleRouter {
     fn initialize(env: Env, admin: Address, config_manager_address: Address);
 
     /// Return the validated median price for `symbol` (scaled by 1e7).
-    /// Always queries sources fresh — there is no internal cache.
+    /// Returns a cached value if the last fetch is within `cache_duration`;
+    /// otherwise queries sources fresh and refreshes the cache.
     fn get_price(env: Env, symbol: Symbol) -> i128;
 
     /// Add or replace the flat SEP-40 oracle source list for `symbol`.

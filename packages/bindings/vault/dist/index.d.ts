@@ -1257,11 +1257,16 @@ export interface MarketInfo {
 }
 /**
  * Global safety thresholds for price validation.
- *
- * OracleRouter has no cache — every `get_price` call queries sources fresh,
- * so there is no separate cache-freshness knob.
  */
 export interface OracleConfig {
+    /**
+   * How long a cached aggregated price remains valid (in seconds). A
+   * `get_price` call within this window of the last fetch returns the
+   * cached value without re-querying sources. Must be > 0 and
+   * <= `staleness_threshold` (otherwise the cache could outlive a fresh
+   * source price and serve stale data).
+   */
+    cache_duration: u64;
     /**
    * Maximum allowed spread between oracle sources in basis points
    * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.

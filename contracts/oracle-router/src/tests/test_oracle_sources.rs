@@ -570,6 +570,7 @@ fn test_set_oracle_sources_deduplicates_primary_list() {
     let config = crate::OracleConfig {
         max_deviation_bps: shared::constants::MAX_DEVIATION_BPS_CEILING,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -635,6 +636,7 @@ fn test_set_oracle_sources_dedup_all_duplicate_list_acts_as_single_source() {
     let config = crate::OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -710,6 +712,7 @@ fn test_set_oracle_sources_dedup_preserves_deviation_check_for_divergent_sources
     let config = crate::OracleConfig {
         max_deviation_bps: shared::constants::MAX_DEVIATION_BPS_CEILING,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);

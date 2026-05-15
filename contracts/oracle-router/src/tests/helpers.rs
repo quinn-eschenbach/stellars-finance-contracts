@@ -79,6 +79,7 @@ pub fn valid_oracle_config() -> OracleConfig {
     OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     }
 }
@@ -155,6 +156,7 @@ pub fn deploy_with_price_feed(
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);

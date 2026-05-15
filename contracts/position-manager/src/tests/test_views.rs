@@ -126,6 +126,7 @@ fn setup_full<'a>() -> TestFixture<'a> {
         &OracleConfig {
             max_deviation_bps: 500,
             staleness_threshold: 3600,
+            cache_duration: 10,
             min_required_sources: 1,
         },
     );

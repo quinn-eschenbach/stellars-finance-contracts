@@ -4,6 +4,16 @@ use soroban_sdk::{contracttype, panic_with_error, vec, Address, Env, Symbol, Vec
 use crate::errors::OracleRouterError;
 use crate::types::OracleConfig;
 
+/// Cached aggregated median price for a symbol — produced by
+/// `fetch_and_validate_price` on a cache miss, consumed by the cache-hit
+/// branch on subsequent calls within `cache_duration` seconds.
+#[contracttype]
+#[derive(Clone)]
+pub struct CachedPrice {
+    pub price: i128,
+    pub last_update: u64,
+}
+
 #[contracttype]
 pub enum StorageKey {
     /// Initialization flag.
@@ -14,6 +24,8 @@ pub enum StorageKey {
     OracleConfig,
     /// Per-symbol flat source list (no primary/secondary tiering).
     Sources(Symbol),
+    /// Per-symbol cached aggregated price.
+    CachedPrice(Symbol),
     /// Current contract version — written by `_migrate` after a WASM upgrade.
     Version,
 }
@@ -95,6 +107,24 @@ pub fn load_sources(env: &Env, symbol: &Symbol) -> Vec<Address> {
 pub fn save_sources(env: &Env, symbol: &Symbol, sources: &Vec<Address>) {
     let key = StorageKey::Sources(symbol.clone());
     env.storage().persistent().set(&key, sources);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, SHARED_THRESHOLD, SHARED_BUMP);
+}
+
+// ---------------------------------------------------------------------------
+// Cached price helpers
+// ---------------------------------------------------------------------------
+
+pub fn load_cached_price(env: &Env, symbol: &Symbol) -> Option<CachedPrice> {
+    env.storage()
+        .persistent()
+        .get(&StorageKey::CachedPrice(symbol.clone()))
+}
+
+pub fn save_cached_price(env: &Env, symbol: &Symbol, entry: CachedPrice) {
+    let key = StorageKey::CachedPrice(symbol.clone());
+    env.storage().persistent().set(&key, &entry);
     env.storage()
         .persistent()
         .extend_ttl(&key, SHARED_THRESHOLD, SHARED_BUMP);

@@ -52,6 +52,7 @@ impl OracleRouter for OracleRouterContract {
         events::OracleConfigUpdate {
             staleness: config.staleness_threshold,
             deviation: config.max_deviation_bps,
+            cache_duration: config.cache_duration,
             min_required_sources: config.min_required_sources,
         }
         .publish(&env);

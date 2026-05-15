@@ -1,11 +1,11 @@
 //! Tests for `get_price` on the OracleRouter contract.
 //!
-//! Coverage areas (2.4 — cache hit path):
+//! Coverage areas (cache hit path):
 //!   - Cached price is returned without querying sources when within duration
 //!   - Expired cache triggers a fresh fetch from sources
 //!   - No cache entry at all triggers a fetch
 //!
-//! Coverage areas (2.5 — cache miss / fetch path):
+//! Coverage areas (cache miss / fetch path):
 //!   - Single source: price is fetched and returned correctly
 //!   - No sources configured → NoPriceSources (6)
 //!   - All sources stale → StalePrice (4)
@@ -14,8 +14,6 @@
 //!   - Lower-median selection for even source count
 //!   - Deviation above threshold → PriceDeviationTooHigh (5)
 //!   - Deviation within threshold → price returned
-//!   - Every call refetches — no caching layer; consecutive calls observe
-//!     source updates and time advances immediately
 //!   - No OracleConfig set → NotInitialized (2)
 //!
 //! Broken oracle source isolation:
@@ -31,20 +29,16 @@ use crate::OracleConfig;
 use crate::OracleRouterError;
 
 // ---------------------------------------------------------------------------
-// 2.4 — Fresh-fetch invariants (no caching layer)
+// Cache hit / miss invariants
 // ---------------------------------------------------------------------------
 
-/// When `get_price` is called and the cached price was written at time T, and
-/// the current ledger timestamp is T + cache_duration (i.e., still within the
-/// valid window), the cached price must be returned without cross-contract
-/// oracle calls.
-///
-/// We verify this by setting the mock oracle to a DIFFERENT price after the
-/// initial fetch. The router has no cache — every `get_price` queries sources
-/// fresh — so changing the mock oracle price between calls (without advancing
-/// time) must produce the new price on the second call, not a cached one.
+/// Within `cache_duration` seconds of a prior fetch, `get_price` must return
+/// the cached value without re-querying sources. We verify this by changing
+/// the upstream source price between two calls (without advancing time) —
+/// the second call must return the ORIGINAL price, proving the cache served
+/// it.
 #[test]
-fn test_get_price_always_returns_fresh_price() {
+fn test_get_price_returns_cached_value_within_window() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -55,18 +49,18 @@ fn test_get_price_always_returns_fresh_price() {
     mock.set_price(&eth, &initial_price);
     assert_eq!(oracle.get_price(&eth), initial_price);
 
+    // Change the source price; the cache must still serve the original.
     let updated_price: i128 = 9_999_0000000;
     mock.set_price(&eth, &updated_price);
     assert_eq!(
         oracle.get_price(&eth),
-        updated_price,
-        "no cache — every call must observe the latest source price"
+        initial_price,
+        "within cache_duration the cached price must be returned, not the live source"
     );
 }
 
-/// `get_price` re-fetches on every call (the OracleRouter has no cache).
-/// Advancing the ledger and updating the upstream mock must surface the
-/// fresh price on the next call.
+/// After the cache expires (current_time > last_update + cache_duration),
+/// `get_price` must re-fetch from sources and surface the new price.
 #[test]
 fn test_get_price_refetches_after_time_advance() {
     let env = Env::default();
@@ -184,6 +178,7 @@ fn test_get_price_no_sources_returns_no_price_sources_error() {
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -282,6 +277,7 @@ fn test_get_price_stale_source_filtered_if_fresh_source_exists() {
     let config = OracleConfig {
         max_deviation_bps: 500, // 5% — generous threshold for this test
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -339,6 +335,7 @@ fn test_get_price_computes_median_of_three_sources() {
     let config = OracleConfig {
         max_deviation_bps: 10_000, // 100% — won't reject any spread in this test
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -390,6 +387,7 @@ fn test_get_price_computes_lower_median_for_even_count() {
     let config = OracleConfig {
         max_deviation_bps: 10_000, // 100% — won't reject any spread in this test
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -441,6 +439,7 @@ fn test_get_price_high_deviation_returns_deviation_error() {
     let config = OracleConfig {
         max_deviation_bps: 200, // 2% maximum allowed spread
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -501,6 +500,7 @@ fn test_get_price_deviation_within_threshold_succeeds() {
     let config = OracleConfig {
         max_deviation_bps: 200, // 2%
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -607,6 +607,7 @@ fn test_get_price_deviation_exactly_at_threshold_is_accepted() {
     let config = OracleConfig {
         max_deviation_bps: 200, // exactly 2%
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -648,6 +649,7 @@ fn test_get_price_deviation_one_bps_above_threshold_is_rejected() {
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -781,6 +783,7 @@ fn test_get_price_cache_is_keyed_per_symbol() {
     let config = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -919,6 +922,7 @@ fn test_get_price_zero_price_from_source_is_filtered_out() {
     let config = OracleConfig {
         max_deviation_bps: 500, // 5%
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -969,6 +973,7 @@ fn test_get_price_negative_price_from_source_is_filtered_out() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -1016,6 +1021,7 @@ fn test_get_price_all_sources_return_zero_panics_with_stale_price() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -1065,6 +1071,7 @@ fn test_get_price_all_sources_return_negative_panics_with_stale_price() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -1121,6 +1128,7 @@ fn test_get_price_mix_of_zero_and_valid_prices_uses_valid_only() {
     let config = OracleConfig {
         max_deviation_bps: 500,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -1179,6 +1187,7 @@ fn test_get_price_zero_price_does_not_cause_division_by_zero() {
     let config = OracleConfig {
         max_deviation_bps: 100, // 1%
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -1249,6 +1258,7 @@ fn test_get_price_broken_source_is_skipped_if_other_sources_valid() {
     let config = OracleConfig {
         max_deviation_bps: 10_000,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);
@@ -1314,6 +1324,7 @@ fn test_get_price_all_sources_broken_returns_clean_error() {
     let config = OracleConfig {
         max_deviation_bps: 10_000,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     oracle.set_oracle_config(&admin, &config);

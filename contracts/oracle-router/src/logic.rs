@@ -57,6 +57,12 @@ impl Validate for OracleConfig {
         if self.staleness_threshold == 0 {
             panic_with_error!(env, OracleRouterError::InvalidConfig);
         }
+        // Cache must not outlive the staleness window — otherwise a cached
+        // price could be served after its underlying source feed has gone
+        // stale.
+        if self.cache_duration == 0 || self.cache_duration > self.staleness_threshold {
+            panic_with_error!(env, OracleRouterError::InvalidConfig);
+        }
         if self.min_required_sources < MIN_REQUIRED_SOURCES_FLOOR
             || self.min_required_sources > MAX_ORACLE_SOURCES
         {
@@ -99,12 +105,21 @@ pub fn query_sources(
     valid_prices
 }
 
-/// Full price fetch: query every source, require ≥ `min_required_sources`
-/// valid responses, compute and validate the median, emit, return.
-/// No cache — every call refetches.
+/// Full price fetch: cache hit short-circuit, otherwise query every source,
+/// require ≥ `min_required_sources` valid responses, compute and validate
+/// the median, write cache, emit, return.
 pub fn fetch_and_validate_price(env: &Env, symbol: Symbol) -> i128 {
     let config = storage::load_oracle_config(env);
     let current_time = env.ledger().timestamp();
+
+    // Cache hit — return immediately without querying sources. The validator
+    // guarantees `cache_duration <= staleness_threshold`, so a cached value
+    // never outlives its underlying source freshness window.
+    if let Some(entry) = storage::load_cached_price(env, &symbol) {
+        if current_time <= entry.last_update + config.cache_duration {
+            return entry.price;
+        }
+    }
 
     let sources = storage::load_sources(env, &symbol);
     if sources.is_empty() {
@@ -138,6 +153,11 @@ pub fn fetch_and_validate_price(env: &Env, symbol: Symbol) -> i128 {
         panic_with_error!(env, OracleRouterError::PriceDeviationTooHigh);
     }
 
+    storage::save_cached_price(
+        env,
+        &symbol,
+        storage::CachedPrice { price: median, last_update: current_time },
+    );
     events::PriceFetch {
         symbol: symbol.clone(),
         price: median,

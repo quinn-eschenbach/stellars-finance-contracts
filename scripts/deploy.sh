@@ -315,7 +315,7 @@ done
 echo "  set oracle config"
 invoke --id "$OR_ID" -- set_oracle_config \
   --caller "$ADMIN_ADDR" \
-  --config '{"max_deviation_bps":"500","staleness_threshold":600,"min_required_sources":1}'
+  --config '{"max_deviation_bps":"500","staleness_threshold":600,"cache_duration":10,"min_required_sources":1}'
 
 # ---------- Configure markets ----------
 echo ""

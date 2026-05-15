@@ -88,11 +88,13 @@ fn test_set_oracle_config_overwrites_previous_config() {
     let first = OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     let second = OracleConfig {
         max_deviation_bps: 250,
         staleness_threshold: 120,
+        cache_duration: 10,
         min_required_sources: 1,
     };
 
@@ -239,6 +241,7 @@ fn test_set_oracle_config_zero_max_deviation_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 0, // invalid
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
 
@@ -259,6 +262,7 @@ fn test_set_oracle_config_zero_staleness_threshold_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 0, // invalid
+        cache_duration: 10,
         min_required_sources: 1,
     };
 
@@ -279,6 +283,7 @@ fn test_set_oracle_config_zero_min_required_sources_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 0,
     };
 
@@ -298,6 +303,7 @@ fn test_set_oracle_config_negative_max_deviation_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: -1, // negative — invalid
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
 
@@ -317,6 +323,7 @@ fn test_set_oracle_config_all_fields_zero_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 0,
         staleness_threshold: 0,
+        cache_duration: 0,
         min_required_sources: 1,
     };
 
@@ -341,7 +348,8 @@ fn test_set_oracle_config_valid_boundary_values_succeed() {
     let config = OracleConfig {
         max_deviation_bps: 1,   // minimum valid i128 positive
         staleness_threshold: 1, // minimum valid u64 positive
-        min_required_sources: 1,      // minimum valid u64 positive
+        cache_duration: 1,      // must be <= staleness_threshold
+        min_required_sources: 1, // minimum valid u32 positive
     };
 
     // Must not panic. Minimum boundary values are valid.
@@ -374,6 +382,7 @@ fn test_set_oracle_config_deviation_above_ceiling_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: shared::constants::MAX_DEVIATION_BPS_CEILING + 1,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: 1,
     };
 
@@ -392,6 +401,7 @@ fn test_set_oracle_config_quorum_above_ceiling_is_invalid() {
     let config = OracleConfig {
         max_deviation_bps: 100,
         staleness_threshold: 60,
+        cache_duration: 10,
         min_required_sources: shared::constants::MAX_ORACLE_SOURCES + 1,
     };
 
@@ -468,6 +478,7 @@ fn test_get_oracle_config_round_trips_all_fields() {
     let config = OracleConfig {
         max_deviation_bps: 137,
         staleness_threshold: 251,
+        cache_duration: 10,
         min_required_sources: 7,
     };
 
@@ -509,11 +520,13 @@ fn test_two_oracle_router_instances_have_independent_config_storage() {
     let config_a = OracleConfig {
         max_deviation_bps: 50,
         staleness_threshold: 30,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     let config_b = OracleConfig {
         max_deviation_bps: 200,
         staleness_threshold: 120,
+        cache_duration: 10,
         min_required_sources: 1,
     };
 
@@ -589,6 +602,7 @@ fn test_set_oracle_config_revoked_admin_is_unauthorized_after_transfer() {
     let config = OracleConfig {
         max_deviation_bps: 999,
         staleness_threshold: 999,
+        cache_duration: 10,
         min_required_sources: 1,
     };
     let result = oracle.try_set_oracle_config(&original_admin, &config);

@@ -1,9 +1,6 @@
 use soroban_sdk::{contracttype, BytesN};
 
 /// Global safety thresholds for price validation.
-///
-/// OracleRouter has no cache — every `get_price` call queries sources fresh,
-/// so there is no separate cache-freshness knob.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct OracleConfig {
@@ -13,6 +10,12 @@ pub struct OracleConfig {
     /// Maximum age of an external SEP-40 price feed before it is rejected
     /// as stale (in seconds).
     pub staleness_threshold: u64,
+    /// How long a cached aggregated price remains valid (in seconds). A
+    /// `get_price` call within this window of the last fetch returns the
+    /// cached value without re-querying sources. Must be > 0 and
+    /// <= `staleness_threshold` (otherwise the cache could outlive a fresh
+    /// source price and serve stale data).
+    pub cache_duration: u64,
     /// Minimum number of source responses that must agree within
     /// `max_deviation_bps` for OracleRouter to return a price. Floored at
     /// `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at

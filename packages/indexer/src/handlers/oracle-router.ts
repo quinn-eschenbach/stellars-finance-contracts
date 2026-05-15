@@ -15,6 +15,7 @@ interface PriceFetchData {
 interface OracleConfigUpdateData {
   staleness: bigint;
   deviation: bigint;
+  cache_duration: bigint;
   min_required_sources: number;
 }
 
@@ -54,6 +55,7 @@ async function handleOracleConfig(db: Db, event: ParsedEvent) {
     timestamp: unixSeconds(event.timestamp),
     staleness: toNumericString(d.staleness),
     deviation: toNumericString(d.deviation),
+    cache_duration: toNumericString(d.cache_duration),
     min_required_sources: d.min_required_sources,
   });
 }

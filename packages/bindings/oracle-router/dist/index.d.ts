@@ -96,9 +96,21 @@ export type StorageKey = {
     tag: "Sources";
     values: readonly [string];
 } | {
+    tag: "CachedPrice";
+    values: readonly [string];
+} | {
     tag: "Version";
     values: void;
 };
+/**
+ * Cached aggregated median price for a symbol — produced by
+ * `fetch_and_validate_price` on a cache miss, consumed by the cache-hit
+ * branch on subsequent calls within `cache_duration` seconds.
+ */
+export interface CachedPrice {
+    last_update: u64;
+    price: i128;
+}
 /**
  * Represents a single trader's open leveraged position.
  */
@@ -175,11 +187,16 @@ export interface MarketInfo {
 }
 /**
  * Global safety thresholds for price validation.
- *
- * OracleRouter has no cache — every `get_price` call queries sources fresh,
- * so there is no separate cache-freshness knob.
  */
 export interface OracleConfig {
+    /**
+   * How long a cached aggregated price remains valid (in seconds). A
+   * `get_price` call within this window of the last fetch returns the
+   * cached value without re-querying sources. Must be > 0 and
+   * <= `staleness_threshold` (otherwise the cache could outlive a fresh
+   * source price and serve stale data).
+   */
+    cache_duration: u64;
     /**
    * Maximum allowed spread between oracle sources in basis points
    * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.

@@ -7,9 +7,7 @@ export const oracleConfigEvents = pgTable("oracle_config_events", {
   timestamp: numeric().notNull(),
   staleness: numeric().notNull(),
   deviation: numeric().notNull(),
-  // OracleRouter has no price cache — emits `min_required_sources` (the
-  // quorum threshold a price fetch must satisfy) in place of any
-  // cache-duration field.
+  cache_duration: numeric().notNull(),
   min_required_sources: integer().notNull(),
   created_at: timestamp().defaultNow().notNull(),
 });
