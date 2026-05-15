@@ -89,9 +89,13 @@ impl MarketTick {
         let oracle = OracleRouterClient::new(env, &oracle_addr);
         let mark_price = oracle.get_price(symbol);
 
-        // Refresh market unrealized PnL and push combined PnL to vault.
-        crate::logic::refresh_market_unrealized_pnl(env, symbol, mark_price);
-
+        // PnL refresh is the caller's responsibility — every trade path already
+        // calls `refresh_market_unrealized_pnl` at the end of its operation
+        // (where OI / avg are at their final state), so doing it here as well
+        // would be a redundant `vault.update_net_pnl` cross-contract call and
+        // push the close path over the Soroban simulation budget. The keeper
+        // `update_indices` path, which has no trailing trade logic, calls
+        // `refresh_market_unrealized_pnl` explicitly.
         Self { market, mark_price }
     }
 

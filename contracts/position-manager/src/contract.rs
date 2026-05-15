@@ -97,7 +97,11 @@ impl PositionManager for PositionManagerContract {
         logic::require_keeper(&env, &caller);
         let vault_addr = storage::get_vault_address(&env);
         let view = crate::vault_view::VaultView::refresh(&env, &vault_addr);
-        MarketTick::refresh(&env, &symbol, &view);
+        let tick = MarketTick::refresh(&env, &symbol, &view);
+        // Trade paths refresh PnL at the end of their own state machine;
+        // `update_indices` has no trailing trade so it pushes the refreshed
+        // PnL to the vault here explicitly.
+        logic::refresh_market_unrealized_pnl(&env, &symbol, tick.mark_price);
         shared::bump_instance_ttl(&env);
     }
 
