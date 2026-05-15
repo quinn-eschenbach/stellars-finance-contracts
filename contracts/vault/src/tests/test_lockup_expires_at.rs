@@ -45,7 +45,6 @@ struct TestFixture {
     config_client: config_manager::ConfigManagerClient<'static>,
     vault_id: Address,
     vault_client: crate::VaultContractClient<'static>,
-    position_manager: Address,
 }
 
 /// Deploy mock-token, config-manager, and vault. Initialize all three with
@@ -115,7 +114,6 @@ fn setup() -> TestFixture {
         config_client,
         vault_id,
         vault_client,
-        position_manager,
     }
 }
 
@@ -402,9 +400,9 @@ fn test_second_deposit_resets_lockup_to_new_expiry() {
     // At T=1300 (deposit#1's old expiry), withdraw must fail because the new
     // expiry is 1400.
     set_ts(&fix, 1300);
-    let res =
-        fix.vault_client
-            .try_withdraw(&(10 * ONE_USDC), &user, &user, &user);
+    let res = fix
+        .vault_client
+        .try_withdraw(&(10 * ONE_USDC), &user, &user, &user);
     match res {
         Ok(_) => panic!(
             "withdraw at T=1300 must revert because the second deposit reset the lockup to 1400"
@@ -494,9 +492,9 @@ fn test_deposit_emits_lockup_event_with_expiry() {
     // `user` and `expires_at` as plain (non-topic) data fields. Match exactly
     // that shape — attempting alternative shapes via try_into_val panics
     // unrecoverably inside the SDK on size mismatch.
-    let (event_user, expires_at): (Address, u64) = data
-        .try_into_val(&fix.env)
-        .expect("lockup event data must unpack as (Address, u64) -- vec payload of (user, expires_at)");
+    let (event_user, expires_at): (Address, u64) = data.try_into_val(&fix.env).expect(
+        "lockup event data must unpack as (Address, u64) -- vec payload of (user, expires_at)",
+    );
 
     assert_eq!(
         event_user, user,
@@ -855,8 +853,7 @@ fn test_share_transfer_recipient_cannot_bypass_lockup() {
     fix.vault_client.transfer(&alice, &bob_muxed, &shares);
 
     // Bob attempts to withdraw before the inherited expiry — must revert.
-    fix.vault_client
-        .withdraw(&(amount / 2), &bob, &bob, &bob);
+    fix.vault_client.withdraw(&(amount / 2), &bob, &bob, &bob);
 }
 
 #[test]
@@ -934,7 +931,8 @@ fn test_transfer_from_propagates_lockup() {
     let shares = deposit_usdc(&fix, &alice, amount);
 
     // Alice approves spender for the shares.
-    fix.vault_client.approve(&alice, &spender, &shares, &10_000_000);
+    fix.vault_client
+        .approve(&alice, &spender, &shares, &10_000_000);
 
     set_ts(&fix, 1100);
     fix.vault_client
