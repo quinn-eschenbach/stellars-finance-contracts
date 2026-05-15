@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useVault } from "@/api/hooks";
+import { useVault, useVaultProfitability } from "@/api/hooks";
 import { useStreamVault } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/vault")({
 
 function VaultPage() {
   const vault = useVault();
+  const profitability = useVaultProfitability(30);
   useStreamVault();
 
   return (
@@ -70,12 +71,27 @@ function VaultPage() {
                 <Row label="Active funds" value={<NumberFlowUsd value={vault.data.reserved_usdc} />} />
                 <div className="hairline" />
                 <Row
-                  label="Net trader PnL"
+                  label="30d profit · trading"
                   value={
-                    <NumberFlowUsd
-                      value={vault.data.net_global_trader_pnl}
-                      signDisplay="exceptZero"
-                    />
+                    profitability.data ? (
+                      <NumberFlowUsd
+                        value={profitability.data.lp_net_from_trades}
+                        signDisplay="exceptZero"
+                      />
+                    ) : (
+                      "—"
+                    )
+                  }
+                  tone="muted"
+                />
+                <Row
+                  label="30d profit · fees"
+                  value={
+                    profitability.data ? (
+                      <NumberFlowUsd value={profitability.data.lp_net_from_fees} />
+                    ) : (
+                      "—"
+                    )
                   }
                   tone="muted"
                 />

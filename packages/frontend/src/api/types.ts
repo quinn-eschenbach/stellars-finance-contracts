@@ -90,6 +90,20 @@ export interface ProtocolConfigRow {
   updated_at: string;
 }
 
+/**
+ * Rolling-window LP profitability snapshot from `/vault/profitability`.
+ * Numbers are protocol-scaled (× 10^7) strings. `lp_net_from_trades` is
+ * the inverse of trader PnL — positive when traders lost. `lp_net_from_fees`
+ * is the LP slice of borrow + funding fees over the same window.
+ */
+export interface VaultProfitabilityRow {
+  window_days: number;
+  lp_net_from_trades: string;
+  lp_net_from_fees: string;
+  lp_bps: number;
+  as_of: string;
+}
+
 export interface PriceRow {
   symbol: string;
   price: string;

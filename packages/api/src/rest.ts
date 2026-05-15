@@ -76,6 +76,61 @@ export function buildRestRoutes(db: QueryRunner): Hono {
   });
 
   /**
+   * GET /vault/profitability?days=30
+   *
+   * LP-side rolling-window profitability — what the underwriting pool has
+   * actually earned. Two scoped lines:
+   *   - `lp_net_from_trades` = SUM(-pnl) over closing events. Positive when
+   *     traders lost more than they won.
+   *   - `lp_net_from_fees`   = SUM(borrow_fee + funding_fee) * lp_bps/10_000
+   *     over closing events. The LP share of the fee pool — the other split
+   *     (keeper + dev) is accrued separately and does not show up here.
+   *
+   * `days` is clamped to 1..365 — 30 by default to match the "monthly"
+   * intuition the marketing copy uses on /insights and /vault.
+   */
+  r.get("/vault/profitability", async (c) => {
+    const daysRaw = Number(c.req.query("days") ?? 30);
+    const days = Math.min(Math.max(1, Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 30), 365);
+
+    const cfg = await db
+      .select({ lp_bps: protocolConfig.lp_bps })
+      .from(protocolConfig)
+      .where(eq(protocolConfig.id, 1))
+      .limit(1);
+    const lpBps = cfg[0]?.lp_bps ?? 0;
+
+    const rows = await db.execute(sql`
+      SELECT
+        COALESCE(SUM(-pnl::numeric), 0)::text AS lp_net_from_trades,
+        COALESCE(SUM(borrow_fee::numeric + funding_fee::numeric), 0)::text AS total_fees_charged
+      FROM trades
+      WHERE event_type <> 'increase'
+        AND created_at > now() - (${days}::text || ' days')::interval
+    `);
+
+    type Row = { lp_net_from_trades: string; total_fees_charged: string };
+    const row = (rows.rows[0] as Row | undefined) ?? {
+      lp_net_from_trades: "0",
+      total_fees_charged: "0",
+    };
+
+    // Apply the LP cut in JS using BigInt to avoid drift on the i128-scale
+    // numbers. trades.borrow_fee/funding_fee are i128 stored as numeric, but
+    // the values we sum will always be exact integers at this scale.
+    const totalFees = BigInt(row.total_fees_charged);
+    const lpNetFromFees = (totalFees * BigInt(lpBps)) / 10_000n;
+
+    return c.json({
+      window_days: days,
+      lp_net_from_trades: row.lp_net_from_trades,
+      lp_net_from_fees: lpNetFromFees.toString(),
+      lp_bps: lpBps,
+      as_of: new Date().toISOString(),
+    });
+  });
+
+  /**
    * GET /config — protocol-wide config singleton (fee splits, limits, borrow
    * rate config, last unpause time). Used by the off-chain MarketTick
    * projection to derive borrow/funding indices forward to `now`.

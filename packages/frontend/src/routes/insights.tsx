@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMarkets, usePrices, useVault } from "@/api/hooks";
+import { useMarkets, usePrices, useVault, useVaultProfitability } from "@/api/hooks";
 import { useStreamPrices } from "@/api/sse";
 import { Card, CardContent } from "@/components/ui/card";
 import { NumberFlowUsd, NumberFlowPlain } from "@/components/ui/number-flow";
@@ -13,6 +13,7 @@ export const Route = createFileRoute("/insights")({
 function InsightsPage() {
   const markets = useMarkets();
   const vault = useVault();
+  const profitability = useVaultProfitability(30);
   const prices = usePrices();
   useStreamPrices();
 
@@ -71,11 +72,11 @@ function InsightsPage() {
             }
           />
           <Kpi
-            label="Net trader PnL"
+            label="30d LP profit · trading"
             value={
-              vault.data ? (
+              profitability.data ? (
                 <NumberFlowUsd
-                  value={vault.data.net_global_trader_pnl}
+                  value={profitability.data.lp_net_from_trades}
                   decimals={0}
                   signDisplay="exceptZero"
                 />
@@ -84,19 +85,34 @@ function InsightsPage() {
               )
             }
             tone={
-              vault.data
-                ? BigInt(vault.data.net_global_trader_pnl) >= 0n
+              profitability.data
+                ? BigInt(profitability.data.lp_net_from_trades) >= 0n
                   ? "bull"
                   : "bear"
                 : "default"
             }
+            sub={
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/60">
+                trader losses − wins, rolling 30d
+              </span>
+            }
           />
           <Kpi
-            label="Unclaimed fees"
+            label="30d LP profit · fees"
             value={
-              vault.data ? <NumberFlowUsd value={vault.data.unclaimed_fees} decimals={2} /> : "—"
+              profitability.data ? (
+                <NumberFlowUsd value={profitability.data.lp_net_from_fees} decimals={0} />
+              ) : (
+                "—"
+              )
             }
             tone="ember"
+            sub={
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/60">
+                LP share of borrow + funding
+                {profitability.data ? ` (${(profitability.data.lp_bps / 100).toFixed(0)}%)` : ""}
+              </span>
+            }
           />
         </div>
       </Section>

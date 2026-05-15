@@ -10,6 +10,7 @@ import type {
   PriceRow,
   ProtocolConfigRow,
   TradeRow,
+  VaultProfitabilityRow,
   VaultStateRow,
 } from "./types";
 
@@ -24,6 +25,7 @@ export const queryKeys = {
   positions: (trader: string) => ["positions", trader] as const,
   trades: (filters: TradesFilters) => ["trades", filters] as const,
   vault: ["vault"] as const,
+  vaultProfitability: (days: number) => ["vault", "profitability", days] as const,
   prices: ["prices"] as const,
   candles: (symbol: string, interval: CandleInterval) =>
     ["candles", symbol, interval] as const,
@@ -92,6 +94,23 @@ export function useVault(opts?: UseQueryOptions<VaultStateRow>) {
     queryKey: queryKeys.vault,
     queryFn: () => apiGet<VaultStateRow>("/vault"),
     staleTime: 5_000,
+    ...opts,
+  });
+}
+
+/**
+ * Rolling LP profitability over a sliding `days` window. Two numbers:
+ * net from trader PnL flow (-pnl summed over closes) and the LP slice of
+ * borrow + funding fees. Updates rarely — a longer staleTime is fine.
+ */
+export function useVaultProfitability(
+  days = 30,
+  opts?: UseQueryOptions<VaultProfitabilityRow>,
+) {
+  return useQuery({
+    queryKey: queryKeys.vaultProfitability(days),
+    queryFn: () => apiGet<VaultProfitabilityRow>(`/vault/profitability?days=${days}`),
+    staleTime: 60_000,
     ...opts,
   });
 }

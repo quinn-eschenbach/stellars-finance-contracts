@@ -203,6 +203,60 @@ describe("GET /config", () => {
   });
 });
 
+describe("GET /vault/profitability", () => {
+  it("defaults to a 30-day window, applies lp_bps to fees, and stringifies the result", async () => {
+    const db = new FakeDb();
+    db.enqueueSelect([{ lp_bps: 9000 }]);
+    db.enqueueExecute([
+      { lp_net_from_trades: "100000000", total_fees_charged: "20000000" },
+    ]);
+
+    const res = await makeApp(db).request("/vault/profitability");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.window_days).toBe(30);
+    expect(body.lp_net_from_trades).toBe("100000000");
+    // 20_000_000 * 9000 / 10_000 = 18_000_000
+    expect(body.lp_net_from_fees).toBe("18000000");
+    expect(body.lp_bps).toBe(9000);
+    expect(typeof body.as_of).toBe("string");
+  });
+
+  it("clamps days to [1, 365] and accepts the query param", async () => {
+    const db = new FakeDb();
+    db.enqueueSelect([{ lp_bps: 1000 }]);
+    db.enqueueExecute([{ lp_net_from_trades: "0", total_fees_charged: "0" }]);
+    const res = await makeApp(db).request("/vault/profitability?days=9999");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.window_days).toBe(365);
+  });
+
+  it("treats missing config lp_bps as 0 (zero LP share, no panic)", async () => {
+    const db = new FakeDb();
+    db.enqueueSelect([]);
+    db.enqueueExecute([
+      { lp_net_from_trades: "500", total_fees_charged: "1000" },
+    ]);
+
+    const res = await makeApp(db).request("/vault/profitability");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.lp_bps).toBe(0);
+    expect(body.lp_net_from_fees).toBe("0");
+    expect(body.lp_net_from_trades).toBe("500");
+  });
+
+  it("falls back to zeros when the trades aggregate returns no row", async () => {
+    const db = new FakeDb();
+    db.enqueueSelect([{ lp_bps: 9000 }]);
+    db.enqueueExecute([]);
+
+    const res = await makeApp(db).request("/vault/profitability");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.lp_net_from_trades).toBe("0");
+    expect(body.lp_net_from_fees).toBe("0");
+  });
+});
+
 describe("GET /leaderboard", () => {
   it("normalizes counts to numbers and nullable last_trade_at", async () => {
     const db = new FakeDb();
