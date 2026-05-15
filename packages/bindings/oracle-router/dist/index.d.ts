@@ -63,6 +63,25 @@ export declare const OracleRouterError: {
     11: {
         message: string;
     };
+    /**
+     * `upgrade` rejected — no `propose_upgrade` was made before commit.
+     */
+    12: {
+        message: string;
+    };
+    /**
+     * `upgrade` rejected — timelock has not elapsed yet.
+     */
+    13: {
+        message: string;
+    };
+    /**
+     * `upgrade` rejected — `new_wasm_hash` does not match the proposed
+     * `PendingUpgrade.wasm_hash`.
+     */
+    14: {
+        message: string;
+    };
 };
 export type StorageKey = {
     tag: "Initialized";
@@ -77,116 +96,7 @@ export type StorageKey = {
     tag: "Sources";
     values: readonly [string];
 } | {
-    tag: "PendingUpgrade";
-    values: void;
-} | {
     tag: "Version";
-    values: void;
-};
-export declare const UpgradeableError: {
-    /**
-     * When migration is attempted but not allowed due to upgrade state.
-     */
-    1100: {
-        message: string;
-    };
-};
-export declare const MerkleDistributorError: {
-    /**
-     * The merkle root is not set.
-     */
-    1300: {
-        message: string;
-    };
-    /**
-     * The provided index was already claimed.
-     */
-    1301: {
-        message: string;
-    };
-    /**
-     * The proof is invalid.
-     */
-    1302: {
-        message: string;
-    };
-};
-/**
- * Storage keys for the data associated with `MerkleDistributor`
- */
-export type MerkleDistributorStorageKey = {
-    tag: "Root";
-    values: void;
-} | {
-    tag: "Claimed";
-    values: readonly [u32];
-};
-/**
- * Rounding direction for division operations
- */
-export type Rounding = {
-    tag: "Floor";
-    values: void;
-} | {
-    tag: "Ceil";
-    values: void;
-} | {
-    tag: "Truncate";
-    values: void;
-};
-export declare const SorobanFixedPointError: {
-    /**
-     * Arithmetic overflow occurred
-     */
-    1500: {
-        message: string;
-    };
-    /**
-     * Division by zero
-     */
-    1501: {
-        message: string;
-    };
-};
-export declare const CryptoError: {
-    /**
-     * The merkle proof length is out of bounds.
-     */
-    1400: {
-        message: string;
-    };
-    /**
-     * The index of the leaf is out of bounds.
-     */
-    1401: {
-        message: string;
-    };
-    /**
-     * No data in hasher state.
-     */
-    1402: {
-        message: string;
-    };
-};
-export declare const PausableError: {
-    /**
-     * The operation failed because the contract is paused.
-     */
-    1000: {
-        message: string;
-    };
-    /**
-     * The operation failed because the contract is not paused.
-     */
-    1001: {
-        message: string;
-    };
-};
-/**
- * Storage key for the pausable state
- */
-export type PausableStorageKey = {
-    tag: "Paused";
     values: void;
 };
 /**
@@ -295,16 +205,123 @@ export interface MigrationData {
     version: u32;
 }
 /**
- * Pending WASM upgrade — set by `propose_upgrade`, cleared by
- * `cancel_upgrade`. Single shape across every protocol contract; each
- * contract stores it under its own `StorageKey::PendingUpgrade` slot.
- * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
- * against the most recent `UpgradeProposed` event for the same contract.
+ * Pending WASM upgrade — set by `propose_upgrade`, consumed by `upgrade`
+ * (cleared atomically on a successful install), or cleared by `cancel_upgrade`.
+ * Single shape across every protocol contract; all four contracts store it at
+ * the shared `pending_upgrade` Symbol key in their own instance storage (see
+ * `interfaces::upgrade::pending_upgrade_key`). `upgrade` refuses to install
+ * unless `pending.wasm_hash` matches the supplied hash and `now >= eta`.
  */
 export interface PendingUpgrade {
     eta: u64;
     wasm_hash: Buffer;
 }
+export declare const UpgradeableError: {
+    /**
+     * When migration is attempted but not allowed due to upgrade state.
+     */
+    1100: {
+        message: string;
+    };
+};
+export declare const MerkleDistributorError: {
+    /**
+     * The merkle root is not set.
+     */
+    1300: {
+        message: string;
+    };
+    /**
+     * The provided index was already claimed.
+     */
+    1301: {
+        message: string;
+    };
+    /**
+     * The proof is invalid.
+     */
+    1302: {
+        message: string;
+    };
+};
+/**
+ * Storage keys for the data associated with `MerkleDistributor`
+ */
+export type MerkleDistributorStorageKey = {
+    tag: "Root";
+    values: void;
+} | {
+    tag: "Claimed";
+    values: readonly [u32];
+};
+/**
+ * Rounding direction for division operations
+ */
+export type Rounding = {
+    tag: "Floor";
+    values: void;
+} | {
+    tag: "Ceil";
+    values: void;
+} | {
+    tag: "Truncate";
+    values: void;
+};
+export declare const SorobanFixedPointError: {
+    /**
+     * Arithmetic overflow occurred
+     */
+    1500: {
+        message: string;
+    };
+    /**
+     * Division by zero
+     */
+    1501: {
+        message: string;
+    };
+};
+export declare const CryptoError: {
+    /**
+     * The merkle proof length is out of bounds.
+     */
+    1400: {
+        message: string;
+    };
+    /**
+     * The index of the leaf is out of bounds.
+     */
+    1401: {
+        message: string;
+    };
+    /**
+     * No data in hasher state.
+     */
+    1402: {
+        message: string;
+    };
+};
+export declare const PausableError: {
+    /**
+     * The operation failed because the contract is paused.
+     */
+    1000: {
+        message: string;
+    };
+    /**
+     * The operation failed because the contract is not paused.
+     */
+    1001: {
+        message: string;
+    };
+};
+/**
+ * Storage key for the pausable state
+ */
+export type PausableStorageKey = {
+    tag: "Paused";
+    values: void;
+};
 /**
  * Defines how protocol revenue is split between parties.
  * All values are in basis points (bps). Must sum to 10_000.
@@ -314,15 +331,6 @@ export interface FeeSplits {
     keeper_bps: u32;
     lp_bps: u32;
 }
-export declare const SharedError: {
-    /**
-     * Caller does not hold the required role. Discriminant matches every
-     * protocol contract's `Unauthorized = 3` so error codes are consistent.
-     */
-    3: {
-        message: string;
-    };
-};
 /**
  * Global protocol risk and timing parameters.
  */
@@ -370,7 +378,8 @@ export interface Client {
     /**
      * Construct and simulate a initialize transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    initialize: ({ config_manager_address }: {
+    initialize: ({ admin, config_manager_address }: {
+        admin: string;
         config_manager_address: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**

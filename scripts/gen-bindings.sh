@@ -64,10 +64,12 @@ echo "Installing dependencies..."
 pnpm install --filter @stellars/bindings
 
 # --- Build ---
-TSC="$BIND_OUT/node_modules/.bin/tsc"
+# Run tsc from BIND_OUT (where typescript is installed) and point at each
+# contract's tsconfig with -p. The contract subdirs aren't workspace
+# members, so pnpm exec only resolves tsc when invoked at BIND_OUT.
 for contract in "${CONTRACTS[@]}"; do
   echo "Building $contract..."
-  (cd "$BIND_OUT/$contract" && "$TSC" 2>/dev/null || true)
+  (cd "$BIND_OUT" && pnpm exec tsc -p "$contract" 2>/dev/null || true)
   if [ -f "$BIND_OUT/$contract/dist/index.js" ]; then
     echo "  OK"
   else

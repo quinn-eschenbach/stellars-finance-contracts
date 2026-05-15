@@ -15,13 +15,16 @@ export declare const ConfigManagerError: {
         message: string;
     };
     /**
-     * FeeSplits values do not sum to 10_000 bps.
+     * FeeSplits values do not sum to 10_000 bps, are zero, or exceed BPS.
+     * Catch-all for any FeeSplits violation — kept stable so existing
+     * tests / indexer consumers don't break. Per-rule codes 20-22 below.
      */
     4: {
         message: string;
     };
     /**
      * One or more ProtocolLimits values are out of acceptable range.
+     * Catch-all — per-rule codes 30-37 below.
      */
     5: {
         message: string;
@@ -51,28 +54,119 @@ export declare const ConfigManagerError: {
         message: string;
     };
     /**
-     * OZ-generated `upgrade()` rejected — no `propose_upgrade` was made
-     * before commit. The two-step upgrade flow requires a prior proposal.
+     * `upgrade` rejected — no `propose_upgrade` was made before commit.
+     * The two-step upgrade flow requires a prior proposal.
      */
     10: {
         message: string;
     };
     /**
-     * OZ-generated `upgrade()` rejected — timelock has not elapsed yet.
+     * `upgrade` rejected — timelock has not elapsed yet.
      */
     11: {
+        message: string;
+    };
+    /**
+     * `upgrade` rejected — `new_wasm_hash` does not match the proposed
+     * `PendingUpgrade.wasm_hash`.
+     */
+    12: {
+        message: string;
+    };
+    /**
+     * A FeeSplits component (keeper/dev/lp) is zero.
+     */
+    20: {
+        message: string;
+    };
+    /**
+     * A FeeSplits component exceeds the BPS denominator.
+     */
+    21: {
+        message: string;
+    };
+    /**
+     * FeeSplits components do not sum to exactly BPS_DENOMINATOR.
+     */
+    22: {
+        message: string;
+    };
+    /**
+     * `min_collateral` is not strictly positive.
+     */
+    30: {
+        message: string;
+    };
+    /**
+     * `max_utilization_ratio` is out of (0, BPS] range.
+     */
+    31: {
+        message: string;
+    };
+    /**
+     * `funding_cut_bps` exceeds `MAX_FUNDING_CUT_BPS`.
+     */
+    32: {
+        message: string;
+    };
+    /**
+     * `adl_pnl_bps` is below `MIN_ADL_PNL_BPS` or above BPS.
+     */
+    33: {
+        message: string;
+    };
+    /**
+     * `adl_utilization_bps` is out of (0, BPS] range.
+     */
+    34: {
+        message: string;
+    };
+    /**
+     * `liquidation_threshold_bps` exceeds 10% of collateral.
+     */
+    35: {
+        message: string;
+    };
+    /**
+     * `cooldown_duration` exceeds `MAX_COOLDOWN_DURATION`.
+     */
+    36: {
+        message: string;
+    };
+    /**
+     * `min_position_lifetime` exceeds 1 day.
+     */
+    37: {
+        message: string;
+    };
+    /**
+     * A BorrowRateConfig rate is negative.
+     */
+    40: {
+        message: string;
+    };
+    /**
+     * `optimal_utilization_bps` is out of (0, BPS] range.
+     */
+    41: {
+        message: string;
+    };
+    /**
+     * `slope2_bps < slope1_bps` — kink curve must be non-decreasing.
+     */
+    42: {
+        message: string;
+    };
+    /**
+     * `slope2_bps` exceeds `MAX_SLOPE2_BPS`.
+     */
+    43: {
         message: string;
     };
 };
 export type StorageKey = {
     tag: "Initialized";
     values: void;
-} | {
-    tag: "Admin";
-    values: void;
-} | {
-    tag: "RoleMember";
-    values: readonly [RoleMemberKey];
 } | {
     tag: "FeeSplits";
     values: void;
@@ -89,123 +183,106 @@ export type StorageKey = {
     tag: "PendingAdmin";
     values: void;
 } | {
-    tag: "PendingUpgrade";
-    values: void;
-} | {
     tag: "Version";
     values: void;
 };
+export declare const RoleTransferError: {
+    2200: {
+        message: string;
+    };
+    2201: {
+        message: string;
+    };
+    2202: {
+        message: string;
+    };
+};
+export declare const AccessControlError: {
+    2000: {
+        message: string;
+    };
+    2001: {
+        message: string;
+    };
+    2002: {
+        message: string;
+    };
+    2003: {
+        message: string;
+    };
+    2004: {
+        message: string;
+    };
+    2005: {
+        message: string;
+    };
+    2006: {
+        message: string;
+    };
+    2007: {
+        message: string;
+    };
+    2008: {
+        message: string;
+    };
+    2009: {
+        message: string;
+    };
+    2010: {
+        message: string;
+    };
+};
 /**
- * Composite key for role membership entries.
+ * Storage key for enumeration of accounts per role.
  */
-export interface RoleMemberKey {
-    account: string;
+export interface RoleAccountKey {
+    index: u32;
     role: string;
 }
-export declare const UpgradeableError: {
-    /**
-     * When migration is attempted but not allowed due to upgrade state.
-     */
-    1100: {
-        message: string;
-    };
+/**
+ * Storage keys for the data associated with the access control
+ */
+export type AccessControlStorageKey = {
+    tag: "ExistingRoles";
+    values: void;
+} | {
+    tag: "RoleAccounts";
+    values: readonly [RoleAccountKey];
+} | {
+    tag: "HasRole";
+    values: readonly [string, string];
+} | {
+    tag: "RoleAccountsCount";
+    values: readonly [string];
+} | {
+    tag: "RoleAdmin";
+    values: readonly [string];
+} | {
+    tag: "Admin";
+    values: void;
+} | {
+    tag: "PendingAdmin";
+    values: void;
 };
-export declare const MerkleDistributorError: {
-    /**
-     * The merkle root is not set.
-     */
-    1300: {
+export declare const OwnableError: {
+    2100: {
         message: string;
     };
-    /**
-     * The provided index was already claimed.
-     */
-    1301: {
+    2101: {
         message: string;
     };
-    /**
-     * The proof is invalid.
-     */
-    1302: {
+    2102: {
         message: string;
     };
 };
 /**
- * Storage keys for the data associated with `MerkleDistributor`
+ * Storage keys for `Ownable` utility.
  */
-export type MerkleDistributorStorageKey = {
-    tag: "Root";
+export type OwnableStorageKey = {
+    tag: "Owner";
     values: void;
 } | {
-    tag: "Claimed";
-    values: readonly [u32];
-};
-/**
- * Rounding direction for division operations
- */
-export type Rounding = {
-    tag: "Floor";
-    values: void;
-} | {
-    tag: "Ceil";
-    values: void;
-} | {
-    tag: "Truncate";
-    values: void;
-};
-export declare const SorobanFixedPointError: {
-    /**
-     * Arithmetic overflow occurred
-     */
-    1500: {
-        message: string;
-    };
-    /**
-     * Division by zero
-     */
-    1501: {
-        message: string;
-    };
-};
-export declare const CryptoError: {
-    /**
-     * The merkle proof length is out of bounds.
-     */
-    1400: {
-        message: string;
-    };
-    /**
-     * The index of the leaf is out of bounds.
-     */
-    1401: {
-        message: string;
-    };
-    /**
-     * No data in hasher state.
-     */
-    1402: {
-        message: string;
-    };
-};
-export declare const PausableError: {
-    /**
-     * The operation failed because the contract is paused.
-     */
-    1000: {
-        message: string;
-    };
-    /**
-     * The operation failed because the contract is not paused.
-     */
-    1001: {
-        message: string;
-    };
-};
-/**
- * Storage key for the pausable state
- */
-export type PausableStorageKey = {
-    tag: "Paused";
+    tag: "PendingOwner";
     values: void;
 };
 /**
@@ -314,16 +391,123 @@ export interface MigrationData {
     version: u32;
 }
 /**
- * Pending WASM upgrade — set by `propose_upgrade`, cleared by
- * `cancel_upgrade`. Single shape across every protocol contract; each
- * contract stores it under its own `StorageKey::PendingUpgrade` slot.
- * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
- * against the most recent `UpgradeProposed` event for the same contract.
+ * Pending WASM upgrade — set by `propose_upgrade`, consumed by `upgrade`
+ * (cleared atomically on a successful install), or cleared by `cancel_upgrade`.
+ * Single shape across every protocol contract; all four contracts store it at
+ * the shared `pending_upgrade` Symbol key in their own instance storage (see
+ * `interfaces::upgrade::pending_upgrade_key`). `upgrade` refuses to install
+ * unless `pending.wasm_hash` matches the supplied hash and `now >= eta`.
  */
 export interface PendingUpgrade {
     eta: u64;
     wasm_hash: Buffer;
 }
+export declare const UpgradeableError: {
+    /**
+     * When migration is attempted but not allowed due to upgrade state.
+     */
+    1100: {
+        message: string;
+    };
+};
+export declare const MerkleDistributorError: {
+    /**
+     * The merkle root is not set.
+     */
+    1300: {
+        message: string;
+    };
+    /**
+     * The provided index was already claimed.
+     */
+    1301: {
+        message: string;
+    };
+    /**
+     * The proof is invalid.
+     */
+    1302: {
+        message: string;
+    };
+};
+/**
+ * Storage keys for the data associated with `MerkleDistributor`
+ */
+export type MerkleDistributorStorageKey = {
+    tag: "Root";
+    values: void;
+} | {
+    tag: "Claimed";
+    values: readonly [u32];
+};
+/**
+ * Rounding direction for division operations
+ */
+export type Rounding = {
+    tag: "Floor";
+    values: void;
+} | {
+    tag: "Ceil";
+    values: void;
+} | {
+    tag: "Truncate";
+    values: void;
+};
+export declare const SorobanFixedPointError: {
+    /**
+     * Arithmetic overflow occurred
+     */
+    1500: {
+        message: string;
+    };
+    /**
+     * Division by zero
+     */
+    1501: {
+        message: string;
+    };
+};
+export declare const CryptoError: {
+    /**
+     * The merkle proof length is out of bounds.
+     */
+    1400: {
+        message: string;
+    };
+    /**
+     * The index of the leaf is out of bounds.
+     */
+    1401: {
+        message: string;
+    };
+    /**
+     * No data in hasher state.
+     */
+    1402: {
+        message: string;
+    };
+};
+export declare const PausableError: {
+    /**
+     * The operation failed because the contract is paused.
+     */
+    1000: {
+        message: string;
+    };
+    /**
+     * The operation failed because the contract is not paused.
+     */
+    1001: {
+        message: string;
+    };
+};
+/**
+ * Storage key for the pausable state
+ */
+export type PausableStorageKey = {
+    tag: "Paused";
+    values: void;
+};
 /**
  * Defines how protocol revenue is split between parties.
  * All values are in basis points (bps). Must sum to 10_000.
@@ -333,15 +517,6 @@ export interface FeeSplits {
     keeper_bps: u32;
     lp_bps: u32;
 }
-export declare const SharedError: {
-    /**
-     * Caller does not hold the required role. Discriminant matches every
-     * protocol contract's `Unauthorized = 3` so error codes are consistent.
-     */
-    3: {
-        message: string;
-    };
-};
 /**
  * Global protocol risk and timing parameters.
  */

@@ -121,6 +121,25 @@ export declare const PositionManagerError: {
     22: {
         message: string;
     };
+    /**
+     * `upgrade` rejected — no `propose_upgrade` was made before commit.
+     */
+    23: {
+        message: string;
+    };
+    /**
+     * `upgrade` rejected — timelock has not elapsed yet.
+     */
+    24: {
+        message: string;
+    };
+    /**
+     * `upgrade` rejected — `new_wasm_hash` does not match the proposed
+     * `PendingUpgrade.wasm_hash`.
+     */
+    25: {
+        message: string;
+    };
 };
 export type StorageKey = {
     tag: "Initialized";
@@ -159,9 +178,6 @@ export type StorageKey = {
     tag: "MarketDisabled";
     values: readonly [string];
 } | {
-    tag: "PendingUpgrade";
-    values: void;
-} | {
     tag: "Position";
     values: readonly [PositionKey];
 } | {
@@ -174,6 +190,123 @@ export type StorageKey = {
 export interface PositionKey {
     symbol: string;
     trader: string;
+}
+/**
+ * Represents a single trader's open leveraged position.
+ */
+export interface Position {
+    /**
+   * USDC collateral deposited by the trader.
+   */
+    collateral: i128;
+    /**
+   * Global borrow accumulator index at position open (for lazy fee calc).
+   */
+    entry_borrow_index: i128;
+    /**
+   * Global funding accumulator index at position open (for lazy fee calc).
+   */
+    entry_funding_index: i128;
+    /**
+   * Oracle price at the time the position was opened (scaled by 1e7).
+   */
+    entry_price: i128;
+    /**
+   * True for a long position, false for a short.
+   */
+    is_long: boolean;
+    /**
+   * Block timestamp when the position was last increased (anti-front-running lock).
+   */
+    last_increased_time: u64;
+    /**
+   * Notional size of the position in USDC.
+   */
+    size: i128;
+    /**
+   * Stop-loss price (scaled by 1e7). 0 = not set.
+   */
+    stop_loss: i128;
+    /**
+   * Take-profit price (scaled by 1e7). 0 = not set.
+   */
+    take_profit: i128;
+}
+/**
+ * Global market state for a single tradeable asset symbol.
+ */
+export interface MarketInfo {
+    /**
+   * Cumulative borrow fee index (grows monotonically with time).
+   */
+    acc_borrow_index: i128;
+    /**
+   * Cumulative funding rate index (signed; positive = longs pay shorts).
+   */
+    acc_funding_index: i128;
+    /**
+   * Volume-weighted average entry price of all active long positions.
+   */
+    global_long_avg_price: i128;
+    /**
+   * Volume-weighted average entry price of all active short positions.
+   */
+    global_short_avg_price: i128;
+    /**
+   * Timestamp of the last keeper index update.
+   */
+    last_index_update: u64;
+    /**
+   * Total notional size of all open long positions.
+   */
+    long_open_interest: i128;
+    /**
+   * Total notional size of all open short positions.
+   */
+    short_open_interest: i128;
+}
+/**
+ * Global safety thresholds for price validation.
+ *
+ * OracleRouter has no cache — every `get_price` call queries sources fresh,
+ * so there is no separate cache-freshness knob.
+ */
+export interface OracleConfig {
+    /**
+   * Maximum allowed spread between oracle sources in basis points
+   * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
+   */
+    max_deviation_bps: i128;
+    /**
+   * Minimum number of source responses that must agree within
+   * `max_deviation_bps` for OracleRouter to return a price. Floored at
+   * `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
+   * `shared::constants::MAX_ORACLE_SOURCES`.
+   */
+    min_required_sources: u32;
+    /**
+   * Maximum age of an external SEP-40 price feed before it is rejected
+   * as stale (in seconds).
+   */
+    staleness_threshold: u64;
+}
+/**
+ * Data required during a WASM migration. Single definition for all contracts.
+ */
+export interface MigrationData {
+    version: u32;
+}
+/**
+ * Pending WASM upgrade — set by `propose_upgrade`, consumed by `upgrade`
+ * (cleared atomically on a successful install), or cleared by `cancel_upgrade`.
+ * Single shape across every protocol contract; all four contracts store it at
+ * the shared `pending_upgrade` Symbol key in their own instance storage (see
+ * `interfaces::upgrade::pending_upgrade_key`). `upgrade` refuses to install
+ * unless `pending.wasm_hash` matches the supplied hash and `now >= eta`.
+ */
+export interface PendingUpgrade {
+    eta: u64;
+    wasm_hash: Buffer;
 }
 export declare const UpgradeableError: {
     /**
@@ -282,122 +415,6 @@ export type PausableStorageKey = {
     values: void;
 };
 /**
- * Represents a single trader's open leveraged position.
- */
-export interface Position {
-    /**
-   * USDC collateral deposited by the trader.
-   */
-    collateral: i128;
-    /**
-   * Global borrow accumulator index at position open (for lazy fee calc).
-   */
-    entry_borrow_index: i128;
-    /**
-   * Global funding accumulator index at position open (for lazy fee calc).
-   */
-    entry_funding_index: i128;
-    /**
-   * Oracle price at the time the position was opened (scaled by 1e7).
-   */
-    entry_price: i128;
-    /**
-   * True for a long position, false for a short.
-   */
-    is_long: boolean;
-    /**
-   * Block timestamp when the position was last increased (anti-front-running lock).
-   */
-    last_increased_time: u64;
-    /**
-   * Notional size of the position in USDC.
-   */
-    size: i128;
-    /**
-   * Stop-loss price (scaled by 1e7). 0 = not set.
-   */
-    stop_loss: i128;
-    /**
-   * Take-profit price (scaled by 1e7). 0 = not set.
-   */
-    take_profit: i128;
-}
-/**
- * Global market state for a single tradeable asset symbol.
- */
-export interface MarketInfo {
-    /**
-   * Cumulative borrow fee index (grows monotonically with time).
-   */
-    acc_borrow_index: i128;
-    /**
-   * Cumulative funding rate index (signed; positive = longs pay shorts).
-   */
-    acc_funding_index: i128;
-    /**
-   * Volume-weighted average entry price of all active long positions.
-   */
-    global_long_avg_price: i128;
-    /**
-   * Volume-weighted average entry price of all active short positions.
-   */
-    global_short_avg_price: i128;
-    /**
-   * Timestamp of the last keeper index update.
-   */
-    last_index_update: u64;
-    /**
-   * Total notional size of all open long positions.
-   */
-    long_open_interest: i128;
-    /**
-   * Total notional size of all open short positions.
-   */
-    short_open_interest: i128;
-}
-/**
- * Global safety thresholds for price validation.
- *
- * OracleRouter has no cache — every `get_price` call queries sources fresh,
- * so there is no separate cache-freshness knob.
- */
-export interface OracleConfig {
-    /**
-   * Maximum allowed spread between oracle sources in basis points
-   * (e.g., 100 = 1%). Bounded at `shared::constants::MAX_DEVIATION_BPS_CEILING`.
-   */
-    max_deviation_bps: i128;
-    /**
-   * Minimum number of source responses that must agree within
-   * `max_deviation_bps` for OracleRouter to return a price. Floored at
-   * `shared::constants::MIN_REQUIRED_SOURCES_FLOOR`, ceilinged at
-   * `shared::constants::MAX_ORACLE_SOURCES`.
-   */
-    min_required_sources: u32;
-    /**
-   * Maximum age of an external SEP-40 price feed before it is rejected
-   * as stale (in seconds).
-   */
-    staleness_threshold: u64;
-}
-/**
- * Data required during a WASM migration. Single definition for all contracts.
- */
-export interface MigrationData {
-    version: u32;
-}
-/**
- * Pending WASM upgrade — set by `propose_upgrade`, cleared by
- * `cancel_upgrade`. Single shape across every protocol contract; each
- * contract stores it under its own `StorageKey::PendingUpgrade` slot.
- * Enforcement is advisory — off-chain monitor cross-checks `upgrade()` calls
- * against the most recent `UpgradeProposed` event for the same contract.
- */
-export interface PendingUpgrade {
-    eta: u64;
-    wasm_hash: Buffer;
-}
-/**
  * Defines how protocol revenue is split between parties.
  * All values are in basis points (bps). Must sum to 10_000.
  */
@@ -406,15 +423,6 @@ export interface FeeSplits {
     keeper_bps: u32;
     lp_bps: u32;
 }
-export declare const SharedError: {
-    /**
-     * Caller does not hold the required role. Discriminant matches every
-     * protocol contract's `Unauthorized = 3` so error codes are consistent.
-     */
-    3: {
-        message: string;
-    };
-};
 /**
  * Global protocol risk and timing parameters.
  */
