@@ -57,6 +57,13 @@
       "when": 1778900000000,
       "tag": "0007_oracle_config_cache_duration",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778900100000,
+      "tag": "0008_keeper_fees",
+      "breakpoints": true
     }
   ]
 }

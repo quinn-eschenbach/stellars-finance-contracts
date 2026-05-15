@@ -13,3 +13,4 @@ export { oracleConfigEvents } from "./oracle-config-events.js";
 export { roleEvents } from "./role-events.js";
 export { pauseEvents } from "./pause-events.js";
 export { indexerCursor } from "./indexer-cursor.js";
+export { keeperFees } from "./keeper-fees.js";

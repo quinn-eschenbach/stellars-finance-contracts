@@ -9,7 +9,7 @@ import { runHotLoop, runColdLoop } from "./loop.js";
 async function main() {
   const config = loadConfig();
   const db = getDb();
-  const executor = createExecutor(config);
+  const executor = createExecutor(config, db);
   const dedup = new TtlDedup();
   const serialize = createSerializer();
 
@@ -28,6 +28,11 @@ async function main() {
   const shutdown = () => {
     if (!running) return;
     console.log("[keeper] Shutting down...");
+    const { totalStroops, byOp } = executor.costSummary();
+    const byOpStr = Object.entries(byOp)
+      .map(([op, n]) => `${op}=${n}`)
+      .join(", ");
+    console.log(`[keeper] Daily spend total ${totalStroops} stroops (${byOpStr})`);
     running = false;
   };
   process.on("SIGINT", shutdown);
