@@ -7,48 +7,28 @@ use soroban_sdk::{symbol_short, Env};
 use test_suites::testutils::{Fixture, TEST_TIMESTAMP, USDC_UNIT};
 
 // ---------------------------------------------------------------------------
-// Helper: reconfigure ADL thresholds to make triggering feasible in tests
-// ---------------------------------------------------------------------------
-
-#[allow(dead_code)]
-fn lower_adl_thresholds(f: &Fixture) {
-    // Lower ADL thresholds so we can trigger ADL without extreme scenarios.
-    // adl_pnl_bps: 1000 = 10% of total_assets
-    // adl_utilization_bps: 5000 = 50% utilization
-    f.config_manager.update_protocol_limits(
-        &f.admin,
-        &config_manager::ProtocolLimits {
-            min_collateral: 1_000_000,
-            cooldown_duration: 60,
-            min_position_lifetime: 60,
-            max_utilization_ratio: 8_500,
-            funding_cut_bps: 500,
-            adl_pnl_bps: 1_000,
-            adl_utilization_bps: 5_000,
-            liquidation_threshold_bps: 200,
-        },
-    );
-    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
-}
-
-// ---------------------------------------------------------------------------
 // ADL triggers via PnL ratio threshold
 // ---------------------------------------------------------------------------
 
-// Audit MIN_ADL_PNL_BPS = 5_000 (= 50%) is the new floor. The pnl-route
-// trigger now requires combined_pnl > 50% of total_assets, so the scenario
-// uses two large positions and a 100% price pump to put aggregate unrealized
-// PnL well above half the vault.
+// MIN_ADL_PNL_BPS = 5_000 (= 50%) is the floor. The pnl-route trigger
+// requires combined_pnl > 50% of total_assets, so the scenario uses two large
+// positions and a 250% price pump to put aggregate unrealized PnL well above
+// half the vault.
 #[test]
 fn test_adl_triggers_via_pnl_ratio() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
+
+    // Neutralize the open fee so total_assets is not silently lifted by the
+    // LP slice of the two opens — keeps the pnl_ratio derivation clean.
+    f.config_manager.set_fee_config(
+        &f.admin,
+        &shared::FeeConfig {
+            open_fee_bps: 0,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: 5_000_000,
+        },
+    );
 
     // Set adl_pnl_bps to exactly the floor — tightest the protocol allows.
     f.config_manager.update_protocol_limits(
@@ -95,6 +75,12 @@ fn test_adl_triggers_via_pnl_ratio() {
 
     f.advance_time(TEST_TIMESTAMP + 200);
     f.set_btc_price(175_000);
+
+    // Push fresh unrealized PnL into storage so the deleverage_position trigger
+    // sees the post-pump combined PnL (the MarketTick refresh does not push
+    // PnL — that responsibility lives in the trade paths and `update_indices`).
+    f.position_manager
+        .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     // ADL the smaller position. Its PnL is positive (AdlTargetNotProfitable
     // gate clears) and the global pnl-route trigger condition holds.

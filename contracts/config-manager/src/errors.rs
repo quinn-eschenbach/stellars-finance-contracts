@@ -7,12 +7,9 @@ pub enum ConfigManagerError {
     AlreadyInitialized = 1,
     NotInitialized = 2,
     Unauthorized = 3,
-    /// FeeSplits values do not sum to 10_000 bps, are zero, or exceed BPS.
-    /// Catch-all for any FeeSplits violation — kept stable so existing
-    /// tests / indexer consumers don't break. Per-rule codes 20-22 below.
+    /// Catch-all for FeeSplits violations. Per-rule codes 20–22 below.
     InvalidFeeSplits = 4,
-    /// One or more ProtocolLimits values are out of acceptable range.
-    /// Catch-all — per-rule codes 30-37 below.
+    /// Catch-all for ProtocolLimits violations. Per-rule codes 30–37 below.
     InvalidLimits = 5,
     /// `set_upgrade_timelock` called with seconds below `MIN_UPGRADE_TIMELOCK`.
     UpgradeTimelockTooShort = 6,
@@ -66,4 +63,12 @@ pub enum ConfigManagerError {
     InvalidSlopeOrdering = 42,
     /// `slope2_bps` exceeds `MAX_SLOPE2_BPS`.
     InvalidSlopeTooSteep = 43,
+
+    // ---- Per-rule FeeConfig codes (44–46) ----
+    /// `open_fee_bps` exceeds `MAX_OPEN_FEE_BPS`.
+    InvalidOpenFee = 44,
+    /// `liquidation_bounty_bps` exceeds `MAX_LIQUIDATION_BOUNTY_BPS`.
+    InvalidLiquidationBounty = 45,
+    /// `tp_sl_execution_fee` is negative or exceeds `MAX_TP_SL_EXECUTION_FEE`.
+    InvalidTpSlExecutionFee = 46,
 }

@@ -1,13 +1,19 @@
 #![no_std]
 
 mod close;
+mod config_loaders;
 pub mod contract;
 mod errors;
 mod events;
-mod logic;
+mod guards;
+mod increase;
 mod math;
+mod pnl_refresh;
+mod revenue;
 pub mod storage;
 mod tick;
+mod tp_sl;
+mod tp_sl_escrow;
 mod types;
 mod vault_view;
 

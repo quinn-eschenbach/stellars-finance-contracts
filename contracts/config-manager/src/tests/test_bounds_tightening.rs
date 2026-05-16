@@ -25,11 +25,12 @@ use shared::constants::{
 use super::helpers::{deploy_initialized, valid_limits};
 
 // ---------------------------------------------------------------------------
-// update_fee_splits — u32 overflow defense
+// update_fee_splits — u32 overflow defense via u64-promoted sum check
 // ---------------------------------------------------------------------------
 
-/// Adversarial (u32::MAX, 1, 1) must not overflow the u32 sum. Per-component
-/// pre-check rejects with InvalidFeeSplits before the addition is reached.
+/// Adversarial (u32::MAX, 1, 1) must not overflow. The validator promotes
+/// the sum to u64 before comparing to 10_000 — the wrong sum surfaces as
+/// InvalidFeeSplitSum, NOT a host trap.
 #[test]
 fn test_update_fee_splits_u32_max_does_not_overflow() {
     let env = Env::default();
@@ -37,38 +38,40 @@ fn test_update_fee_splits_u32_max_does_not_overflow() {
     let (client, admin) = deploy_initialized(&env);
 
     let splits = FeeSplits {
-        keeper_bps: u32::MAX,
+        lp_bps: u32::MAX,
         dev_bps: 1,
-        lp_bps: 1,
+        staker_bps: 1,
     };
 
     let result = client.try_update_fee_splits(&admin, &splits);
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitOverBps as u32),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitSum as u32),
+        "u32-max component must reject via the u64-sum rule, not a per-component check",
     );
 }
 
-/// Each component on its own exceeding BPS must be rejected — even when the
-/// sum happens to match BPS via wraparound.
+/// A component alone exceeding BPS but combined with zero pads still fails
+/// the sum check (validator no longer enforces a separate per-component
+/// over-bps check — the sum invariant suffices).
 #[test]
-fn test_update_fee_splits_component_above_bps_rejected() {
+fn test_update_fee_splits_component_above_bps_rejected_via_sum() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, admin) = deploy_initialized(&env);
 
     let splits = FeeSplits {
-        keeper_bps: (BPS as u32) + 1,
-        dev_bps: 1,
-        lp_bps: 1,
+        lp_bps: (BPS as u32) + 1,
+        dev_bps: 0,
+        staker_bps: 0,
     };
 
     let result = client.try_update_fee_splits(&admin, &splits);
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().unwrap(),
-        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitOverBps as u32),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidFeeSplitSum as u32),
     );
 }
 

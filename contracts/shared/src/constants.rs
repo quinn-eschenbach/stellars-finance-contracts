@@ -70,12 +70,26 @@ pub const ROLE_ORACLE: &str = "ORACLE";
 // Defaults seeded by ConfigManager::__constructor
 // ---------------------------------------------------------------------------
 
-/// Default keeper fee share: 5% (500 bps).
-pub const DEFAULT_KEEPER_BPS: u32 = 500;
-/// Default dev/treasury fee share: 5% (500 bps).
-pub const DEFAULT_DEV_BPS: u32 = 500;
+/// Default dev/treasury fee share: 10% (1000 bps).
+pub const DEFAULT_DEV_BPS: u32 = 1_000;
 /// Default LP fee share: 90% (9000 bps).
 pub const DEFAULT_LP_BPS: u32 = 9_000;
+/// Default staker fee share: 0% — stakers may not be onboarded yet.
+pub const DEFAULT_STAKER_BPS: u32 = 0;
+
+/// Default open-fee bps applied to notional on position open: 0.1% (10 bps).
+pub const DEFAULT_OPEN_FEE_BPS: u32 = 10;
+/// Default liquidation bounty paid to liquidator from collateral: 1% (100 bps).
+pub const DEFAULT_LIQUIDATION_BOUNTY_BPS: u32 = 100;
+/// Default flat TP/SL execution fee: 0.5 USDC at PRECISION (1e7) scale.
+pub const DEFAULT_TP_SL_EXECUTION_FEE: i128 = 5_000_000;
+
+/// Maximum open fee: 1% (100 bps).
+pub const MAX_OPEN_FEE_BPS: u32 = 100;
+/// Maximum liquidation bounty: 10% (1000 bps).
+pub const MAX_LIQUIDATION_BOUNTY_BPS: u32 = 1_000;
+/// Maximum flat TP/SL execution fee at PRECISION scale.
+pub const MAX_TP_SL_EXECUTION_FEE: i128 = 100_000_000_000;
 
 /// Default minimum collateral: $1 USDC at 1e7 precision.
 pub const DEFAULT_MIN_COLLATERAL: i128 = 10_000_000;

@@ -1,18 +1,16 @@
 use interfaces::{ConfigManager, MigrationData, TimelockedUpgradeable, UpgradeFailure};
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol};
-use stellar_contract_utils::upgradeable::{
-    complete_migration, ensure_can_complete_migration,
-};
+use stellar_contract_utils::upgradeable::{complete_migration, ensure_can_complete_migration};
 
 use crate::{
     errors::ConfigManagerError,
     events,
     logic::{
         admin_role_symbol, bump_instance_ttl, grant_role_internal, has_role_local, init_admin,
-        load_admin, require_admin_with_auth, revoke_role_internal,
+        load_admin, require_admin_with_auth, revoke_role_internal, rotate_admin,
     },
     storage,
-    types::{roles, BorrowRateConfig, FeeSplits, ProtocolLimits},
+    types::{roles, BorrowRateConfig, FeeConfig, FeeSplits, ProtocolLimits},
     validate::Validate,
 };
 
@@ -51,11 +49,18 @@ impl ConfigManager for ConfigManagerContract {
 
         // Set sensible defaults so PM never panics reading unconfigured values
         let fee_splits = FeeSplits {
-            keeper_bps: shared::constants::DEFAULT_KEEPER_BPS,
-            dev_bps: shared::constants::DEFAULT_DEV_BPS,
             lp_bps: shared::constants::DEFAULT_LP_BPS,
+            dev_bps: shared::constants::DEFAULT_DEV_BPS,
+            staker_bps: shared::constants::DEFAULT_STAKER_BPS,
         };
         storage::save_fee_splits(&env, &fee_splits);
+
+        let fee_config = FeeConfig {
+            open_fee_bps: shared::constants::DEFAULT_OPEN_FEE_BPS,
+            liquidation_bounty_bps: shared::constants::DEFAULT_LIQUIDATION_BOUNTY_BPS,
+            tp_sl_execution_fee: shared::constants::DEFAULT_TP_SL_EXECUTION_FEE,
+        };
+        storage::save_fee_config(&env, &fee_config);
 
         let protocol_limits = ProtocolLimits {
             min_collateral: shared::constants::DEFAULT_MIN_COLLATERAL,
@@ -82,9 +87,15 @@ impl ConfigManager for ConfigManagerContract {
         // `protocol_config` from ledger 0 — without these, the keeper's
         // env-var fallback would mask a partially-empty config row.
         events::FeeSplitsUpdate {
-            keeper_bps: fee_splits.keeper_bps,
-            dev_bps: fee_splits.dev_bps,
             lp_bps: fee_splits.lp_bps,
+            dev_bps: fee_splits.dev_bps,
+            staker_bps: fee_splits.staker_bps,
+        }
+        .publish(&env);
+        events::FeeConfigUpdate {
+            open_fee_bps: fee_config.open_fee_bps,
+            liquidation_bounty_bps: fee_config.liquidation_bounty_bps,
+            tp_sl_execution_fee: fee_config.tp_sl_execution_fee,
         }
         .publish(&env);
         events::LimitsUpdate {
@@ -125,7 +136,12 @@ impl ConfigManager for ConfigManagerContract {
             panic_with_error!(&env, ConfigManagerError::Unauthorized);
         }
         grant_role_internal(&env, &role, &account, &caller);
-        events::RoleChange { role: role.clone(), account: account.clone(), is_grant: true }.publish(&env);
+        events::RoleChange {
+            role: role.clone(),
+            account: account.clone(),
+            is_grant: true,
+        }
+        .publish(&env);
     }
 
     fn revoke_role(env: Env, caller: Address, role: Symbol, account: Address) {
@@ -135,7 +151,12 @@ impl ConfigManager for ConfigManagerContract {
             panic_with_error!(&env, ConfigManagerError::Unauthorized);
         }
         revoke_role_internal(&env, &role, &account, &caller);
-        events::RoleChange { role: role.clone(), account: account.clone(), is_grant: false }.publish(&env);
+        events::RoleChange {
+            role: role.clone(),
+            account: account.clone(),
+            is_grant: false,
+        }
+        .publish(&env);
     }
 
     fn has_role(env: Env, role: Symbol, account: Address) -> bool {
@@ -146,7 +167,12 @@ impl ConfigManager for ConfigManagerContract {
         require_admin_with_auth(&env, &caller);
         fee_splits.validate(&env);
         storage::save_fee_splits(&env, &fee_splits);
-        events::FeeSplitsUpdate { keeper_bps: fee_splits.keeper_bps, dev_bps: fee_splits.dev_bps, lp_bps: fee_splits.lp_bps }.publish(&env);
+        events::FeeSplitsUpdate {
+            lp_bps: fee_splits.lp_bps,
+            dev_bps: fee_splits.dev_bps,
+            staker_bps: fee_splits.staker_bps,
+        }
+        .publish(&env);
         bump_instance_ttl(&env);
     }
 
@@ -163,7 +189,8 @@ impl ConfigManager for ConfigManagerContract {
             adl_pnl_bps: limits.adl_pnl_bps,
             adl_utilization_bps: limits.adl_utilization_bps,
             liquidation_threshold_bps: limits.liquidation_threshold_bps,
-        }.publish(&env);
+        }
+        .publish(&env);
         bump_instance_ttl(&env);
     }
 
@@ -173,6 +200,23 @@ impl ConfigManager for ConfigManagerContract {
 
     fn get_fee_splits(env: Env) -> FeeSplits {
         storage::load_fee_splits(&env)
+    }
+
+    fn set_fee_config(env: Env, caller: Address, config: FeeConfig) {
+        require_admin_with_auth(&env, &caller);
+        config.validate(&env);
+        storage::save_fee_config(&env, &config);
+        events::FeeConfigUpdate {
+            open_fee_bps: config.open_fee_bps,
+            liquidation_bounty_bps: config.liquidation_bounty_bps,
+            tp_sl_execution_fee: config.tp_sl_execution_fee,
+        }
+        .publish(&env);
+        bump_instance_ttl(&env);
+    }
+
+    fn get_fee_config(env: Env) -> FeeConfig {
+        storage::load_fee_config(&env)
     }
 
     fn bump_config_state(env: Env) {
@@ -189,7 +233,8 @@ impl ConfigManager for ConfigManagerContract {
             slope2_bps: config.slope2_bps,
             optimal_utilization_bps: config.optimal_utilization_bps,
             base_funding_rate_bps: config.base_funding_rate_bps,
-        }.publish(&env);
+        }
+        .publish(&env);
         bump_instance_ttl(&env);
     }
 
@@ -203,7 +248,10 @@ impl ConfigManager for ConfigManagerContract {
             panic_with_error!(&env, ConfigManagerError::UpgradeTimelockTooShort);
         }
         storage::save_upgrade_timelock(&env, seconds);
-        events::UpgradeTimelockUpdate { timelock_seconds: seconds }.publish(&env);
+        events::UpgradeTimelockUpdate {
+            timelock_seconds: seconds,
+        }
+        .publish(&env);
         bump_instance_ttl(&env);
     }
 
@@ -244,11 +292,7 @@ impl ConfigManager for ConfigManagerContract {
         }
         revoke_role_internal(&env, &admin_role, &old_admin, &old_admin);
         grant_role_internal(&env, &admin_role, &new_admin, &new_admin);
-        // Rotate the OZ admin pointer to new_admin. OZ's `set_admin` panics
-        // if an admin is already set, so we clear the storage slot first
-        // (acceptable because old_admin no longer holds the admin role).
-        env.storage().instance().remove(&stellar_access::access_control::AccessControlStorageKey::Admin);
-        init_admin(&env, &new_admin);
+        rotate_admin(&env, &new_admin);
         storage::clear_pending_admin(&env);
         events::RoleChange {
             role: admin_role.clone(),
@@ -288,7 +332,6 @@ impl ConfigManager for ConfigManagerContract {
         <Self as TimelockedUpgradeable>::cancel(&env, caller);
         bump_instance_ttl(&env);
     }
-
 }
 
 // ---------------------------------------------------------------------------

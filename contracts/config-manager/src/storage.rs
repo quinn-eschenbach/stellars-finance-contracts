@@ -1,7 +1,7 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env};
 
 use crate::errors::ConfigManagerError;
-use crate::types::{BorrowRateConfig, FeeSplits, ProtocolLimits};
+use crate::types::{BorrowRateConfig, FeeConfig, FeeSplits, ProtocolLimits};
 
 /// Pending WASM upgrade is the same shape across every protocol contract —
 /// re-exported here so callers can keep saying `storage::PendingUpgrade`.
@@ -13,6 +13,8 @@ pub enum StorageKey {
     Initialized,
     /// Fee split configuration.
     FeeSplits,
+    /// Execution-bounty and open-fee parameters.
+    FeeConfig,
     /// Protocol risk and timing limits (single struct replaces four separate keys).
     ProtocolLimits,
     /// Borrow rate kink curve and funding rate parameters.
@@ -57,7 +59,9 @@ pub fn set_initialized(env: &Env) {
 // ---------------------------------------------------------------------------
 
 pub fn save_pending_admin(env: &Env, addr: &Address) {
-    env.storage().instance().set(&StorageKey::PendingAdmin, addr);
+    env.storage()
+        .instance()
+        .set(&StorageKey::PendingAdmin, addr);
 }
 
 pub fn load_pending_admin(env: &Env) -> Option<Address> {
@@ -88,6 +92,22 @@ pub fn save_fee_splits(env: &Env, fee_splits: &FeeSplits) {
         .set(&StorageKey::FeeSplits, fee_splits);
 }
 
+// ---------------------------------------------------------------------------
+// FeeConfig helpers
+// ---------------------------------------------------------------------------
+
+pub fn load_fee_config(env: &Env) -> FeeConfig {
+    env.storage()
+        .instance()
+        .get(&StorageKey::FeeConfig)
+        .unwrap_or_else(|| panic_with_error!(env, ConfigManagerError::NotInitialized))
+}
+
+pub fn save_fee_config(env: &Env, config: &FeeConfig) {
+    env.storage()
+        .instance()
+        .set(&StorageKey::FeeConfig, config);
+}
 // ---------------------------------------------------------------------------
 // ProtocolLimits helpers
 // ---------------------------------------------------------------------------
@@ -144,7 +164,5 @@ pub fn save_upgrade_timelock(env: &Env, seconds: u64) {
 // ---------------------------------------------------------------------------
 
 pub fn save_version(env: &Env, version: u32) {
-    env.storage()
-        .instance()
-        .set(&StorageKey::Version, &version);
+    env.storage().instance().set(&StorageKey::Version, &version);
 }

@@ -19,6 +19,11 @@ pub trait PositionManager {
     /// mark price the open is willing to execute at — pass `0` to skip the
     /// slippage check. For longs, revert if `mark_price > acceptable_price`;
     /// for shorts, revert if `mark_price < acceptable_price`.
+    ///
+    /// **TP/SL semantics on increase**: `take_profit = 0` and `stop_loss = 0`
+    /// mean "leave the prior value unchanged" — `0` does NOT clear an
+    /// existing order. To clear TP/SL, call [`set_tp_sl`] with the explicit
+    /// `0` value (which clears, refunds escrow, and emits `SetTpSl`).
     fn increase_position(
         env: Env,
         trader: Address,
@@ -31,8 +36,18 @@ pub trait PositionManager {
         acceptable_price: i128,
     );
 
-    /// Close or reduce a position and realize PnL.
-    fn decrease_position(env: Env, trader: Address, symbol: Symbol, size_delta: i128);
+    /// Close or reduce a position and realize PnL. `acceptable_price` bounds
+    /// the mark price the close is willing to execute at — pass `0` to skip
+    /// the slippage check. For longs (closing on the bid), revert if
+    /// `mark_price < acceptable_price`; for shorts (closing on the ask),
+    /// revert if `mark_price > acceptable_price`.
+    fn decrease_position(
+        env: Env,
+        trader: Address,
+        symbol: Symbol,
+        size_delta: i128,
+        acceptable_price: i128,
+    );
 
     /// Force-close an undercollateralized position. KEEPER only.
     fn liquidate_position(env: Env, caller: Address, trader: Address, symbol: Symbol);
@@ -43,7 +58,11 @@ pub trait PositionManager {
     /// Execute a TP/SL order. KEEPER only.
     fn execute_order(env: Env, caller: Address, trader: Address, symbol: Symbol);
 
-    /// Set take-profit and stop-loss prices on an existing position.
+    /// Set take-profit and stop-loss prices on an existing position. Passing
+    /// `0` for either field CLEARS that side; this is the opposite of the
+    /// `0`-means-leave-unchanged semantics on [`increase_position`]. Calling
+    /// `set_tp_sl(trader, symbol, 0, 0)` clears both and refunds the
+    /// execution-fee escrow.
     fn set_tp_sl(env: Env, trader: Address, symbol: Symbol, take_profit: i128, stop_loss: i128);
 
     /// Auto-Deleveraging: force-close highest-RoE position. KEEPER only.

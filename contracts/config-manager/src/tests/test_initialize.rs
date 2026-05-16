@@ -252,10 +252,16 @@ fn test_initialize_emits_seeded_default_events() {
         };
         if topic0 == Symbol::new(&env, "feecfg") {
             let parsed: Result<(u32, u32, u32), _> = data.try_into_val(&env);
-            let (k, d, l) = parsed.expect("feecfg event must unpack as (u32, u32, u32)");
-            assert_eq!(k, shared::constants::DEFAULT_KEEPER_BPS);
+            let (lp, d, staker) = parsed.expect("feecfg event must unpack as (u32, u32, u32)");
+            assert_eq!(
+                lp, shared::constants::DEFAULT_LP_BPS,
+                "first field of feecfg must be lp_bps (declaration order)",
+            );
             assert_eq!(d, shared::constants::DEFAULT_DEV_BPS);
-            assert_eq!(l, shared::constants::DEFAULT_LP_BPS);
+            assert_eq!(
+                staker, shared::constants::DEFAULT_STAKER_BPS,
+                "third field of feecfg must be staker_bps (new shape)",
+            );
             saw_feecfg = true;
         } else if topic0 == Symbol::new(&env, "limits") {
             let parsed: Result<(i128, u64, u64, i128, u32, u32, u32, u32), _> =
@@ -277,4 +283,63 @@ fn test_initialize_emits_seeded_default_events() {
     assert!(saw_feecfg, "initialize must emit a `feecfg` event with seeded defaults");
     assert!(saw_limits, "initialize must emit a `limits` event with seeded defaults");
     assert!(saw_rates, "initialize must emit a `rates` event with seeded defaults");
+}
+
+// ---------------------------------------------------------------------------
+// FeeConfig seeded defaults must be readable via get_fee_config immediately
+// after initialize so PositionManager never reads an empty / panic state.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_initialize_seeds_fee_config_defaults_readable_via_getter() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    let cfg = client.get_fee_config();
+    assert_eq!(
+        cfg.open_fee_bps,
+        shared::constants::DEFAULT_OPEN_FEE_BPS,
+        "initialize must seed open_fee_bps with DEFAULT_OPEN_FEE_BPS",
+    );
+    assert_eq!(
+        cfg.liquidation_bounty_bps,
+        shared::constants::DEFAULT_LIQUIDATION_BOUNTY_BPS,
+        "initialize must seed liquidation_bounty_bps with DEFAULT_LIQUIDATION_BOUNTY_BPS",
+    );
+    assert_eq!(
+        cfg.tp_sl_execution_fee,
+        shared::constants::DEFAULT_TP_SL_EXECUTION_FEE,
+        "initialize must seed tp_sl_execution_fee with DEFAULT_TP_SL_EXECUTION_FEE",
+    );
+}
+
+#[test]
+fn test_initialize_seeds_fee_splits_defaults_with_new_shape() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    let splits = client.get_fee_splits();
+    assert_eq!(
+        splits.lp_bps,
+        shared::constants::DEFAULT_LP_BPS,
+        "initialize must seed lp_bps with DEFAULT_LP_BPS",
+    );
+    assert_eq!(
+        splits.dev_bps,
+        shared::constants::DEFAULT_DEV_BPS,
+        "initialize must seed dev_bps with DEFAULT_DEV_BPS",
+    );
+    assert_eq!(
+        splits.staker_bps,
+        shared::constants::DEFAULT_STAKER_BPS,
+        "initialize must seed staker_bps with DEFAULT_STAKER_BPS",
+    );
 }

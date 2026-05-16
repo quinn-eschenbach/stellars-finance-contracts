@@ -1,5 +1,7 @@
 use soroban_sdk::{Address, Env, Symbol};
 
+use shared::FeeConfig;
+
 use crate::{types::roles, ConfigManagerClient, ConfigManagerContract, FeeSplits, ProtocolLimits};
 
 pub fn deploy(env: &Env) -> ConfigManagerClient<'_> {
@@ -30,9 +32,17 @@ pub fn valid_limits() -> ProtocolLimits {
 
 pub fn valid_splits() -> FeeSplits {
     FeeSplits {
-        keeper_bps: 500,
-        dev_bps: 500,
         lp_bps: 9_000,
+        dev_bps: 1_000,
+        staker_bps: 0,
+    }
+}
+
+pub fn valid_fee_config() -> FeeConfig {
+    FeeConfig {
+        open_fee_bps: 10,
+        liquidation_bounty_bps: 100,
+        tp_sl_execution_fee: 5_000_000,
     }
 }
 

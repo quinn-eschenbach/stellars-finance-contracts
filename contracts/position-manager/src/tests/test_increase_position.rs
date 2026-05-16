@@ -1,15 +1,5 @@
-// ---------------------------------------------------------------------------
-// Tests for: increase_position
-//
-// These tests are written BEFORE the implementation (TDD). They MUST compile
-// but are expected to FAIL until increase_position is fully implemented.
-//
-// The function under test:
-//   fn increase_position(env, trader, symbol, size, collateral, is_long)
-//
-// Requires a full deployment: ConfigManager, MockToken (USDC), MockOracle,
-// OracleRouter, Vault, and PositionManager.
-// ---------------------------------------------------------------------------
+//! Tests for `increase_position`. Requires a full deployment: ConfigManager,
+//! MockToken (USDC), MockOracle, OracleRouter, Vault, and PositionManager.
 
 use soroban_sdk::{
     symbol_short,
@@ -23,6 +13,7 @@ use crate::PositionManagerClient;
 use shared::constants::PRECISION;
 
 use config_manager::{ConfigManagerClient, ConfigManagerContract};
+use shared::FeeConfig;
 use mock_oracle::{MockOracle, MockOracleClient};
 use mock_token::{MockToken, MockTokenClient};
 use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
@@ -148,9 +139,9 @@ fn setup_full<'a>() -> TestFixture<'a> {
     config_client.update_fee_splits(
         &admin,
         &config_manager::FeeSplits {
-            keeper_bps: 500,
-            dev_bps: 500,
             lp_bps: 9000,
+            dev_bps: 500,
+            staker_bps: 500,
         },
     );
 
@@ -537,10 +528,13 @@ fn test_open_position_transfers_collateral_from_trader() {
     );
 
     let balance_after = f.usdc_client.balance(&f.trader);
+    // Trader is charged collateral plus the sidecar open fee on the size
+    // delta. With defaults (open_fee_bps = 10), the fee is DEFAULT_SIZE / 1000.
+    let expected_open_fee = DEFAULT_SIZE / 1_000;
     assert_eq!(
         balance_before - balance_after,
-        DEFAULT_COLLATERAL,
-        "Trader USDC balance must decrease by exactly the collateral amount"
+        DEFAULT_COLLATERAL + expected_open_fee,
+        "Trader USDC balance must decrease by collateral + open fee"
     );
 }
 
@@ -1109,13 +1103,10 @@ fn test_excessive_leverage_reverts() {
 
 #[test]
 fn test_vault_reserve_liquidity_called() {
-    // Scenario: After opening a position, the vault's reserved USDC must
-    // increase by the position size. This verifies that the PM actually
-    // cross-calls vault.reserve_liquidity().
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
-    let free_before = f.vault_client.free_liquidity();
+    let reserved_before = f.vault_client.reserved_usdc();
 
     f.pm_client.increase_position(
         &f.trader,
@@ -1128,17 +1119,12 @@ fn test_vault_reserve_liquidity_called() {
         &0i128,
     );
 
-    let free_after = f.vault_client.free_liquidity();
+    let reserved_after = f.vault_client.reserved_usdc();
 
-    // free_liquidity should decrease by at least DEFAULT_SIZE since that
-    // amount was reserved in the vault.
-    assert!(
-        free_before - free_after >= DEFAULT_SIZE,
-        "Vault free liquidity must decrease by at least the reserved size. \
-         Before: {}, After: {}, Size: {}",
-        free_before,
-        free_after,
+    assert_eq!(
+        reserved_after - reserved_before,
         DEFAULT_SIZE,
+        "Vault reserved_usdc must grow by exactly the position size."
     );
 }
 
@@ -1322,4 +1308,929 @@ fn test_cumulative_utilization_across_multiple_positions() {
             "TotalReserved must be 800k after two 400k positions"
         );
     });
+}
+
+// ===========================================================================
+// 7. Open-fee + TP/SL execution-fee escrow charging
+//
+// Every increase_position call charges an open fee on the size DELTA computed
+// as `size * open_fee_bps / BPS`. The fee is taken on TOP of the collateral
+// (sidecar) and forwarded to the vault. Vault.accrue_fees is called with the
+// non-LP slice; the LP slice stays in vault total_assets implicitly.
+//
+// The first time a position has TP or SL set, the flat `tp_sl_execution_fee`
+// from FeeConfig is charged once and stored in position.execution_fee_escrow.
+// Subsequent increases that touch TP/SL while escrow > 0 must NOT re-charge.
+//
+// The default FeeConfig planted by ConfigManager::initialize is:
+//   open_fee_bps                = DEFAULT_OPEN_FEE_BPS                = 10
+//   liquidation_bounty_bps      = DEFAULT_LIQUIDATION_BOUNTY_BPS      = 100
+//   tp_sl_execution_fee         = DEFAULT_TP_SL_EXECUTION_FEE         = 5_000_000
+//
+// For DEFAULT_SIZE = 10_000 * USDC_UNIT = 10_000_000_000, open_fee at 10 bps
+// is 10_000_000_000 * 10 / 10_000 = 10_000_000.
+// ===========================================================================
+
+/// Open-fee charged for a given size delta at the default 10 bps rate.
+const DEFAULT_OPEN_FEE: i128 = DEFAULT_SIZE / 1_000; // 10 bps == /1000
+
+/// Default flat TP/SL execution fee planted by ConfigManager::initialize.
+const TP_SL_ESCROW: i128 = 5_000_000;
+
+/// A TP price strictly above BTC_PRICE — valid for a long.
+const VALID_TP_LONG: i128 = 55_000 * PRECISION;
+/// An SL price strictly below BTC_PRICE — valid for a long.
+const VALID_SL_LONG: i128 = 45_000 * PRECISION;
+
+#[test]
+fn test_open_position_no_tp_sl_charges_open_fee() {
+    // Opening with TP=SL=0 charges only collateral + open_fee on the size delta.
+    // Trader pays collateral + open_fee; vault total_assets grows by open_fee;
+    // PM holds collateral only; position.execution_fee_escrow == 0.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let vault_total_before = f.vault_client.total_assets();
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let vault_total_after = f.vault_client.total_assets();
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL + DEFAULT_OPEN_FEE,
+        "Trader must pay collateral + open_fee"
+    );
+    assert_eq!(
+        vault_total_after - vault_total_before,
+        DEFAULT_OPEN_FEE,
+        "Vault total_assets must grow by exactly the open fee"
+    );
+    assert_eq!(
+        pm_balance_after - pm_balance_before,
+        DEFAULT_COLLATERAL,
+        "PM must hold only the collateral; fee is forwarded to vault"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.collateral, DEFAULT_COLLATERAL,
+        "Stored collateral must equal the param (fee is sidecar, not deducted)"
+    );
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "No TP or SL means no execution-fee escrow"
+    );
+}
+
+#[test]
+fn test_open_position_with_zero_open_fee_bps_no_fee_charged() {
+    // With open_fee_bps == 0, the trader pays only collateral.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 0,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: TP_SL_ESCROW,
+        },
+    );
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let vault_total_before = f.vault_client.total_assets();
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let vault_total_after = f.vault_client.total_assets();
+
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL,
+        "Trader must pay only collateral when open_fee_bps == 0"
+    );
+    assert_eq!(
+        vault_total_after, vault_total_before,
+        "Vault total_assets must NOT grow when open_fee_bps == 0"
+    );
+}
+
+#[test]
+fn test_open_position_with_max_open_fee_bps_correct_amount() {
+    // open_fee_bps = 100 (1%). Fee on DEFAULT_SIZE = DEFAULT_SIZE / 100.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 100,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: TP_SL_ESCROW,
+        },
+    );
+
+    let expected_fee = DEFAULT_SIZE / 100;
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let vault_total_before = f.vault_client.total_assets();
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let vault_total_after = f.vault_client.total_assets();
+
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL + expected_fee,
+        "Trader must pay collateral + 1% of size at max open_fee_bps"
+    );
+    assert_eq!(
+        vault_total_after - vault_total_before,
+        expected_fee,
+        "Vault total_assets must grow by exactly the 1% open fee"
+    );
+}
+
+#[test]
+fn test_open_fee_accrues_non_lp_portion_to_vault_unclaimed_fees() {
+    // The non-LP slice (dev_bps + staker_bps) of the open fee is accrued into
+    // vault.unclaimed_fees via vault.accrue_fees. The LP slice stays in
+    // total_assets implicitly. With defaults FeeSplits { lp:9000, dev:500,
+    // staker:500 }, the non-LP slice is 1000 bps == 10% of the open fee.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // free_liquidity = total_assets - reserved - unclaimed_fees - max(0, pnl)
+    // Before: free_liq = total - 0 - 0 - 0 = total
+    let total_before = f.vault_client.total_assets();
+    let free_before = f.vault_client.free_liquidity();
+    assert_eq!(
+        total_before, free_before,
+        "Precondition: no fees, no reservations, free == total"
+    );
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let total_after = f.vault_client.total_assets();
+    let free_after = f.vault_client.free_liquidity();
+
+    // total_after = total_before + open_fee.
+    // free_after  = total_after - reserved - unclaimed_fees
+    //             = (total_before + fee) - size - non_lp_fee
+    // free_before - free_after = size + non_lp_fee - fee
+    //                          = size - lp_fee
+    let expected_non_lp_fee = DEFAULT_OPEN_FEE * 1_000 / 10_000; // dev+staker = 1000 bps
+    let expected_lp_fee = DEFAULT_OPEN_FEE - expected_non_lp_fee;
+
+    assert_eq!(
+        total_after - total_before,
+        DEFAULT_OPEN_FEE,
+        "Vault total_assets grows by full open_fee"
+    );
+    // free dropped by `size` (reserved) and additionally by the non-LP slice
+    // (now in unclaimed_fees), but rose by the LP slice (implicit in total).
+    // Net: free_before - free_after == size + non_lp_fee - open_fee == size - lp_fee
+    assert_eq!(
+        free_before - free_after,
+        DEFAULT_SIZE - expected_lp_fee,
+        "Free liquidity drop == reserved size minus the LP slice of the fee"
+    );
+}
+
+#[test]
+fn test_open_position_with_tp_charges_escrow() {
+    // Opening with non-zero TP and zero SL charges the flat tp_sl_execution_fee
+    // once. Trader pays collateral + open_fee + tp_sl_execution_fee. The escrow
+    // amount stays in PM (NOT moved to vault); position.execution_fee_escrow
+    // records it. Vault grows only by the open fee.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let vault_total_before = f.vault_client.total_assets();
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &VALID_TP_LONG,
+        &0,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let vault_total_after = f.vault_client.total_assets();
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL + DEFAULT_OPEN_FEE + TP_SL_ESCROW,
+        "Trader must pay collateral + open_fee + escrow"
+    );
+    assert_eq!(
+        vault_total_after - vault_total_before,
+        DEFAULT_OPEN_FEE,
+        "Vault grows only by the open fee; escrow does NOT flow to vault"
+    );
+    assert_eq!(
+        pm_balance_after - pm_balance_before,
+        DEFAULT_COLLATERAL + TP_SL_ESCROW,
+        "PM must hold collateral + escrow"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_ESCROW,
+        "Position must record the escrowed execution fee"
+    );
+    assert_eq!(
+        pos.take_profit, VALID_TP_LONG,
+        "TP must be set on the position"
+    );
+}
+
+#[test]
+fn test_open_position_with_sl_charges_escrow() {
+    // Opening with zero TP and non-zero SL charges the same flat escrow.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &VALID_SL_LONG,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL + DEFAULT_OPEN_FEE + TP_SL_ESCROW,
+        "SL-only open must still charge collateral + open_fee + escrow"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.execution_fee_escrow, TP_SL_ESCROW);
+    assert_eq!(pos.stop_loss, VALID_SL_LONG);
+    assert_eq!(pos.take_profit, 0);
+}
+
+#[test]
+fn test_open_position_with_both_tp_and_sl_charges_single_escrow() {
+    // Setting BOTH TP and SL on open charges the escrow exactly ONCE — it is
+    // a per-position flat fee, NOT per trigger.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &VALID_TP_LONG,
+        &VALID_SL_LONG,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL + DEFAULT_OPEN_FEE + TP_SL_ESCROW,
+        "Both TP and SL set must charge exactly ONE flat escrow"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_ESCROW,
+        "Escrow stored is a SINGLE flat fee, not 2x"
+    );
+}
+
+#[test]
+fn test_open_position_with_zero_tp_sl_no_escrow_charged() {
+    // With both TP and SL == 0, no escrow is charged regardless of the
+    // configured tp_sl_execution_fee value.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL + DEFAULT_OPEN_FEE,
+        "Without TP/SL the trader must NOT pay the escrow"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "No TP/SL means execution_fee_escrow stays at 0"
+    );
+}
+
+#[test]
+fn test_open_position_with_zero_execution_fee_no_charge_even_with_tp() {
+    // If admin sets tp_sl_execution_fee to 0, opening with a TP must not
+    // charge any escrow and position.execution_fee_escrow must remain 0.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 10,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: 0,
+        },
+    );
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &VALID_TP_LONG,
+        &0,
+        &0i128,
+    );
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        DEFAULT_COLLATERAL + DEFAULT_OPEN_FEE,
+        "Zero configured escrow must result in zero escrow charge"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "Position escrow must be 0 when tp_sl_execution_fee == 0"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Add-to-position fee mechanics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_add_to_position_charges_open_fee_on_size_delta_only() {
+    // Trader opens with size = DEFAULT_SIZE then adds size_delta = half.
+    // The second call's open fee must be computed on the DELTA only, not the
+    // cumulative total. Cumulative trader spend = 1.5 * DEFAULT_SIZE worth of
+    // fee, NOT 2.5 * DEFAULT_SIZE worth.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let add_size: i128 = DEFAULT_SIZE / 2;
+    let add_collateral: i128 = DEFAULT_COLLATERAL / 2;
+    let expected_fee_open_1 = DEFAULT_SIZE / 1_000;
+    let expected_fee_open_2 = add_size / 1_000;
+
+    let balance_before = f.usdc_client.balance(&f.trader);
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &add_size,
+        &add_collateral,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let balance_after = f.usdc_client.balance(&f.trader);
+
+    let expected_total_spend = DEFAULT_COLLATERAL
+        + add_collateral
+        + expected_fee_open_1
+        + expected_fee_open_2;
+
+    assert_eq!(
+        balance_before - balance_after,
+        expected_total_spend,
+        "Open fee on add MUST be charged on size DELTA, not cumulative size"
+    );
+}
+
+#[test]
+fn test_add_to_position_no_second_escrow_if_already_paid() {
+    // The position already has an escrow recorded from the first open.
+    // Adding to it (with TP unchanged or explicitly re-asserted) MUST NOT
+    // double-charge the trader.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &VALID_TP_LONG,
+        &0,
+        &0i128,
+    );
+
+    let balance_after_open = f.usdc_client.balance(&f.trader);
+
+    let add_size: i128 = DEFAULT_SIZE / 4;
+    let add_collateral: i128 = DEFAULT_COLLATERAL / 4;
+    let expected_fee_delta = add_size / 1_000;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &add_size,
+        &add_collateral,
+        &true,
+        &VALID_TP_LONG,
+        &0,
+        &0i128,
+    );
+
+    let balance_after_add = f.usdc_client.balance(&f.trader);
+
+    assert_eq!(
+        balance_after_open - balance_after_add,
+        add_collateral + expected_fee_delta,
+        "Add must charge ONLY collateral + open_fee (no second escrow)"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_ESCROW,
+        "Escrow on the position must remain unchanged after re-asserting TP"
+    );
+}
+
+#[test]
+fn test_add_to_position_charges_escrow_if_first_time_setting_tp() {
+    // First open is plain (no TP, no escrow). The second call introduces a
+    // non-zero TP for the FIRST time — the escrow MUST be charged then.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let pos_after_open = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos_after_open.execution_fee_escrow, 0,
+        "Precondition: plain open leaves escrow at 0"
+    );
+
+    let balance_after_open = f.usdc_client.balance(&f.trader);
+
+    let add_size: i128 = DEFAULT_SIZE / 4;
+    let add_collateral: i128 = DEFAULT_COLLATERAL / 4;
+    let expected_fee_delta = add_size / 1_000;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &add_size,
+        &add_collateral,
+        &true,
+        &VALID_TP_LONG,
+        &0,
+        &0i128,
+    );
+
+    let balance_after_add = f.usdc_client.balance(&f.trader);
+
+    assert_eq!(
+        balance_after_open - balance_after_add,
+        add_collateral + expected_fee_delta + TP_SL_ESCROW,
+        "First time setting TP on add must charge the escrow"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_ESCROW,
+        "Escrow must be recorded on the position after first TP set"
+    );
+}
+
+#[test]
+fn test_add_to_position_keeps_existing_escrow_when_tp_zero_in_increase_call() {
+    // Existing semantics: passing take_profit=0 to an increase means "do not
+    // change current TP". The position retains its TP and its escrow. The add
+    // must NOT re-charge the escrow.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &VALID_TP_LONG,
+        &0,
+        &0i128,
+    );
+
+    let balance_after_open = f.usdc_client.balance(&f.trader);
+
+    let add_size: i128 = DEFAULT_SIZE / 4;
+    let add_collateral: i128 = DEFAULT_COLLATERAL / 4;
+    let expected_fee_delta = add_size / 1_000;
+
+    // take_profit = 0 here means "leave TP untouched", per the existing
+    // do_increase_position semantics.
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &add_size,
+        &add_collateral,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let balance_after_add = f.usdc_client.balance(&f.trader);
+
+    assert_eq!(
+        balance_after_open - balance_after_add,
+        add_collateral + expected_fee_delta,
+        "Add with tp=0,sl=0 must NOT re-charge escrow when position already has one"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.take_profit, VALID_TP_LONG,
+        "TP must be preserved when increase passes 0 (existing semantics)"
+    );
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_ESCROW,
+        "Escrow must remain unchanged when no new TP/SL state is introduced"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Min-collateral / leverage interactions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_min_collateral_check_uses_param_not_post_fee() {
+    // The min_collateral check uses the collateral parameter passed by the
+    // trader, NOT the param minus fees. Fee is a sidecar — it is taken on TOP
+    // of the collateral. Passing collateral == min_collateral exactly must
+    // succeed.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let limits = f._config_client.get_protocol_limits();
+    let min_col = limits.min_collateral;
+
+    // Size scaled to keep leverage within bounds: collateral * 10.
+    let size = min_col * 10;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &min_col,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.collateral, min_col,
+        "Position at the min_collateral boundary must succeed (fee does not reduce stored collateral)"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn test_collateral_below_min_panics_even_with_fee_logic() {
+    // Adversarial: trader passes collateral < min_collateral. The new fee
+    // logic must NOT silently top up the collateral to compensate. The pre-fee
+    // BelowMinCollateral check (error 16) still applies.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let limits = f._config_client.get_protocol_limits();
+    let too_low = limits.min_collateral - 1;
+    let size = too_low * 10;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &size,
+        &too_low,
+        &true,
+        &0,
+        &0,
+        &0i128,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Auth / balance
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic]
+fn test_trader_must_have_sufficient_balance_for_collateral_plus_fees() {
+    // Adversarial: trader balance is EXACTLY collateral. The fee + escrow
+    // bring the required total above the balance, so the bundled transfer
+    // must fail (token-side panic).
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // Burn excess trader balance down to exactly DEFAULT_COLLATERAL.
+    let balance = f.usdc_client.balance(&f.trader);
+    let burn_amount = balance - DEFAULT_COLLATERAL;
+    if burn_amount > 0 {
+        f.usdc_client.burn(&f.trader, &burn_amount);
+    }
+
+    // This must panic: trader has only DEFAULT_COLLATERAL but owes
+    // DEFAULT_COLLATERAL + DEFAULT_OPEN_FEE + TP_SL_ESCROW.
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &VALID_TP_LONG,
+        &VALID_SL_LONG,
+        &0i128,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Reservation vs fee accounting
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_vault_reserved_increases_by_size_not_fee_inclusive() {
+    // The vault's ReservedUsdc must grow by the position notional SIZE only.
+    // Fees never reserve liquidity — they are revenue, not collateralisation.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let reserved_before = f.vault_client.reserved_usdc();
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &VALID_TP_LONG,
+        &VALID_SL_LONG,
+        &0i128,
+    );
+
+    let reserved_after = f.vault_client.reserved_usdc();
+
+    assert_eq!(
+        reserved_after - reserved_before,
+        DEFAULT_SIZE,
+        "ReservedUsdc must grow by SIZE only — open fee and escrow do NOT reserve"
+    );
+}
+
+// ===========================================================================
+// Slippage (`acceptable_price`) tests
+// ===========================================================================
+//
+// For opens: long reverts when mark > acceptable; short reverts when
+// mark < acceptable. `acceptable_price = 0` bypasses the check.
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")]
+fn test_increase_long_reverts_when_mark_above_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    // Mark $50k, trader bounds to $49k → revert
+    let acceptable = 49_000 * PRECISION;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &acceptable,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")]
+fn test_increase_short_reverts_when_mark_below_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    // Mark $50k, trader bounds to $51k → revert (shorts want high mark)
+    let acceptable = 51_000 * PRECISION;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &false,
+        &0,
+        &0,
+        &acceptable,
+    );
+}
+
+#[test]
+fn test_increase_long_succeeds_when_mark_below_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    let acceptable = 51_000 * PRECISION;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &acceptable,
+    );
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.entry_price, BTC_PRICE);
+}
+
+#[test]
+fn test_increase_short_succeeds_when_mark_above_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    let acceptable = 49_000 * PRECISION;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &false,
+        &0,
+        &0,
+        &acceptable,
+    );
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.entry_price, BTC_PRICE);
+}
+
+#[test]
+fn test_increase_zero_acceptable_price_bypasses_check() {
+    // Default opt-out behaviour: `acceptable_price = 0` skips the slippage
+    // gate entirely, regardless of mark.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &0_i128,
+    );
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.entry_price, BTC_PRICE);
+}
+
+#[test]
+fn test_increase_boundary_mark_equals_acceptable_long() {
+    // Exact equality at the inclusive bound (mark <= acceptable for longs).
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    let acceptable = BTC_PRICE;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0,
+        &acceptable,
+    );
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.entry_price, BTC_PRICE);
+}
+
+#[test]
+fn test_increase_boundary_mark_equals_acceptable_short() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    let acceptable = BTC_PRICE;
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &false,
+        &0,
+        &0,
+        &acceptable,
+    );
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.entry_price, BTC_PRICE);
 }

@@ -34,7 +34,7 @@ fn test_partial_close_fee_proportional() {
 
     // Close 50%
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
 
     let returned_first = f.usdc.balance(&f.trader) - balance_before_first_close;
 
@@ -42,7 +42,7 @@ fn test_partial_close_fee_proportional() {
 
     // Close remaining 50%
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
 
     let returned_second = f.usdc.balance(&f.trader) - balance_before_second_close;
 
@@ -83,7 +83,7 @@ fn test_close_more_than_size_reverts() {
 
     let result = f
         .position_manager
-        .try_decrease_position(&f.trader, &symbol_short!("BTC"), &(size * 2));
+        .try_decrease_position(&f.trader, &symbol_short!("BTC"), &(size * 2), &0_i128);
     assert!(result.is_err(), "Over-close must revert, not silently clamp");
 
     // Position must still be open with full OI intact.
@@ -102,48 +102,58 @@ fn test_free_liquidity_formula_all_components() {
 
     let initial_total = f.vault.total_assets();
     let initial_free = f.vault.free_liquidity();
-    // Initially: reserved=0, unclaimed_fees=0, net_pnl=0 → free == total
+    // Initially: reserved=0, unclaimed_fees=0, net_pnl=0 -> free == total
     assert_eq!(
         initial_free, initial_total,
         "Free must equal total with no activity"
     );
 
-    // Open position to create reservation
+    // Open position. With open_fee_bps != 0, the trader pays `size * bps / BPS`
+    // on top of collateral. That flow goes trader -> PM -> Vault, so the
+    // vault's `total_assets` rises by the open fee at this point. To isolate
+    // the free_liquidity formula from the open-fee contribution, drop the
+    // open fee to 0 for this test.
+    f.config_manager.set_fee_config(
+        &f.admin,
+        &shared::FeeConfig {
+            open_fee_bps: 0,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: 5_000_000,
+        },
+    );
+
     let trader_a = f.create_funded_trader(50_000 * USDC_UNIT);
     f.open_long(&trader_a, 200_000 * USDC_UNIT, 20_000 * USDC_UNIT);
 
     let free_after_reserve = f.vault.free_liquidity();
-    // free = total - reserved (200k) - 0 - 0
     assert!(
         free_after_reserve < initial_free,
         "Free must decrease after reservation"
     );
     let expected_reserved = 200_000 * USDC_UNIT;
     let expected_free = initial_total - expected_reserved;
-    // Tolerance: collateral moved from trader to PM, so vault total is same
     let diff = (free_after_reserve - expected_free).abs();
     assert!(
         diff < 100 * USDC_UNIT,
-        "Free liquidity should be total - reserved: expected={}, got={}, diff={}",
+        "Free liquidity should be total - reserved when open_fee_bps=0: expected={}, got={}, diff={}",
         expected_free,
         free_after_reserve,
         diff
     );
 
-    // Close position at profit to generate fees and update net_pnl
+    // Close at profit to generate close-time fees and positive net_pnl.
     f.advance_time(TEST_TIMESTAMP + 86_400);
-    f.set_btc_price(55_000); // +10%
+    f.set_btc_price(55_000);
     f.position_manager
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     f.position_manager
-        .decrease_position(&trader_a, &symbol_short!("BTC"), &(200_000 * USDC_UNIT));
+        .decrease_position(&trader_a, &symbol_short!("BTC"), &(200_000 * USDC_UNIT), &0_i128);
 
-    // Now: reserved=0, unclaimed_fees > 0, net_pnl > 0 (trader profited)
+    // Now: reserved=0, unclaimed_fees > 0 (close fees), net_pnl > 0 (realized profit).
     let free_after_close = f.vault.free_liquidity();
     let total_after_close = f.vault.total_assets();
 
-    // Free should be reduced by both unclaimed_fees and positive net_pnl
     assert!(
         free_after_close < total_after_close,
         "Free must be less than total when fees/pnl exist: free={}, total={}",
@@ -211,7 +221,7 @@ fn test_min_lifetime_exact_boundary_passes() {
     f.set_btc_price(50_000);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(
@@ -237,7 +247,7 @@ fn test_min_lifetime_one_second_before_fails() {
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         f.position_manager
-            .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT));
+            .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
     }));
     assert!(
         result.is_err(),
@@ -339,7 +349,7 @@ fn test_funding_fee_improves_short_health() {
     // Close short at same price — PnL = 0 but funding should help short
     let balance_before = f.usdc.balance(&short_trader);
     f.position_manager
-        .decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT));
+        .decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT), &0_i128);
 
     let returned = f.usdc.balance(&short_trader) - balance_before;
 
@@ -377,7 +387,7 @@ fn test_funding_fee_protocol_cut_accrued() {
 
     // Close the short (short receives funding → protocol takes a cut)
     f.position_manager
-        .decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT));
+        .decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT), &0_i128);
 
     // Admin claims fees — should include borrow fees + funding fee protocol cut
     let admin_balance_before = f.usdc.balance(&f.admin);
@@ -520,7 +530,7 @@ fn test_profit_settlement_vault_pays_trader() {
     f.set_btc_price(60_000);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let trader_returned = f.usdc.balance(&f.trader) - trader_bal_after_open;
     let vault_total_after = f.vault.total_assets();
@@ -561,7 +571,7 @@ fn test_loss_settlement_vault_absorbs_margin() {
     f.set_btc_price(47_500);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let vault_total_after = f.vault.total_assets();
 

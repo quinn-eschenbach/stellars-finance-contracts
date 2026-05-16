@@ -31,6 +31,10 @@ pub enum StorageKey {
     MarketUnrealizedPnl(Symbol),
     // Timestamp of the last unpause (for fee clamping during pause periods)
     LastUnpauseTime,
+    // Timestamp of the current pause window's start. Set by `pause()` only on
+    // the transition false→true; cleared on `unpause()` so the invariant
+    // `last_pause_time > 0 ⟺ is_paused` holds (the runtime relies on it).
+    LastPauseTime,
     // Per-market max leverage (instance storage, admin-configured)
     MaxLeverage(Symbol),
     // Per-market disabled flag — opens rejected when true.
@@ -225,9 +229,7 @@ pub fn delete_position(env: &Env, trader: &Address, symbol: &Symbol) {
         trader: trader.clone(),
         symbol: symbol.clone(),
     });
-    if env.storage().persistent().has(&key) {
-        env.storage().persistent().remove(&key);
-    }
+    env.storage().persistent().remove(&key);
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +272,23 @@ pub fn set_last_unpause_time(env: &Env, ts: u64) {
     env.storage()
         .instance()
         .set(&StorageKey::LastUnpauseTime, &ts);
+}
+
+// ---------------------------------------------------------------------------
+// Instance storage: LastPauseTime
+// ---------------------------------------------------------------------------
+
+pub fn get_last_pause_time(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&StorageKey::LastPauseTime)
+        .unwrap_or(0u64)
+}
+
+pub fn set_last_pause_time(env: &Env, ts: u64) {
+    env.storage()
+        .instance()
+        .set(&StorageKey::LastPauseTime, &ts);
 }
 
 // ---------------------------------------------------------------------------

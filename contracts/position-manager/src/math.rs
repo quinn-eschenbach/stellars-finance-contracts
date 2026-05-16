@@ -206,3 +206,17 @@ pub fn calc_utilization_bps(reserved: i128, total_assets: i128) -> i128 {
     }
     reserved * BPS / total_assets
 }
+
+pub fn calc_open_fee(size: i128, open_fee_bps: u32) -> i128 {
+    if size <= 0 {
+        return 0;
+    }
+    size * (open_fee_bps as i128) / BPS
+}
+
+pub fn calc_liquidation_bounty(collateral: i128, bounty_bps: u32) -> i128 {
+    if collateral <= 0 {
+        return 0;
+    }
+    collateral * (bounty_bps as i128) / BPS
+}

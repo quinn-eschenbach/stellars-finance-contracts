@@ -46,9 +46,20 @@ pub fn has_role(env: &Env, config_manager: &Address, role: &str, caller: &Addres
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct FeeSplits {
-    pub keeper_bps: u32,
-    pub dev_bps: u32,
     pub lp_bps: u32,
+    pub dev_bps: u32,
+    pub staker_bps: u32,
+}
+
+/// Execution-bounty and open-fee parameters charged to traders.
+/// `open_fee_bps` and `liquidation_bounty_bps` are in basis points;
+/// `tp_sl_execution_fee` is a flat USDC amount at PRECISION scale.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct FeeConfig {
+    pub open_fee_bps: u32,
+    pub liquidation_bounty_bps: u32,
+    pub tp_sl_execution_fee: i128,
 }
 
 /// Global protocol risk and timing parameters.

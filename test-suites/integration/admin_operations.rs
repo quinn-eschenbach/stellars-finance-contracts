@@ -52,7 +52,7 @@ fn test_pause_blocks_new_positions_but_allows_close() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0);

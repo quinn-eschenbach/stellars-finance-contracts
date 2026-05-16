@@ -12,12 +12,13 @@
 use soroban_sdk::Env;
 use shared::constants::{
     BPS, DEFAULT_BASE_BORROW_RATE_BPS, DEFAULT_BASE_FUNDING_RATE_BPS,
-    DEFAULT_OPTIMAL_UTILIZATION_BPS, DEFAULT_SLOPE1_BPS,
+    DEFAULT_OPTIMAL_UTILIZATION_BPS, DEFAULT_SLOPE1_BPS, MAX_LIQUIDATION_BOUNTY_BPS,
+    MAX_OPEN_FEE_BPS, MAX_TP_SL_EXECUTION_FEE,
 };
 
 use crate::{BorrowRateConfig, ConfigManagerError};
 
-use super::helpers::{deploy_initialized, valid_limits};
+use super::helpers::{deploy_initialized, valid_fee_config, valid_limits};
 
 fn valid_rate_config() -> BorrowRateConfig {
     BorrowRateConfig {
@@ -205,6 +206,96 @@ fn test_update_borrow_rate_slope2_below_slope1_errors_invalid_slope_ordering() {
 }
 
 // ---------------------------------------------------------------------------
+// FeeConfig — InvalidOpenFee (44)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_set_fee_config_open_fee_above_ceiling_errors_invalid_open_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let mut cfg = valid_fee_config();
+    cfg.open_fee_bps = MAX_OPEN_FEE_BPS + 1;
+
+    let result = client.try_set_fee_config(&admin, &cfg);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(ConfigManagerError::InvalidOpenFee as u32),
+        "open_fee_bps > MAX_OPEN_FEE_BPS must fire InvalidOpenFee (44)",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// FeeConfig — InvalidLiquidationBounty (45)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_set_fee_config_liquidation_bounty_above_ceiling_errors_invalid_liquidation_bounty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let mut cfg = valid_fee_config();
+    cfg.liquidation_bounty_bps = MAX_LIQUIDATION_BOUNTY_BPS + 1;
+
+    let result = client.try_set_fee_config(&admin, &cfg);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(
+            ConfigManagerError::InvalidLiquidationBounty as u32,
+        ),
+        "liquidation_bounty_bps > MAX must fire InvalidLiquidationBounty (45)",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// FeeConfig — InvalidTpSlExecutionFee (46)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_set_fee_config_tp_sl_fee_negative_errors_invalid_tp_sl_execution_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let mut cfg = valid_fee_config();
+    cfg.tp_sl_execution_fee = -1;
+
+    let result = client.try_set_fee_config(&admin, &cfg);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(
+            ConfigManagerError::InvalidTpSlExecutionFee as u32,
+        ),
+        "negative tp_sl_execution_fee must fire InvalidTpSlExecutionFee (46)",
+    );
+}
+
+#[test]
+fn test_set_fee_config_tp_sl_fee_above_ceiling_errors_invalid_tp_sl_execution_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = deploy_initialized(&env);
+
+    let mut cfg = valid_fee_config();
+    cfg.tp_sl_execution_fee = MAX_TP_SL_EXECUTION_FEE + 1;
+
+    let result = client.try_set_fee_config(&admin, &cfg);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        soroban_sdk::Error::from_contract_error(
+            ConfigManagerError::InvalidTpSlExecutionFee as u32,
+        ),
+        "tp_sl_execution_fee > MAX_TP_SL_EXECUTION_FEE must fire InvalidTpSlExecutionFee (46)",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Compile-time pins — discriminants
 // ---------------------------------------------------------------------------
 
@@ -217,4 +308,7 @@ fn test_per_rule_error_code_discriminants_are_stable() {
     const _: () = assert!(ConfigManagerError::InvalidBorrowRateNegative as u32 == 40);
     const _: () = assert!(ConfigManagerError::InvalidOptimalUtilization as u32 == 41);
     const _: () = assert!(ConfigManagerError::InvalidSlopeOrdering as u32 == 42);
+    const _: () = assert!(ConfigManagerError::InvalidOpenFee as u32 == 44);
+    const _: () = assert!(ConfigManagerError::InvalidLiquidationBounty as u32 == 45);
+    const _: () = assert!(ConfigManagerError::InvalidTpSlExecutionFee as u32 == 46);
 }

@@ -1,16 +1,15 @@
 //! Bounds validation for ConfigManager-tunable structs. Each rule fires a
-//! distinct error code so off-chain monitors can identify which constraint
-//! was violated. The catch-all codes (`InvalidFeeSplits=4`, `InvalidLimits=5`)
-//! remain in the enum for backward compatibility but the validation paths
-//! below use the per-rule codes (20–43).
+//! distinct per-rule error code (20–46) so off-chain monitors can identify
+//! which constraint was violated.
 //!
 //! Pattern: `value.validate(&env)` panics on the first violation. Used at
 //! every entrypoint that accepts one of these wire structs so a future
 //! mutator cannot bypass the bounds.
 
-use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
+use shared::{BorrowRateConfig, FeeConfig, FeeSplits, ProtocolLimits};
 use shared::constants::{
-    BPS, MAX_COOLDOWN_DURATION, MAX_FUNDING_CUT_BPS, MAX_SLOPE2_BPS, MIN_ADL_PNL_BPS,
+    BPS, MAX_COOLDOWN_DURATION, MAX_FUNDING_CUT_BPS, MAX_LIQUIDATION_BOUNTY_BPS, MAX_OPEN_FEE_BPS,
+    MAX_SLOPE2_BPS, MAX_TP_SL_EXECUTION_FEE, MIN_ADL_PNL_BPS,
 };
 use soroban_sdk::{panic_with_error, Env};
 
@@ -27,17 +26,25 @@ pub trait Validate {
 
 impl Validate for FeeSplits {
     fn validate(&self, env: &Env) {
-        if self.keeper_bps == 0 || self.dev_bps == 0 || self.lp_bps == 0 {
-            panic_with_error!(env, ConfigManagerError::InvalidFeeSplitZero);
-        }
-        let bps_u32 = BPS as u32;
-        // Per-component pre-check avoids u32 overflow on adversarial inputs
-        // like (u32::MAX, 1, 1). Each component must independently fit in BPS.
-        if self.keeper_bps > bps_u32 || self.dev_bps > bps_u32 || self.lp_bps > bps_u32 {
-            panic_with_error!(env, ConfigManagerError::InvalidFeeSplitOverBps);
-        }
-        if self.keeper_bps + self.dev_bps + self.lp_bps != bps_u32 {
+        // Promote to u64 so adversarial u32 components cannot wrap before
+        // the sum comparison reaches BPS.
+        let sum = (self.lp_bps as u64) + (self.dev_bps as u64) + (self.staker_bps as u64);
+        if sum != BPS as u64 {
             panic_with_error!(env, ConfigManagerError::InvalidFeeSplitSum);
+        }
+    }
+}
+
+impl Validate for FeeConfig {
+    fn validate(&self, env: &Env) {
+        if self.open_fee_bps > MAX_OPEN_FEE_BPS {
+            panic_with_error!(env, ConfigManagerError::InvalidOpenFee);
+        }
+        if self.liquidation_bounty_bps > MAX_LIQUIDATION_BOUNTY_BPS {
+            panic_with_error!(env, ConfigManagerError::InvalidLiquidationBounty);
+        }
+        if self.tp_sl_execution_fee < 0 || self.tp_sl_execution_fee > MAX_TP_SL_EXECUTION_FEE {
+            panic_with_error!(env, ConfigManagerError::InvalidTpSlExecutionFee);
         }
     }
 }

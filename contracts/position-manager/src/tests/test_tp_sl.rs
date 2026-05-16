@@ -1,34 +1,15 @@
-// ---------------------------------------------------------------------------
-// Tests for: set_tp_sl and execute_order (take-profit / stop-loss)
-//
-// These tests are written BEFORE the implementation is finalized (TDD). They
-// MUST compile but are expected to FAIL until TP/SL logic is fully correct.
-//
-// Functions under test:
-//   fn set_tp_sl(env, trader, symbol, take_profit, stop_loss)
-//   fn execute_order(env, caller, trader, symbol)
-//
-// Key behaviors:
-//   set_tp_sl:
-//     - trader.require_auth()
-//     - Requires position exists (PositionNotFound = 6)
-//     - TP for longs > entry; TP for shorts < entry (InvalidTpSl = 14)
-//     - SL for longs < entry; SL for shorts > entry (InvalidTpSl = 14)
-//     - 0 = not set (always valid)
-//
-//   execute_order:
-//     - KEEPER-only (SharedError::Unauthorized = 3)
-//     - Requires not paused (Paused = 3)
-//     - Gets mark price from oracle
-//     - Checks TP: longs mark >= TP; shorts mark <= TP
-//     - Checks SL: longs mark <= SL; shorts mark >= SL
-//     - Neither triggered -> OrderNotTriggered = 13
-//     - Triggered -> full close, position deleted
-// ---------------------------------------------------------------------------
+//! Tests for `set_tp_sl` and `execute_order` (take-profit / stop-loss).
+//!
+//! `set_tp_sl`: trader-authed; requires position; TP/SL placement must respect
+//! the side (longs TP > entry, SL < entry; shorts inverted); 0 disables the
+//! order.
+//!
+//! `execute_order`: permissionless; not-paused; uses oracle mark; full close
+//! when TP or SL is triggered, else `OrderNotTriggered`.
 
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Ledger, LedgerInfo},
+    testutils::{Address as _, Events, Ledger, LedgerInfo},
     vec, Address, Env, Symbol,
 };
 
@@ -41,6 +22,8 @@ use config_manager::{ConfigManagerClient, ConfigManagerContract};
 use mock_oracle::{MockOracle, MockOracleClient};
 use mock_token::{MockToken, MockTokenClient};
 use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
+use shared::FeeConfig;
+use soroban_sdk::TryIntoVal;
 use vault::{VaultContract, VaultContractClient};
 
 // ===========================================================================
@@ -156,9 +139,9 @@ fn setup_full<'a>() -> TestFixture<'a> {
     config_client.update_fee_splits(
         &admin,
         &config_manager::FeeSplits {
-            keeper_bps: 500,
-            dev_bps: 500,
             lp_bps: 9000,
+            dev_bps: 500,
+            staker_bps: 500,
         },
     );
 
@@ -417,59 +400,63 @@ fn test_set_tp_sl_clear_both() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_invalid_tp_long_reverts() {
-    // Long position: TP below entry price is invalid.
-    // Entry = $50,000; TP = $49,000 -> panic InvalidTpSl (14)
+fn test_set_tp_sl_tp_below_entry_long_succeeds() {
+    // Validation no longer pins TP/SL to entry-relative direction — a trader
+    // is free to set whatever values they want (immediate-trigger risk is on
+    // the frontend). Long with TP $49k while entry is $50k: valid, persists.
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, true);
 
-    let invalid_tp = 49_000 * PRECISION; // below entry for long
-    f.pm_client.set_tp_sl(&f.trader, &symbol, &invalid_tp, &0);
+    let tp = 49_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.take_profit, tp);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_invalid_tp_short_reverts() {
-    // Short position: TP above entry price is invalid.
-    // Entry = $50,000; TP = $51,000 -> panic InvalidTpSl (14)
+fn test_set_tp_sl_tp_above_entry_short_succeeds() {
+    // Short with TP above entry: previously rejected, now valid.
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, false);
 
-    let invalid_tp = 51_000 * PRECISION; // above entry for short
-    f.pm_client.set_tp_sl(&f.trader, &symbol, &invalid_tp, &0);
+    let tp = 51_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.take_profit, tp);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_invalid_sl_long_reverts() {
-    // Long position: SL above entry price is invalid.
-    // Entry = $50,000; SL = $51,000 -> panic InvalidTpSl (14)
+fn test_set_tp_sl_sl_above_entry_long_succeeds() {
+    // Profit-locking SL on a long: entry $50k, SL $51k. With mark at $52k
+    // (or higher), the trader wants to lock in profit by exiting at $51k.
+    // The previous entry-pinned validator blocked this — now it persists.
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, true);
 
-    let invalid_sl = 51_000 * PRECISION; // above entry for long
-    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &invalid_sl);
+    let sl = 51_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &sl);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.stop_loss, sl);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_invalid_sl_short_reverts() {
-    // Short position: SL below entry price is invalid.
-    // Entry = $50,000; SL = $49,000 -> panic InvalidTpSl (14)
+fn test_set_tp_sl_sl_below_entry_short_succeeds() {
+    // Profit-locking SL on a short: entry $50k, SL $49k.
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, false);
 
-    let invalid_sl = 49_000 * PRECISION; // below entry for short
-    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &invalid_sl);
+    let sl = 49_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &sl);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.stop_loss, sl);
 }
 
 #[test]
@@ -492,55 +479,48 @@ fn test_set_tp_sl_no_position_reverts() {
 // ===========================================================================
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_tp_equal_to_entry_long_reverts() {
-    // Boundary: TP exactly equal to entry price for a long is invalid (must be strictly above).
+fn test_set_tp_sl_tp_equal_to_entry_long_succeeds() {
+    // Equality with entry price is now allowed.
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, true);
-
-    // TP = entry price exactly
     f.pm_client.set_tp_sl(&f.trader, &symbol, &BTC_PRICE, &0);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.take_profit, BTC_PRICE);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_tp_equal_to_entry_short_reverts() {
-    // Boundary: TP exactly equal to entry price for a short is invalid (must be strictly below).
+fn test_set_tp_sl_tp_equal_to_entry_short_succeeds() {
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, false);
-
-    // TP = entry price exactly
     f.pm_client.set_tp_sl(&f.trader, &symbol, &BTC_PRICE, &0);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.take_profit, BTC_PRICE);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_sl_equal_to_entry_long_reverts() {
-    // Boundary: SL exactly equal to entry price for a long is invalid (must be strictly below).
+fn test_set_tp_sl_sl_equal_to_entry_long_succeeds() {
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, true);
-
-    // SL = entry price exactly
     f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &BTC_PRICE);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.stop_loss, BTC_PRICE);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_set_tp_sl_sl_equal_to_entry_short_reverts() {
-    // Boundary: SL exactly equal to entry price for a short is invalid (must be strictly above).
+fn test_set_tp_sl_sl_equal_to_entry_short_succeeds() {
     let f = setup_full();
     let symbol = symbol_short!("BTC");
 
     open_btc_position(&f, false);
-
-    // SL = entry price exactly
     f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &BTC_PRICE);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos.stop_loss, BTC_PRICE);
 }
 
 #[test]
@@ -872,25 +852,6 @@ fn test_execute_order_no_position_reverts() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
-fn test_execute_order_not_keeper_reverts() {
-    // Non-keeper caller attempts execute_order → PositionManagerError::Unauthorized (7).
-    let f = setup_full();
-    let symbol = symbol_short!("BTC");
-
-    open_btc_position(&f, true);
-
-    let tp = 55_000 * PRECISION;
-    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
-
-    let trigger_price = 56_000 * PRECISION;
-    advance_and_set_price(&f, trigger_price);
-
-    // Trader (not keeper) tries to execute -- should fail
-    f.pm_client.execute_order(&f.trader, &f.trader, &symbol);
-}
-
-#[test]
 fn test_execute_order_succeeds_when_paused() {
     // TP/SL orders protect traders and must execute during emergencies.
     let f = setup_full();
@@ -1216,13 +1177,14 @@ fn test_increase_position_zero_tp_sl_preserves_existing() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_increase_position_invalid_tp_reverts() {
-    // Open new long position with TP below entry price -> InvalidTpSl (14).
+fn test_increase_position_tp_below_entry_long_succeeds() {
+    // Open long with TP below entry — no longer rejected. The position is
+    // immediately eligible for execution on the next favourable mark, which
+    // matches the trader's intent for "close as soon as profitable".
     let f = setup_full();
 
-    let invalid_tp = 49_000 * PRECISION; // below entry ($50k) for long
-    let valid_sl = 45_000 * PRECISION;
+    let tp = 49_000 * PRECISION;
+    let sl = 45_000 * PRECISION;
 
     f.pm_client.increase_position(
         &f.trader,
@@ -1230,19 +1192,21 @@ fn test_increase_position_invalid_tp_reverts() {
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
         &true,
-        &invalid_tp,
-        &valid_sl, &0i128
+        &tp,
+        &sl,
+        &0i128,
     );
+    let pos = f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
+    assert_eq!(pos.take_profit, tp);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_increase_position_invalid_sl_reverts() {
-    // Open new long position with SL above entry price -> InvalidTpSl (14).
+fn test_increase_position_sl_above_entry_long_succeeds() {
+    // Open long with SL above entry. Same rationale.
     let f = setup_full();
 
-    let valid_tp = 55_000 * PRECISION;
-    let invalid_sl = 51_000 * PRECISION; // above entry ($50k) for long
+    let tp = 55_000 * PRECISION;
+    let sl = 51_000 * PRECISION;
 
     f.pm_client.increase_position(
         &f.trader,
@@ -1250,9 +1214,12 @@ fn test_increase_position_invalid_sl_reverts() {
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
         &true,
-        &valid_tp,
-        &invalid_sl, &0i128
+        &tp,
+        &sl,
+        &0i128,
     );
+    let pos = f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
+    assert_eq!(pos.stop_loss, sl);
 }
 
 #[test]
@@ -1281,12 +1248,11 @@ fn test_increase_position_new_short_with_tp_sl() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_increase_position_short_invalid_tp_above_entry_reverts() {
-    // Open new short with TP above entry -> InvalidTpSl (14).
+fn test_increase_position_short_tp_above_entry_succeeds() {
+    // Open short with TP above entry — previously rejected, now valid.
     let f = setup_full();
 
-    let invalid_tp = 55_000 * PRECISION; // above entry for short = invalid
+    let tp = 55_000 * PRECISION;
 
     f.pm_client.increase_position(
         &f.trader,
@@ -1294,9 +1260,12 @@ fn test_increase_position_short_invalid_tp_above_entry_reverts() {
         &DEFAULT_SIZE,
         &DEFAULT_COLLATERAL,
         &false,
-        &invalid_tp,
-        &0, &0i128
+        &tp,
+        &0,
+        &0i128,
     );
+    let pos = f.pm_client.get_position(&f.trader, &symbol_short!("BTC"));
+    assert_eq!(pos.take_profit, tp);
 }
 
 // ===========================================================================
@@ -1420,4 +1389,772 @@ fn test_execute_order_does_not_affect_other_positions() {
         20_000 * USDC_UNIT,
         "Trader2 position size must be unaffected by trader1's TP execution"
     );
+}
+
+// ===========================================================================
+// 5. set_tp_sl escrow lifecycle
+//
+// set_tp_sl is a standalone entrypoint: TP/SL params are direct-assigned, so
+// `0` MEANS clear (unlike increase_position where `0` MEANS preserve).
+//
+// Escrow rules:
+//   prior_escrow = pos.execution_fee_escrow         (what trader previously paid)
+//   has_orders   = (take_profit != 0) || (stop_loss != 0)
+//
+//   IF prior_escrow == 0 AND has_orders:
+//       transfer(trader -> PM, fee_config.tp_sl_execution_fee)
+//       pos.execution_fee_escrow = fee_config.tp_sl_execution_fee
+//       (skip when fee == 0)
+//
+//   ELSE IF prior_escrow > 0 AND !has_orders:
+//       transfer(PM -> trader, prior_escrow)
+//       pos.execution_fee_escrow = 0
+//
+//   ELSE: no escrow change.
+//
+// Refund amount is the STORED escrow, not the current fee_config value — if
+// admin changes the fee between charge and refund the trader gets back what
+// they actually paid.
+// ===========================================================================
+
+/// Default flat TP/SL execution fee planted by ConfigManager::initialize.
+const TP_SL_FEE: i128 = 5_000_000;
+
+/// A TP price strictly above BTC_PRICE — valid for a long.
+const TP_LONG: i128 = 55_000 * PRECISION;
+/// An SL price strictly below BTC_PRICE — valid for a long.
+const SL_LONG: i128 = 45_000 * PRECISION;
+
+#[test]
+fn test_set_tp_sl_charges_escrow_on_first_time_tp_only() {
+    // Open a long with no TP/SL (no escrow). Setting only TP charges the flat
+    // tp_sl_execution_fee from trader to PM and stores it on the position.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        TP_SL_FEE,
+        "Trader must pay flat tp_sl_execution_fee on first-time TP set"
+    );
+    assert_eq!(
+        pm_balance_after - pm_balance_before,
+        TP_SL_FEE,
+        "PM must receive the escrow; fee stays in PM (not vault)"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_FEE,
+        "Position must record the escrow amount on first-time TP set"
+    );
+    assert_eq!(pos.take_profit, TP_LONG, "TP must be stored");
+    assert_eq!(pos.stop_loss, 0, "SL must remain 0");
+}
+
+#[test]
+fn test_set_tp_sl_charges_escrow_on_first_time_sl_only() {
+    // Open a long with no TP/SL (no escrow). Setting only SL charges the same
+    // flat fee and stores it on the position.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &SL_LONG);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        TP_SL_FEE,
+        "Trader must pay flat tp_sl_execution_fee on first-time SL set"
+    );
+    assert_eq!(
+        pm_balance_after - pm_balance_before,
+        TP_SL_FEE,
+        "PM must receive the escrow"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_FEE,
+        "Position must record the escrow amount on first-time SL set"
+    );
+    assert_eq!(pos.take_profit, 0, "TP must remain 0");
+    assert_eq!(pos.stop_loss, SL_LONG, "SL must be stored");
+}
+
+#[test]
+fn test_set_tp_sl_charges_escrow_on_first_time_both() {
+    // Open a long with no TP/SL. Setting both TP and SL fires the charge exactly
+    // ONCE (single flat fee, not 2x).
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &SL_LONG);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+
+    assert_eq!(
+        trader_balance_before - trader_balance_after,
+        TP_SL_FEE,
+        "Trader must pay a SINGLE flat fee even when setting both TP and SL"
+    );
+    assert_eq!(
+        pm_balance_after - pm_balance_before,
+        TP_SL_FEE,
+        "PM must receive a SINGLE escrow"
+    );
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_FEE,
+        "Position must record a single flat escrow, not 2x"
+    );
+    assert_eq!(pos.take_profit, TP_LONG);
+    assert_eq!(pos.stop_loss, SL_LONG);
+}
+
+#[test]
+fn test_set_tp_sl_no_charge_on_subsequent_update() {
+    // Open a position, set TP (charges escrow). A SECOND call updating TP must
+    // NOT re-charge — escrow already exists and the position still has orders.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    // First call: charges escrow
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+    let pos_before = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos_before.execution_fee_escrow, TP_SL_FEE);
+
+    // Second call: new TP value, still has orders -> no charge
+    let new_tp = 60_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &new_tp, &0);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+    let pos_after = f.pm_client.get_position(&f.trader, &symbol);
+
+    assert_eq!(
+        trader_balance_after, trader_balance_before,
+        "Trader balance must NOT change on subsequent TP update"
+    );
+    assert_eq!(
+        pm_balance_after, pm_balance_before,
+        "PM balance must NOT change on subsequent TP update"
+    );
+    assert_eq!(
+        pos_after.execution_fee_escrow, TP_SL_FEE,
+        "Stored escrow must stay at the originally-charged amount"
+    );
+    assert_eq!(
+        pos_after.take_profit, new_tp,
+        "TP must be updated to the new value"
+    );
+}
+
+#[test]
+fn test_set_tp_sl_no_charge_when_swapping_tp_for_sl() {
+    // Open and set TP only -> escrow paid. Swap TP for SL (still has_orders).
+    // No new charge, no refund, escrow unchanged.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    // Swap: clear TP, set SL -- still has_orders, no escrow change
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &SL_LONG);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+
+    assert_eq!(
+        trader_balance_after, trader_balance_before,
+        "Trader balance must NOT change when swapping TP for SL"
+    );
+    assert_eq!(
+        pm_balance_after, pm_balance_before,
+        "PM balance must NOT change when swapping TP for SL"
+    );
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_FEE,
+        "Escrow must remain at the originally-charged amount"
+    );
+    assert_eq!(pos.take_profit, 0, "TP must be cleared");
+    assert_eq!(pos.stop_loss, SL_LONG, "SL must be set");
+}
+
+#[test]
+fn test_set_tp_sl_refunds_escrow_on_clear_both() {
+    // Open and set TP (escrow paid). Clear both TP and SL -> refund escrow
+    // back to trader. PM balance drops, trader balance rises, escrow becomes 0.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+    let pos_before = f.pm_client.get_position(&f.trader, &symbol);
+    let prior_escrow = pos_before.execution_fee_escrow;
+    assert_eq!(prior_escrow, TP_SL_FEE);
+
+    // Clear both -> refund
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &0);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+    let pos_after = f.pm_client.get_position(&f.trader, &symbol);
+
+    assert_eq!(
+        trader_balance_after - trader_balance_before,
+        prior_escrow,
+        "Trader balance must increase by the prior escrow on clear-both"
+    );
+    assert_eq!(
+        pm_balance_before - pm_balance_after,
+        prior_escrow,
+        "PM balance must decrease by the prior escrow on clear-both"
+    );
+    assert_eq!(
+        pos_after.execution_fee_escrow, 0,
+        "Position execution_fee_escrow must be cleared to 0 after refund"
+    );
+    assert_eq!(pos_after.take_profit, 0);
+    assert_eq!(pos_after.stop_loss, 0);
+}
+
+#[test]
+fn test_set_tp_sl_no_op_when_no_escrow_and_cleared() {
+    // Open with no TP/SL (no escrow). Calling set_tp_sl(0, 0) is a no-op:
+    // no transfer in either direction, escrow stays 0.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &0);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+
+    assert_eq!(
+        trader_balance_after, trader_balance_before,
+        "No-op clear must not change trader balance"
+    );
+    assert_eq!(
+        pm_balance_after, pm_balance_before,
+        "No-op clear must not change PM balance"
+    );
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "Escrow must stay at 0 when there was nothing to refund"
+    );
+    assert_eq!(pos.take_profit, 0);
+    assert_eq!(pos.stop_loss, 0);
+}
+
+#[test]
+fn test_set_tp_sl_refund_amount_is_stored_escrow_not_current_fee() {
+    // Adversarial: admin changes the fee between charge and refund. Refund must
+    // match what the trader actually paid (the stored escrow), not whatever the
+    // current fee_config happens to be.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // Charge at fee A = DEFAULT (5_000_000).
+    open_btc_position(&f, true);
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+    let pos_after_charge = f.pm_client.get_position(&f.trader, &symbol);
+    let paid_escrow = pos_after_charge.execution_fee_escrow;
+    assert_eq!(paid_escrow, TP_SL_FEE);
+
+    // Admin bumps the fee to a much higher value B.
+    let new_fee_b: i128 = 87_654_321;
+    assert!(new_fee_b != paid_escrow, "Setup: fee B must differ from A");
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 10,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: new_fee_b,
+        },
+    );
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    // Clear -> refund
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &0);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+
+    assert_eq!(
+        trader_balance_after - trader_balance_before,
+        paid_escrow,
+        "Refund must equal the originally-paid escrow (A), NOT the current fee (B)"
+    );
+    assert_eq!(
+        pm_balance_before - pm_balance_after,
+        paid_escrow,
+        "PM must release exactly the stored escrow (A), NOT the current fee (B)"
+    );
+}
+
+#[test]
+fn test_set_tp_sl_with_zero_fee_does_not_charge_or_store_escrow() {
+    // With tp_sl_execution_fee == 0 the charge path must be skipped entirely:
+    // no transfer, escrow remains 0, but TP/SL fields ARE still updated.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 10,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: 0,
+        },
+    );
+
+    open_btc_position(&f, true);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+
+    assert_eq!(
+        trader_balance_after, trader_balance_before,
+        "Trader balance must NOT move when configured fee is 0"
+    );
+    assert_eq!(
+        pm_balance_after, pm_balance_before,
+        "PM balance must NOT move when configured fee is 0"
+    );
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "Position escrow must stay 0 when configured fee is 0"
+    );
+    assert_eq!(pos.take_profit, TP_LONG, "TP must still be stored");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_set_tp_sl_panics_when_position_missing() {
+    // Adversarial: trader has no open position. set_tp_sl must panic with
+    // PositionNotFound (6) regardless of whether escrow logic would fire.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+}
+
+#[test]
+#[should_panic]
+fn test_set_tp_sl_panics_when_trader_lacks_balance_for_escrow() {
+    // Adversarial: trader has no spare USDC to cover the escrow. The token
+    // transfer inside do_set_tp_sl must panic. Token errors come from outside
+    // this contract — no explicit error code expected.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // Open position without TP/SL (no escrow charge yet). Trader keeps the
+    // remainder of TRADER_BALANCE after collateral + open_fee.
+    open_btc_position(&f, true);
+
+    // Drain trader balance down to ZERO so the escrow transfer cannot be
+    // covered.
+    let remaining = f.usdc_client.balance(&f.trader);
+    if remaining > 0 {
+        f.usdc_client.burn(&f.trader, &remaining);
+    }
+    assert_eq!(
+        f.usdc_client.balance(&f.trader),
+        0,
+        "Setup: trader must have 0 USDC before set_tp_sl"
+    );
+
+    // Should panic on the token transfer (insufficient balance).
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &0);
+}
+
+#[test]
+fn test_set_tp_sl_emits_event_with_unchanged_existing_pattern() {
+    // Escrow logic must not interfere with the existing SetTpSl event emission.
+    // The `tp_sl` event must still publish with the trader, symbol, and the
+    // newly-assigned TP/SL values.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &SL_LONG);
+
+    let tp_sl_topic: Symbol = symbol_short!("tp_sl");
+    let all = f.env.events().all();
+    let mut found_payload: Option<(Symbol, i128, i128)> = None;
+    for entry in all.iter().rev() {
+        let (contract, topics, data) = entry;
+        if contract != f.pm_addr {
+            continue;
+        }
+        if topics.len() == 0 {
+            continue;
+        }
+        let first_topic_val = topics.get(0).unwrap();
+        let first_topic: Result<Symbol, _> = first_topic_val.try_into_val(&f.env);
+        if let Ok(s) = first_topic {
+            if s == tp_sl_topic {
+                let parsed: Result<(Symbol, i128, i128), _> = data.try_into_val(&f.env);
+                found_payload = Some(parsed.expect(
+                    "tp_sl payload must unpack as (symbol, take_profit, stop_loss)",
+                ));
+                break;
+            }
+        }
+    }
+
+    let (sym, tp, sl) = found_payload
+        .expect("set_tp_sl must emit a `tp_sl` event from the PM contract");
+    assert_eq!(sym, symbol, "Event must carry the position symbol");
+    assert_eq!(tp, TP_LONG, "Event must carry the assigned take_profit");
+    assert_eq!(sl, SL_LONG, "Event must carry the assigned stop_loss");
+}
+
+#[test]
+fn test_set_tp_sl_refund_clears_field_to_zero_in_storage() {
+    // Defensive: after a refund the in-memory position is dropped — verify the
+    // persisted storage record actually has execution_fee_escrow == 0. Guards
+    // against the bug where the field is mutated in memory but never written.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &TP_LONG, &SL_LONG);
+
+    // Confirm escrow is currently set via raw storage.
+    f.env.as_contract(&f.pm_addr, || {
+        let pos = storage::get_position(&f.env, &f.trader, &symbol)
+            .expect("Position must exist after open + set_tp_sl");
+        assert_eq!(
+            pos.execution_fee_escrow, TP_SL_FEE,
+            "Setup: storage must reflect the paid escrow before refund"
+        );
+    });
+
+    // Refund path
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &0);
+
+    // Re-read from raw storage — escrow must be persisted as 0.
+    f.env.as_contract(&f.pm_addr, || {
+        let pos = storage::get_position(&f.env, &f.trader, &symbol)
+            .expect("Position must still exist after refund");
+        assert_eq!(
+            pos.execution_fee_escrow, 0,
+            "Storage record must persist execution_fee_escrow == 0 after refund"
+        );
+        assert_eq!(pos.take_profit, 0);
+        assert_eq!(pos.stop_loss, 0);
+    });
+}
+
+// ===========================================================================
+// 6. OrderExecution escrow lifecycle
+// ===========================================================================
+
+#[test]
+fn order_execution_pays_escrow_to_executor() {
+    // Open long, set TP -> escrow paid PM. Price moves above TP. Keeper
+    // calls execute_order. The escrow must flow PM -> caller (keeper). The
+    // trader must NOT receive the escrow back.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+
+    let pos_before = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos_before.execution_fee_escrow, TP_SL_FEE,
+        "Setup: position must record escrow before execution"
+    );
+
+    let trigger_price = 56_000 * PRECISION;
+    advance_and_set_price(&f, trigger_price);
+
+    let keeper_balance_before = f.usdc_client.balance(&f.keeper);
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+
+    f.pm_client.execute_order(&f.keeper, &f.trader, &symbol);
+
+    let keeper_balance_after = f.usdc_client.balance(&f.keeper);
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+
+    let keeper_received = keeper_balance_after - keeper_balance_before;
+    let trader_received = trader_balance_after - trader_balance_before;
+
+    // Keeper receives exactly the escrow.
+    assert_eq!(
+        keeper_received, TP_SL_FEE,
+        "Executor must receive the escrow on order execution"
+    );
+
+    // Trader receives the position payout (collateral + profit) but NOT
+    // the escrow. Profit at $56k from $50k entry, size=10k -> +1200 USDC.
+    // The trader path delta excludes TP_SL_FEE entirely.
+    // Bound: trader_received < collateral + profit + TP_SL_FEE.
+    let approx_collateral_plus_profit = DEFAULT_COLLATERAL + 1_200 * USDC_UNIT;
+    assert!(
+        trader_received < approx_collateral_plus_profit + TP_SL_FEE,
+        "Trader must NOT receive escrow refund on order execution. Got: {}",
+        trader_received
+    );
+}
+
+#[test]
+fn order_execution_with_zero_escrow_no_transfer() {
+    // Admin sets tp_sl_execution_fee == 0. Set TP -> charge path skipped,
+    // position has TP but escrow == 0. Trigger execute_order. No escrow
+    // transfer must happen; close proceeds normally.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // Switch the configured execution fee to 0 BEFORE setting TP.
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 10,
+            liquidation_bounty_bps: 100,
+            tp_sl_execution_fee: 0,
+        },
+    );
+
+    open_btc_position(&f, true);
+
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "Setup: zero-fee config must leave escrow at 0 even with TP set"
+    );
+    assert_eq!(pos.take_profit, tp);
+
+    let trigger_price = 56_000 * PRECISION;
+    advance_and_set_price(&f, trigger_price);
+
+    let keeper_balance_before = f.usdc_client.balance(&f.keeper);
+
+    f.pm_client.execute_order(&f.keeper, &f.trader, &symbol);
+
+    let keeper_balance_after = f.usdc_client.balance(&f.keeper);
+
+    // Keeper receives ZERO from the escrow path — there is no escrow.
+    assert_eq!(
+        keeper_balance_after, keeper_balance_before,
+        "Keeper must NOT receive any escrow transfer when escrow == 0"
+    );
+
+    // The close itself still proceeds.
+    f.env.as_contract(&f.pm_addr, || {
+        let p = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(p.is_none(), "Position must be deleted after execute_order");
+    });
+}
+
+// ===========================================================================
+// 7. Permissionless execute_order
+//
+// `execute_order` is permissionless: any address that signs the call may
+// trigger a TP/SL fill once the price condition is satisfied. The caller
+// still `require_auth`s so a third party cannot pass someone else's Address
+// to redirect the escrow payout. The KEEPER role check is removed; only
+// the trigger condition gates execution.
+// ===========================================================================
+
+#[test]
+fn non_keeper_can_execute_order() {
+    // Scenario: an arbitrary Address that has NEVER been granted the KEEPER
+    // role triggers a TP fill. The position must be deleted and the
+    // escrow must flow to the non-keeper caller.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // Brand-new address — not the fixture's `keeper` and never granted any role.
+    let random_executor = Address::generate(&f.env);
+
+    // Sanity check: the random executor must NOT hold KEEPER. If this
+    // assertion ever fails the test is invalid.
+    let keeper_role = Symbol::new(&f.env, "KEEPER");
+    assert!(
+        !f._config_client.has_role(&keeper_role, &random_executor),
+        "Setup invariant: random_executor must not hold KEEPER"
+    );
+
+    // Open long, set TP -> escrow paid PM by trader.
+    open_btc_position(&f, true);
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+
+    let pos_before = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos_before.execution_fee_escrow, TP_SL_FEE,
+        "Setup: position must record escrow before execution"
+    );
+
+    // Move price above TP.
+    let trigger_price = 56_000 * PRECISION;
+    advance_and_set_price(&f, trigger_price);
+
+    let executor_balance_before = f.usdc_client.balance(&random_executor);
+
+    // Non-keeper triggers the order. Must NOT panic with Unauthorized.
+    f.pm_client
+        .execute_order(&random_executor, &f.trader, &symbol);
+
+    // Position must be deleted.
+    f.env.as_contract(&f.pm_addr, || {
+        let p = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(
+            p.is_none(),
+            "Permissionless execute_order must delete the position"
+        );
+    });
+
+    // Non-keeper executor must receive the escrow.
+    let executor_balance_after = f.usdc_client.balance(&random_executor);
+    assert_eq!(
+        executor_balance_after - executor_balance_before,
+        TP_SL_FEE,
+        "Non-keeper executor must receive the escrow on order execution"
+    );
+}
+
+#[test]
+fn non_keeper_can_execute_order_sl_short() {
+    // Mirror coverage for the short SL trigger path. Confirms the
+    // permissionless gate does not silently depend on direction or
+    // trigger type (TP vs SL).
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let random_executor = Address::generate(&f.env);
+    let keeper_role = Symbol::new(&f.env, "KEEPER");
+    assert!(
+        !f._config_client.has_role(&keeper_role, &random_executor),
+        "Setup invariant: random_executor must not hold KEEPER"
+    );
+
+    open_btc_position(&f, false); // short
+    let sl = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &0, &sl);
+
+    let pos_before = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos_before.execution_fee_escrow, TP_SL_FEE,
+        "Setup: short position must record escrow before SL execution"
+    );
+
+    // Spike price above SL.
+    let trigger_price = 56_000 * PRECISION;
+    advance_and_set_price(&f, trigger_price);
+
+    let executor_balance_before = f.usdc_client.balance(&random_executor);
+
+    f.pm_client
+        .execute_order(&random_executor, &f.trader, &symbol);
+
+    f.env.as_contract(&f.pm_addr, || {
+        let p = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(
+            p.is_none(),
+            "Permissionless execute_order (short SL) must delete the position"
+        );
+    });
+
+    let executor_balance_after = f.usdc_client.balance(&random_executor);
+    assert_eq!(
+        executor_balance_after - executor_balance_before,
+        TP_SL_FEE,
+        "Non-keeper executor must receive the escrow on short SL execution"
+    );
+}
+
+#[test]
+#[should_panic]
+fn execute_order_caller_must_authorize_call() {
+    // Regression-lock: the caller passed to `execute_order` is the escrow
+    // recipient, so the contract MUST call `caller.require_auth()`.
+    // Without that check, any third party could pass a victim's Address
+    // as `caller` and redirect the escrow.
+    //
+    // Setup runs under mock_all_auths so the open + set_tp_sl can succeed.
+    // After staging, blanket auth mocking is stripped via set_auths(&[]).
+    // The execute call provides NO auth entry for `random_executor`, so it
+    // must panic on the missing requirement.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_btc_position(&f, true);
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+
+    let trigger_price = 56_000 * PRECISION;
+    advance_and_set_price(&f, trigger_price);
+
+    let random_executor = Address::generate(&f.env);
+
+    // Strip blanket auth mocking — every require_auth now needs an
+    // explicit entry.
+    f.env.set_auths(&[]);
+
+    // No auth is granted for `random_executor`. The contract MUST call
+    // `caller.require_auth()`, so this call must panic.
+    f.pm_client
+        .execute_order(&random_executor, &f.trader, &symbol);
 }

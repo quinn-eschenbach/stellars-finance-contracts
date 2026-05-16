@@ -120,7 +120,7 @@ fn test_close_before_min_lifetime() {
     f.position_manager.decrease_position(
         &f.trader,
         &symbol_short!("BTC"),
-        &(10_000 * USDC_UNIT),
+        &(10_000 * USDC_UNIT), &0_i128,
     );
 }
 
@@ -137,7 +137,7 @@ fn test_close_nonexistent_position() {
     f.position_manager.decrease_position(
         &f.trader,
         &symbol_short!("BTC"),
-        &(10_000 * USDC_UNIT),
+        &(10_000 * USDC_UNIT), &0_i128,
     );
 }
 
@@ -260,40 +260,37 @@ fn test_utilization_cap_breach() {
 }
 
 // ---------------------------------------------------------------------------
-// InvalidTpSl — TP below entry for long
+// InvalidTpSl — negative TP rejected
 // ---------------------------------------------------------------------------
 
 #[test]
 #[should_panic(expected = "Error(Contract, #14)")]
-fn test_invalid_tp_sl_long() {
+fn test_invalid_tp_negative() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // For a long, TP must be above entry price (50k). Set TP at 45k.
-    let bad_tp: i128 = 45_000 * PRECISION;
     f.position_manager.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
         &(1_000 * USDC_UNIT),
         &true,
-        &bad_tp, // TP below entry = invalid for long
-        &0, &0i128
+        &(-1_i128),
+        &0,
+        &0i128,
     );
 }
 
 // ---------------------------------------------------------------------------
-// InvalidTpSl — SL below entry for short (SL must be above entry for short)
+// InvalidTpSl — negative SL rejected
 // ---------------------------------------------------------------------------
 
 #[test]
 #[should_panic(expected = "Error(Contract, #14)")]
-fn test_invalid_tp_sl_short() {
+fn test_invalid_sl_negative() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // For a short, SL must be above entry price (50k). Set SL at 45k.
-    let bad_sl: i128 = 45_000 * PRECISION;
     f.position_manager.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
@@ -301,7 +298,7 @@ fn test_invalid_tp_sl_short() {
         &(1_000 * USDC_UNIT),
         &false,
         &0,
-        &bad_sl, // SL below entry = invalid for short
+        &(-1_i128),
         &0i128,
     );
 }

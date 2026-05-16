@@ -49,7 +49,7 @@ pub struct Liquidate {
     pub borrow_fee: i128,
     pub funding_fee: i128,
     pub mark_price: i128,
-    pub keeper: Address,
+    pub executor: Address,
 }
 
 #[contractevent(topics = ["exec_ord"], data_format = "vec")]
@@ -62,7 +62,7 @@ pub struct ExecuteOrder {
     pub pnl: i128,
     pub mark_price: i128,
     pub is_tp: bool,
-    pub keeper: Address,
+    pub executor: Address,
 }
 
 #[contractevent(topics = ["adl"], data_format = "vec")]

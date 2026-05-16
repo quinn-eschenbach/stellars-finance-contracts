@@ -35,7 +35,7 @@ proptest! {
         let collateral = core::cmp::max(collateral, 2 * USDC_UNIT); // ensure >= min_collateral
 
         let trader = Address::generate(&env);
-        fund_trader(&f, &trader, &(collateral + USDC_UNIT));
+        fund_trader(&f, &trader, &(collateral + 1_000 * USDC_UNIT));
 
         // Open position
         f.position_manager.increase_position(
@@ -63,7 +63,7 @@ proptest! {
 
         // Close position
         f.position_manager
-            .decrease_position(&trader, &symbol_short!("BTC"), &size);
+            .decrease_position(&trader, &symbol_short!("BTC"), &size, &0_i128);
 
         // INVARIANT: OI must be zero after full close
         let market_after_close = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -92,7 +92,7 @@ proptest! {
         let collateral = core::cmp::max(collateral, 2 * USDC_UNIT);
 
         let trader = Address::generate(&env);
-        fund_trader(&f, &trader, &(collateral + USDC_UNIT));
+        fund_trader(&f, &trader, &(collateral + 1_000 * USDC_UNIT));
 
         f.position_manager.increase_position(
             &trader,
@@ -133,7 +133,7 @@ proptest! {
         let collateral = size / 5; // 5x leverage — safe from liquidation at ±3%
 
         let trader = Address::generate(&env);
-        fund_trader(&f, &trader, &(collateral + USDC_UNIT));
+        fund_trader(&f, &trader, &(collateral + 1_000 * USDC_UNIT));
 
         f.position_manager.increase_position(
             &trader,
@@ -159,7 +159,7 @@ proptest! {
         f.mock_oracle.set_price(&symbol_short!("BTC"), &new_price);
 
         f.position_manager
-            .decrease_position(&trader, &symbol_short!("BTC"), &size);
+            .decrease_position(&trader, &symbol_short!("BTC"), &size, &0_i128);
 
         let balance_after_close = f.usdc.balance(&trader);
         let received = balance_after_close - balance_after_open;
@@ -204,7 +204,7 @@ proptest! {
         let mut traders = Vec::new();
         for _ in 0..num_traders {
             let t = Address::generate(&env);
-            fund_trader(&f, &t, &(collateral + USDC_UNIT));
+            fund_trader(&f, &t, &(collateral + 1_000 * USDC_UNIT));
             traders.push(t);
         }
 
@@ -233,7 +233,7 @@ proptest! {
         // All close
         for t in &traders {
             f.position_manager
-                .decrease_position(t, &symbol_short!("BTC"), &size);
+                .decrease_position(t, &symbol_short!("BTC"), &size, &0_i128);
         }
 
         let market_closed = f.position_manager.get_market(&symbol_short!("BTC"));

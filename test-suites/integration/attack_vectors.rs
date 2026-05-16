@@ -7,8 +7,6 @@
 use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env};
 use test_suites::testutils::{Fixture, TEST_TIMESTAMP, USDC_UNIT};
 
-const PRECISION: i128 = 10_000_000;
-
 // ---------------------------------------------------------------------------
 // Sandwich attack: open → instant close blocked by min lifetime
 // ---------------------------------------------------------------------------
@@ -25,37 +23,13 @@ fn test_sandwich_open_close_blocked_by_min_lifetime() {
         f.position_manager.decrease_position(
             &f.trader,
             &symbol_short!("BTC"),
-            &(10_000 * USDC_UNIT),
+            &(10_000 * USDC_UNIT), &0_i128,
         );
     }));
     assert!(
         result.is_err(),
         "Instant close must be blocked by min_position_lifetime"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Non-keeper cannot liquidate
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_non_keeper_cannot_liquidate() {
-    let env = Env::default();
-    let f = Fixture::deploy(&env);
-
-    let trader = f.create_funded_trader(5_000 * USDC_UNIT);
-    f.open_long(&trader, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
-
-    // Crash to make position liquidatable
-    f.advance_time(TEST_TIMESTAMP + 75);
-    f.set_btc_price(44_000);
-
-    let random = Address::generate(&env);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .liquidate_position(&random, &trader, &symbol_short!("BTC"));
-    }));
-    assert!(result.is_err(), "Non-keeper must not liquidate");
 }
 
 // ---------------------------------------------------------------------------
@@ -73,38 +47,6 @@ fn test_non_keeper_cannot_update_indices() {
             .update_indices(&random, &symbol_short!("BTC"));
     }));
     assert!(result.is_err(), "Non-keeper must not update indices");
-}
-
-// ---------------------------------------------------------------------------
-// Non-keeper cannot execute orders
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_non_keeper_cannot_execute_orders() {
-    let env = Env::default();
-    let f = Fixture::deploy(&env);
-
-    let tp_price: i128 = 60_000 * PRECISION;
-    f.position_manager.increase_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &(10_000 * USDC_UNIT),
-        &(1_000 * USDC_UNIT),
-        &true,
-        &tp_price,
-        &0, &0i128
-    );
-
-    // Move price to trigger TP
-    f.advance_time(TEST_TIMESTAMP + 75);
-    f.set_btc_price(65_000);
-
-    let random = Address::generate(&env);
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .execute_order(&random, &f.trader, &symbol_short!("BTC"));
-    }));
-    assert!(result.is_err(), "Non-keeper must not execute orders");
 }
 
 // ---------------------------------------------------------------------------

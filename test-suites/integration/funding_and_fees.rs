@@ -32,7 +32,7 @@ fn test_borrow_fee_increases_over_time() {
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let returned = f.usdc.balance(&f.trader) - balance_after_open;
 
@@ -73,7 +73,7 @@ fn test_higher_utilization_higher_borrow_rate() {
     f_a.position_manager
         .update_indices(&f_a.keeper, &symbol_short!("BTC"));
     f_a.position_manager
-        .decrease_position(&f_a.trader, &symbol_short!("BTC"), &small_size);
+        .decrease_position(&f_a.trader, &symbol_short!("BTC"), &small_size, &0_i128);
 
     let fee_low = collateral - (f_a.usdc.balance(&f_a.trader) - bal_a_open);
 
@@ -93,7 +93,7 @@ fn test_higher_utilization_higher_borrow_rate() {
     f_b.position_manager
         .update_indices(&f_b.keeper, &symbol_short!("BTC"));
     f_b.position_manager
-        .decrease_position(&f_b.trader, &symbol_short!("BTC"), &large_size);
+        .decrease_position(&f_b.trader, &symbol_short!("BTC"), &large_size, &0_i128);
 
     let returned_b = f_b.usdc.balance(&f_b.trader) - bal_b_open;
     let fee_high = large_collateral - returned_b;
@@ -144,9 +144,9 @@ fn test_funding_rate_longs_pay_shorts() {
     let short_bal_before = f.usdc.balance(&short_trader);
 
     f.position_manager
-        .decrease_position(&long_trader, &symbol_short!("BTC"), &(30_000 * USDC_UNIT));
+        .decrease_position(&long_trader, &symbol_short!("BTC"), &(30_000 * USDC_UNIT), &0_i128);
     f.position_manager
-        .decrease_position(&short_trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT));
+        .decrease_position(&short_trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
 
     let long_returned = f.usdc.balance(&long_trader) - long_bal_before;
     let short_returned = f.usdc.balance(&short_trader) - short_bal_before;
@@ -252,7 +252,7 @@ fn test_fee_claiming_by_admin() {
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // Vault should have unclaimed fees
     let admin_balance_before = f.usdc.balance(&f.admin);
@@ -303,7 +303,7 @@ fn test_borrow_fee_above_optimal_utilization() {
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let returned = f.usdc.balance(&f.trader) - balance_after_open;
     let fee = large_collateral - returned;
@@ -354,7 +354,7 @@ fn test_multiple_index_updates_compound() {
 
     let balance_before = f.usdc.balance(&f.trader);
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let returned = f.usdc.balance(&f.trader) - balance_before;
     assert!(

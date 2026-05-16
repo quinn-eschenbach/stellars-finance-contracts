@@ -115,9 +115,9 @@ fn test_opposing_traders_long_vs_short() {
     let short_balance_before = f.usdc.balance(&trader_short);
 
     f.position_manager
-        .decrease_position(&trader_long, &symbol_short!("BTC"), &size);
+        .decrease_position(&trader_long, &symbol_short!("BTC"), &size, &0_i128);
     f.position_manager
-        .decrease_position(&trader_short, &symbol_short!("BTC"), &size);
+        .decrease_position(&trader_short, &symbol_short!("BTC"), &size, &0_i128);
 
     let long_pnl = f.usdc.balance(&trader_long) - long_balance_before;
     let short_pnl = f.usdc.balance(&trader_short) - short_balance_before;
@@ -275,7 +275,7 @@ fn test_concurrent_open_and_close() {
 
     // A closes (A had enough time)
     f.position_manager
-        .decrease_position(&trader_a, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&trader_a, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     // Market should only have B's OI
     let market = f.position_manager.get_market(&symbol_short!("BTC"));

@@ -98,9 +98,9 @@ fn setup_full<'a>() -> TestFixture<'a> {
     config_client.update_fee_splits(
         &admin,
         &config_manager::FeeSplits {
-            keeper_bps: 500,
-            dev_bps: 500,
             lp_bps: 9000,
+            dev_bps: 500,
+            staker_bps: 500,
         },
     );
 

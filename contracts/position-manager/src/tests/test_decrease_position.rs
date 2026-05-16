@@ -156,9 +156,9 @@ fn setup_full<'a>() -> TestFixture<'a> {
     config_client.update_fee_splits(
         &admin,
         &config_manager::FeeSplits {
-            keeper_bps: 500,
-            dev_bps: 500,
             lp_bps: 9000,
+            dev_bps: 500,
+            staker_bps: 500,
         },
     );
 
@@ -306,7 +306,7 @@ fn test_decrease_position_reverts_not_initialized() {
     let pm_client = PositionManagerClient::new(&env, &pm_id);
     let trader = Address::generate(&env);
 
-    pm_client.decrease_position(&trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
+    pm_client.decrease_position(&trader, &symbol_short!("BTC"), &DEFAULT_SIZE, &0_i128);
 }
 
 #[test]
@@ -328,7 +328,7 @@ fn test_decrease_position_succeeds_when_paused() {
 
     // This must NOT panic -- decrease_position bypasses pause check
     f.pm_client
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE, &0_i128);
 
     // If we reach here, the test passes -- the contract did not revert
     // even though it is paused. Verify position was closed.
@@ -343,7 +343,7 @@ fn test_decrease_position_reverts_position_not_found() {
     let f = setup_full();
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE, &0_i128);
 }
 
 #[test]
@@ -354,7 +354,7 @@ fn test_decrease_position_reverts_zero_size_delta() {
     open_position_and_advance(&f, true);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &0_i128);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &0_i128, &0_i128);
 }
 
 #[test]
@@ -366,7 +366,7 @@ fn test_decrease_position_reverts_negative_size_delta() {
     open_position_and_advance(&f, true);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(-1_000_i128));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(-1_000_i128), &0_i128);
 }
 
 // ===========================================================================
@@ -394,7 +394,7 @@ fn test_decrease_position_reverts_position_not_old_enough() {
 
     // Try to decrease immediately (same timestamp) -- should fail
     f.pm_client
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE, &0_i128);
 }
 
 #[test]
@@ -419,7 +419,7 @@ fn test_decrease_position_reverts_one_second_before_min_lifetime() {
     f.oracle_client.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE, &0_i128);
 }
 
 #[test]
@@ -445,7 +445,7 @@ fn test_decrease_position_succeeds_at_exact_min_lifetime() {
 
     // This should succeed -- position is old enough
     f.pm_client
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &DEFAULT_SIZE, &0_i128);
 }
 
 // ===========================================================================
@@ -488,7 +488,7 @@ fn test_full_close_long_profit_trader_receives_funds() {
 
     // Close entire position
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let trader_balance_after_close = f.usdc_client.balance(&f.trader);
 
@@ -539,7 +539,7 @@ fn test_full_close_long_profit_position_deleted() {
     f.oracle_client.set_price(&symbol, &profit_price);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     // Position should be deleted -- verify via storage directly
     f.env.as_contract(&f.pm_addr, || {
@@ -572,7 +572,7 @@ fn test_full_close_long_profit_market_oi_decreased() {
     f.oracle_client.set_price(&symbol, &(55_000 * PRECISION));
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let market_after = f.pm_client.get_market(&symbol);
     assert_eq!(
@@ -605,7 +605,7 @@ fn test_full_close_long_profit_total_reserved_decreased() {
     f.oracle_client.set_price(&symbol, &(55_000 * PRECISION));
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
@@ -649,7 +649,7 @@ fn test_full_close_long_loss_trader_receives_reduced_collateral() {
     f.oracle_client.set_price(&symbol, &loss_price);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let trader_balance_after_close = f.usdc_client.balance(&f.trader);
 
@@ -687,7 +687,7 @@ fn test_full_close_long_loss_position_deleted() {
     f.oracle_client.set_price(&symbol, &(47_000 * PRECISION));
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     f.env.as_contract(&f.pm_addr, || {
         let pos = storage::get_position(&f.env, &f.trader, &symbol);
@@ -719,7 +719,7 @@ fn test_full_close_long_loss_market_updated() {
     f.oracle_client.set_price(&symbol, &(47_000 * PRECISION));
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let market = f.pm_client.get_market(&symbol);
     assert_eq!(
@@ -762,7 +762,7 @@ fn test_partial_close_reduces_size_by_delta() {
 
     let half_size = DEFAULT_SIZE / 2;
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &half_size);
+        .decrease_position(&f.trader, &symbol, &half_size, &0_i128);
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
     assert_eq!(
@@ -794,7 +794,7 @@ fn test_partial_close_reduces_collateral_proportionally() {
 
     let half_size = DEFAULT_SIZE / 2;
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &half_size);
+        .decrease_position(&f.trader, &symbol, &half_size, &0_i128);
 
     let pos = f.pm_client.get_position(&f.trader, &symbol);
     let expected_collateral = DEFAULT_COLLATERAL - (DEFAULT_COLLATERAL * half_size / DEFAULT_SIZE);
@@ -827,7 +827,7 @@ fn test_partial_close_reduces_market_oi_by_size_delta_not_full_size() {
 
     let half_size = DEFAULT_SIZE / 2;
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &half_size);
+        .decrease_position(&f.trader, &symbol, &half_size, &0_i128);
 
     let market = f.pm_client.get_market(&symbol);
     assert_eq!(
@@ -858,7 +858,7 @@ fn test_partial_close_reduces_total_reserved_by_size_delta() {
 
     let half_size = DEFAULT_SIZE / 2;
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &half_size);
+        .decrease_position(&f.trader, &symbol, &half_size, &0_i128);
 
     f.env.as_contract(&f.pm_addr, || {
         assert_eq!(
@@ -891,7 +891,7 @@ fn test_partial_close_position_still_exists() {
 
     let quarter_size = DEFAULT_SIZE / 4;
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &quarter_size);
+        .decrease_position(&f.trader, &symbol, &quarter_size, &0_i128);
 
     // get_position should NOT panic
     let pos = f.pm_client.get_position(&f.trader, &symbol);
@@ -933,7 +933,7 @@ fn test_close_with_size_delta_exceeding_position_size_reverts() {
     let oversized_delta = DEFAULT_SIZE * 2;
     let result = f
         .pm_client
-        .try_decrease_position(&f.trader, &symbol, &oversized_delta);
+        .try_decrease_position(&f.trader, &symbol, &oversized_delta, &0_i128);
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().unwrap(),
@@ -991,7 +991,7 @@ fn test_short_position_profit_on_price_decrease() {
     f.oracle_client.set_price(&symbol, &drop_price);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let balance_after_close = f.usdc_client.balance(&f.trader);
 
@@ -1038,7 +1038,7 @@ fn test_short_position_loss_on_price_increase() {
     f.oracle_client.set_price(&symbol, &rise_price);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let balance_after_close = f.usdc_client.balance(&f.trader);
     let received = balance_after_close - balance_after_open;
@@ -1077,7 +1077,7 @@ fn test_full_close_releases_vault_liquidity() {
     f.oracle_client.set_price(&symbol, &BTC_PRICE);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let free_liq_after_close = f.vault_client.free_liquidity();
 
@@ -1114,7 +1114,7 @@ fn test_partial_close_releases_proportional_vault_liquidity() {
 
     let half_size = DEFAULT_SIZE / 2;
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &half_size);
+        .decrease_position(&f.trader, &symbol, &half_size, &0_i128);
 
     let free_liq_after = f.vault_client.free_liquidity();
 
@@ -1161,7 +1161,7 @@ fn test_decrease_position_with_multiple_traders_independent() {
 
     // Close trader1's position
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     // Trader2's position must be unaffected
     let pos2 = f.pm_client.get_position(&trader2, &symbol);
@@ -1219,7 +1219,7 @@ fn test_decrease_short_updates_short_oi_not_long() {
     f.oracle_client.set_price(&symbol, &ETH_PRICE);
 
     f.pm_client
-        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE);
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
 
     let market_after = f.pm_client.get_market(&symbol);
     assert_eq!(
@@ -1230,4 +1230,252 @@ fn test_decrease_short_updates_short_oi_not_long() {
         market_after.long_open_interest, 0,
         "Long OI must remain unaffected by short close"
     );
+}
+
+// ===========================================================================
+// 7. User-close escrow lifecycle
+// ===========================================================================
+
+/// Default flat TP/SL execution fee planted by ConfigManager::initialize.
+const TP_SL_FEE: i128 = 5_000_000;
+
+/// Valid TP for a long opened at BTC_PRICE.
+const VALID_TP_LONG: i128 = 55_000 * PRECISION;
+
+#[test]
+fn user_full_close_refunds_escrow() {
+    // Open a long without TP, then set TP via set_tp_sl so the escrow is
+    // charged (TP_SL_FEE moves trader -> PM). Full close must refund the
+    // escrow PM -> trader on top of the normal position payout.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0, &0i128
+    );
+
+    // Set TP -> escrow charged.
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &VALID_TP_LONG, &0);
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_FEE,
+        "Setup: position must record TP_SL_FEE as escrow"
+    );
+
+    let trader_balance_before_close = f.usdc_client.balance(&f.trader);
+
+    advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
+    f.oracle_client.set_price(&symbol, &BTC_PRICE);
+
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
+
+    let trader_balance_after_close = f.usdc_client.balance(&f.trader);
+    let received = trader_balance_after_close - trader_balance_before_close;
+
+    // With price unchanged the position payout is ~DEFAULT_COLLATERAL.
+    // The escrow refund is an ADDITIONAL TP_SL_FEE on top.
+    // So received >= DEFAULT_COLLATERAL + TP_SL_FEE (allowing for tiny
+    // borrow/funding fees that may shrink the payout).
+    assert!(
+        received >= DEFAULT_COLLATERAL + TP_SL_FEE - 1_000_000,
+        "Full close must refund escrow on top of payout. Got: {}, expected ~{}",
+        received,
+        DEFAULT_COLLATERAL + TP_SL_FEE
+    );
+
+    // Position deleted; escrow no longer recorded anywhere.
+    f.env.as_contract(&f.pm_addr, || {
+        let p = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(p.is_none(), "Position must be deleted after full close");
+    });
+}
+
+#[test]
+fn user_partial_close_keeps_escrow() {
+    // Open long, set TP -> escrow paid. Close half. Trader must NOT receive
+    // the escrow back. The remaining position keeps the FULL escrow amount.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0, &0i128
+    );
+
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &VALID_TP_LONG, &0);
+    let pos_before = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(pos_before.execution_fee_escrow, TP_SL_FEE);
+
+    advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
+    f.oracle_client.set_price(&symbol, &BTC_PRICE);
+
+    let trader_balance_before_close = f.usdc_client.balance(&f.trader);
+    let half_size = DEFAULT_SIZE / 2;
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &half_size, &0_i128);
+    let trader_balance_after_close = f.usdc_client.balance(&f.trader);
+    let received = trader_balance_after_close - trader_balance_before_close;
+
+    // The partial close refunds ~half collateral but NOT the escrow.
+    // received < DEFAULT_COLLATERAL/2 + TP_SL_FEE, i.e. escrow NOT included.
+    assert!(
+        received < DEFAULT_COLLATERAL / 2 + TP_SL_FEE,
+        "Partial close must NOT refund escrow. Received: {}, would-include-escrow upper-bound: {}",
+        received,
+        DEFAULT_COLLATERAL / 2 + TP_SL_FEE
+    );
+
+    // Remaining position retains the full escrow amount.
+    let pos_after = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos_after.execution_fee_escrow, TP_SL_FEE,
+        "Partial close must preserve full escrow on the remaining position"
+    );
+}
+
+#[test]
+fn user_full_close_with_zero_escrow_no_transfer() {
+    // Open without TP/SL. Full close must perform no escrow-related transfer
+    // — trader receives only the position payout.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f.pm_client.increase_position(
+        &f.trader,
+        &symbol,
+        &DEFAULT_SIZE,
+        &DEFAULT_COLLATERAL,
+        &true,
+        &0,
+        &0, &0i128
+    );
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "Setup: position without TP/SL must have escrow == 0"
+    );
+
+    let pm_balance_before = f.usdc_client.balance(&f.pm_addr);
+
+    advance_time(&f, TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 11);
+    f.oracle_client.set_price(&symbol, &BTC_PRICE);
+
+    let trader_balance_before_close = f.usdc_client.balance(&f.trader);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
+    let trader_balance_after_close = f.usdc_client.balance(&f.trader);
+    let received = trader_balance_after_close - trader_balance_before_close;
+
+    // Trader receives ~collateral, NOT collateral + an escrow phantom.
+    // Bound the received delta to just over collateral.
+    assert!(
+        received <= DEFAULT_COLLATERAL + 1_000_000,
+        "No-escrow close must NOT route any extra USDC to trader. Received: {}",
+        received
+    );
+
+    // PM token balance must not retain residual escrow it never collected.
+    // Sanity bound: PM balance is non-negative and not artificially inflated.
+    let pm_balance_after = f.usdc_client.balance(&f.pm_addr);
+    assert!(
+        pm_balance_after <= pm_balance_before + TP_SL_FEE,
+        "PM balance must not balloon by escrow path on a no-escrow close"
+    );
+
+}
+
+// ===========================================================================
+// Slippage (`acceptable_price`) tests
+// ===========================================================================
+//
+// For closes: direction inverted from opens. Long closes into the bid →
+// revert if mark < acceptable. Short closes into the ask → revert if
+// mark > acceptable. `acceptable_price = 0` bypasses.
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")]
+fn test_decrease_long_reverts_when_mark_below_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_position_and_advance(&f, true);
+    // Mark is $50k, trader wants $51k floor → revert
+    let acceptable = 51_000 * PRECISION;
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &acceptable);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #19)")]
+fn test_decrease_short_reverts_when_mark_above_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_position_and_advance(&f, false);
+    // Mark is $50k, short trader wants $49k ceiling → revert
+    let acceptable = 49_000 * PRECISION;
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &acceptable);
+}
+
+#[test]
+fn test_decrease_long_succeeds_when_mark_above_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_position_and_advance(&f, true);
+    let acceptable = 49_000 * PRECISION;
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &acceptable);
+    let res = f.pm_client.try_get_position(&f.trader, &symbol);
+    assert!(res.is_err(), "full close must delete the position");
+}
+
+#[test]
+fn test_decrease_short_succeeds_when_mark_below_acceptable() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_position_and_advance(&f, false);
+    let acceptable = 51_000 * PRECISION;
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &acceptable);
+    let res = f.pm_client.try_get_position(&f.trader, &symbol);
+    assert!(res.is_err(), "full close must delete the position");
+}
+
+#[test]
+fn test_decrease_zero_acceptable_price_bypasses_check() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_position_and_advance(&f, true);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &0_i128);
+}
+
+#[test]
+fn test_decrease_boundary_mark_equals_acceptable_long() {
+    // Inclusive bound: mark >= acceptable for long close.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_position_and_advance(&f, true);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &BTC_PRICE);
+}
+
+#[test]
+fn test_decrease_boundary_mark_equals_acceptable_short() {
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_position_and_advance(&f, false);
+    f.pm_client
+        .decrease_position(&f.trader, &symbol, &DEFAULT_SIZE, &BTC_PRICE);
 }

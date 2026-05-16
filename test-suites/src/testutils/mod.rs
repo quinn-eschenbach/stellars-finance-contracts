@@ -9,6 +9,7 @@ use mock_oracle::{MockOracle, MockOracleClient};
 use mock_token::{MockToken, MockTokenClient};
 use oracle_router::{OracleConfig, OracleRouterClient, OracleRouterContract};
 use position_manager::{PositionManagerClient, PositionManagerContract};
+use shared::constants::{ROLE_KEEPER, ROLE_PAUSER};
 use vault::{VaultContract, VaultContractClient};
 
 /// BTC price: $50,000 scaled by 1e7
@@ -71,20 +72,19 @@ impl<'a> Fixture<'a> {
         let config_manager = ConfigManagerClient::new(env, &config_id);
         config_manager.initialize(&admin);
 
-        let pauser_role = Symbol::new(env, "PAUSER");
-        let keeper_role = Symbol::new(env, "KEEPER");
-        // let admin_role = Symbol::new(env, "ADMIN");
+        let pauser_role = Symbol::new(env, ROLE_PAUSER);
+        let keeper_role = Symbol::new(env, ROLE_KEEPER);
         config_manager.grant_role(&admin, &pauser_role, &admin);
         config_manager.grant_role(&admin, &keeper_role, &admin);
         config_manager.grant_role(&admin, &keeper_role, &keeper);
 
-        // Set fee splits: 5% keeper, 5% dev, 90% LP
+        // Set fee splits: 90% LP, 10% dev, 0% stakers.
         config_manager.update_fee_splits(
             &admin,
             &config_manager::FeeSplits {
-                keeper_bps: 500,
-                dev_bps: 500,
                 lp_bps: 9000,
+                dev_bps: 1000,
+                staker_bps: 0,
             },
         );
 

@@ -290,16 +290,14 @@ fn test_set_tp_sl_reset_to_zero() {
 }
 
 // ---------------------------------------------------------------------------
-// TP == entry_price is invalid for long (boundary)
+// TP == entry_price now accepted for long (validator drops entry-pin rule)
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_tp_equal_entry_invalid_long() {
+fn test_tp_equal_entry_accepted_long() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // BTC price is 50k. TP at exactly 50k should be invalid for long (TP <= entry).
     let tp_at_entry: i128 = 50_000 * PRECISION;
     f.position_manager.increase_position(
         &f.trader,
@@ -313,16 +311,14 @@ fn test_tp_equal_entry_invalid_long() {
 }
 
 // ---------------------------------------------------------------------------
-// TP == entry_price is invalid for short (boundary)
+// TP == entry_price now accepted for short
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_tp_equal_entry_invalid_short() {
+fn test_tp_equal_entry_accepted_short() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // For short, TP at entry is invalid (TP >= entry).
     let tp_at_entry: i128 = 50_000 * PRECISION;
     f.position_manager.increase_position(
         &f.trader,
@@ -336,12 +332,11 @@ fn test_tp_equal_entry_invalid_short() {
 }
 
 // ---------------------------------------------------------------------------
-// SL == entry_price is invalid for long (boundary)
+// SL == entry_price now accepted for long
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_sl_equal_entry_invalid_long() {
+fn test_sl_equal_entry_accepted_long() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
@@ -358,12 +353,11 @@ fn test_sl_equal_entry_invalid_long() {
 }
 
 // ---------------------------------------------------------------------------
-// SL == entry_price is invalid for short (boundary)
+// SL == entry_price now accepted for short
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "Error(Contract, #14)")]
-fn test_sl_equal_entry_invalid_short() {
+fn test_sl_equal_entry_accepted_short() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
@@ -457,10 +451,14 @@ fn test_set_tp_sl_short_position() {
     assert_eq!(pos.take_profit, tp);
     assert_eq!(pos.stop_loss, sl);
 
-    // Invalid: TP above entry for short should fail
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .set_tp_sl(&trader, &symbol_short!("BTC"), &(55_000 * PRECISION), &0);
-    }));
-    assert!(result.is_err(), "Short TP above entry must be rejected");
+    // TP above entry on a short is now accepted (validator no longer pins
+    // TP/SL to entry-relative direction — trailing/profit-locking workflows
+    // depend on this). Verify it persists.
+    let aggressive_tp = 55_000 * PRECISION;
+    f.position_manager
+        .set_tp_sl(&trader, &symbol_short!("BTC"), &aggressive_tp, &0);
+    let pos2 = f
+        .position_manager
+        .get_position(&trader, &symbol_short!("BTC"));
+    assert_eq!(pos2.take_profit, aggressive_tp);
 }

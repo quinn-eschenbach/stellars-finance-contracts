@@ -9,7 +9,7 @@
 use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env};
 
 use crate::contract::PositionManagerContract;
-use crate::logic;
+use crate::guards;
 use crate::storage;
 use crate::PositionManagerClient;
 
@@ -47,7 +47,7 @@ fn with_contract<F: FnOnce(&Env, &Address)>(f: F) {
 }
 
 // ===========================================================================
-// Unit tests for logic::require_initialized
+// Unit tests for guards::require_initialized
 // ===========================================================================
 
 #[test]
@@ -56,7 +56,7 @@ fn test_require_initialized_panics_when_not_initialized() {
     // Scenario: Contract has never been initialized. Calling require_initialized
     // must panic with PositionManagerError::NotInitialized (error code 2).
     with_contract(|env, _| {
-        logic::require_initialized(env);
+        guards::require_initialized(env);
     });
 }
 
@@ -66,13 +66,13 @@ fn test_require_initialized_passes_after_init() {
     // should pass without panicking.
     with_contract(|env, _| {
         storage::set_initialized(env);
-        logic::require_initialized(env);
+        guards::require_initialized(env);
         // If we reach here, the guard passed -- test is green.
     });
 }
 
 // ===========================================================================
-// Unit tests for logic::require_not_initialized
+// Unit tests for guards::require_not_initialized
 // ===========================================================================
 
 #[test]
@@ -80,7 +80,7 @@ fn test_require_not_initialized_passes_when_fresh() {
     // Scenario: On a freshly registered contract (Initialized = false),
     // require_not_initialized should succeed without panicking.
     with_contract(|env, _| {
-        logic::require_not_initialized(env);
+        guards::require_not_initialized(env);
     });
 }
 
@@ -91,19 +91,19 @@ fn test_require_not_initialized_panics_when_already_initialized() {
     // panic with AlreadyInitialized (error code 1).
     with_contract(|env, _| {
         storage::set_initialized(env);
-        logic::require_not_initialized(env);
+        guards::require_not_initialized(env);
     });
 }
 
 // ===========================================================================
-// Unit tests for logic::require_not_paused
+// Unit tests for guards::require_not_paused
 // ===========================================================================
 
 #[test]
 fn test_require_not_paused_passes_when_unpaused() {
     // Scenario: Default state is unpaused. Guard should pass.
     with_contract(|env, _| {
-        logic::require_not_paused(env);
+        guards::require_not_paused(env);
     });
 }
 
@@ -114,7 +114,7 @@ fn test_require_not_paused_panics_when_paused() {
     // with Paused (error code 3).
     with_contract(|env, _| {
         storage::set_paused(env, true);
-        logic::require_not_paused(env);
+        guards::require_not_paused(env);
     });
 }
 
@@ -124,7 +124,7 @@ fn test_require_not_paused_passes_after_unpause() {
     with_contract(|env, _| {
         storage::set_paused(env, true);
         storage::set_paused(env, false);
-        logic::require_not_paused(env);
+        guards::require_not_paused(env);
     });
 }
 
@@ -252,7 +252,7 @@ fn test_decrease_position_before_init_reverts() {
     let (env, client, _vault, _config_mgr, _oracle, _admin) = setup_test();
     let trader = Address::generate(&env);
     let symbol = symbol_short!("BTC");
-    client.decrease_position(&trader, &symbol, &500_i128);
+    client.decrease_position(&trader, &symbol, &500_i128, &0_i128);
 }
 
 #[test]

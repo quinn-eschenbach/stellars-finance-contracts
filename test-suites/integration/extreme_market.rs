@@ -99,7 +99,7 @@ fn test_rapid_pump_dump_pnl_correct() {
     f.set_btc_price(42_000);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let net_pnl = balance_after_close - balance_after_open;
@@ -196,7 +196,7 @@ fn test_flash_crash_recovery() {
 
     // Safe trader closes with profit
     f.position_manager
-        .decrease_position(&safe, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&safe, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let safe_balance_after_close = f.usdc.balance(&safe);
     let safe_net = safe_balance_after_close - safe_balance_after_open;
@@ -250,7 +250,7 @@ fn test_lp_withdraw_after_massive_trader_profit() {
     f.set_btc_price(60_000); // +20%
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // LP withdraws — share value should have dropped
     f.advance_time(TEST_TIMESTAMP + 300);
@@ -287,7 +287,7 @@ fn test_lp_profit_after_massive_trader_loss() {
     f.set_btc_price(46_000); // -8%
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // LP withdraws — should be more than deposited
     f.advance_time(TEST_TIMESTAMP + 300);
@@ -328,7 +328,7 @@ fn test_opposing_positions_extreme_move() {
 
     // Short trader closes with massive profit
     f.position_manager
-        .decrease_position(&short_trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&short_trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let short_bal_after = f.usdc.balance(&short_trader);
     let short_pnl = short_bal_after - short_bal_before;
@@ -362,7 +362,7 @@ fn test_price_unchanged_close_returns_collateral() {
     f.set_btc_price(50_000); // same price
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let returned = balance_after_close - balance_after_open;

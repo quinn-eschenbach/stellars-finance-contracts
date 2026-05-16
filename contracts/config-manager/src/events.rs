@@ -11,9 +11,17 @@ pub struct RoleChange {
 #[contractevent(topics = ["feecfg"], data_format = "vec")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FeeSplitsUpdate {
-    pub keeper_bps: u32,
-    pub dev_bps: u32,
     pub lp_bps: u32,
+    pub dev_bps: u32,
+    pub staker_bps: u32,
+}
+
+#[contractevent(topics = ["feecnf"], data_format = "vec")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FeeConfigUpdate {
+    pub open_fee_bps: u32,
+    pub liquidation_bounty_bps: u32,
+    pub tp_sl_execution_fee: i128,
 }
 
 #[contractevent(topics = ["limits"], data_format = "vec")]

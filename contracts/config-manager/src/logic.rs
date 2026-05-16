@@ -35,6 +35,15 @@ pub fn init_admin(env: &Env, admin: &Address) {
     oz_set_admin(env, admin);
 }
 
+/// Rotate the OZ admin pointer to `new_admin`. OZ's `set_admin` panics if an
+/// admin is already set, so the existing slot must be cleared first.
+pub fn rotate_admin(env: &Env, new_admin: &Address) {
+    env.storage()
+        .instance()
+        .remove(&stellar_access::access_control::AccessControlStorageKey::Admin);
+    oz_set_admin(env, new_admin);
+}
+
 /// Read the admin address (returns Err panic if uninitialized).
 pub fn load_admin(env: &Env) -> Address {
     oz_get_admin(env)

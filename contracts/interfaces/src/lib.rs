@@ -23,4 +23,4 @@ pub use types::{MarketInfo, MigrationData, OracleConfig, PendingUpgrade, Positio
 pub use upgrade::{TimelockedUpgradeable, UpgradeFailure};
 
 // Re-export shared types that appear in trait signatures
-pub use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
+pub use shared::{BorrowRateConfig, FeeConfig, FeeSplits, ProtocolLimits};

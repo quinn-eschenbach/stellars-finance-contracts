@@ -602,3 +602,138 @@ fn test_avg_price_add_zero_size_returns_current() {
     );
     assert_eq!(avg, 50_000 * shared::constants::PRECISION);
 }
+
+// ========================================================================
+// 11. calc_open_fee
+// fee = size * open_fee_bps / BPS, defensively zero for non-positive size.
+// ========================================================================
+
+#[test]
+fn test_open_fee_zero_size_returns_zero() {
+    let fee = math::calc_open_fee(0, shared::constants::DEFAULT_OPEN_FEE_BPS);
+    assert_eq!(fee, 0);
+}
+
+#[test]
+fn test_open_fee_negative_size_returns_zero() {
+    // Defensive: callers should never pass negative size, but the function
+    // must never emit a negative fee or panic. A negative fee would be
+    // catastrophic — it would credit the trader instead of charging them.
+    let fee = math::calc_open_fee(-1_000_000_000, shared::constants::DEFAULT_OPEN_FEE_BPS);
+    assert_eq!(fee, 0);
+}
+
+#[test]
+fn test_open_fee_default_rate_on_1000_usdc_notional() {
+    // size = $1000 notional at 7-decimal precision, open_fee_bps = 10 (default 0.1%)
+    // fee = 10_000_000_000 * 10 / 10_000 = 10_000_000 ($1)
+    let size = 1_000 * shared::constants::PRECISION;
+    let fee = math::calc_open_fee(size, shared::constants::DEFAULT_OPEN_FEE_BPS);
+    assert_eq!(fee, 1 * shared::constants::PRECISION);
+}
+
+#[test]
+fn test_open_fee_max_rate_on_1_usdc_notional() {
+    // size = $1, open_fee_bps = MAX_OPEN_FEE_BPS (100 bps = 1%)
+    // fee = 10_000_000 * 100 / 10_000 = 100_000 ($0.01)
+    let size = 1 * shared::constants::PRECISION;
+    let fee = math::calc_open_fee(size, shared::constants::MAX_OPEN_FEE_BPS);
+    assert_eq!(fee, 100_000);
+}
+
+#[test]
+fn test_open_fee_zero_bps_returns_zero() {
+    // Free opens (bps=0) must produce a zero fee.
+    let size = 1_000_000 * shared::constants::PRECISION;
+    let fee = math::calc_open_fee(size, 0);
+    assert_eq!(fee, 0);
+}
+
+#[test]
+fn test_open_fee_boundary_max_bps_exact_math() {
+    // size=10_000 (raw), bps=100 => fee = 10_000 * 100 / 10_000 = 100
+    let fee = math::calc_open_fee(10_000, shared::constants::MAX_OPEN_FEE_BPS);
+    assert_eq!(fee, 100);
+}
+
+#[test]
+fn test_open_fee_large_size_near_overflow_boundary() {
+    // Adversarial: pick size = i128::MAX / BPS and bps=1.
+    // Numerator = size * 1 = i128::MAX / BPS — does not overflow.
+    // Result   = (i128::MAX / BPS) / BPS.
+    let size = i128::MAX / shared::constants::BPS;
+    let fee = math::calc_open_fee(size, 1);
+    let expected = size * 1 / shared::constants::BPS;
+    assert_eq!(fee, expected);
+}
+
+// ========================================================================
+// 12. calc_liquidation_bounty
+// bounty = collateral * bounty_bps / BPS, defensively zero for non-positive collateral.
+// ========================================================================
+
+#[test]
+fn test_liquidation_bounty_zero_collateral_returns_zero() {
+    let bounty = math::calc_liquidation_bounty(0, shared::constants::DEFAULT_LIQUIDATION_BOUNTY_BPS);
+    assert_eq!(bounty, 0);
+}
+
+#[test]
+fn test_liquidation_bounty_negative_collateral_returns_zero() {
+    // Defensive: a liquidator must never receive a negative bounty (which
+    // would invert the cashflow direction). Negative collateral is impossible
+    // in normal flow, but the math must not panic or produce signed garbage.
+    let bounty = math::calc_liquidation_bounty(
+        -1_000_000_000,
+        shared::constants::DEFAULT_LIQUIDATION_BOUNTY_BPS,
+    );
+    assert_eq!(bounty, 0);
+}
+
+#[test]
+fn test_liquidation_bounty_default_rate_on_1000_usdc_collateral() {
+    // collateral = $1000, bounty_bps = 100 (default 1%)
+    // bounty = 10_000_000_000 * 100 / 10_000 = 100_000_000 ($10)
+    let collateral = 1_000 * shared::constants::PRECISION;
+    let bounty = math::calc_liquidation_bounty(
+        collateral,
+        shared::constants::DEFAULT_LIQUIDATION_BOUNTY_BPS,
+    );
+    assert_eq!(bounty, 10 * shared::constants::PRECISION);
+}
+
+#[test]
+fn test_liquidation_bounty_zero_bps_returns_zero() {
+    // No-bounty configuration must produce zero.
+    let collateral = 1_000_000 * shared::constants::PRECISION;
+    let bounty = math::calc_liquidation_bounty(collateral, 0);
+    assert_eq!(bounty, 0);
+}
+
+#[test]
+fn test_liquidation_bounty_max_bps_is_one_tenth_of_collateral() {
+    // collateral arbitrary, bounty_bps = MAX_LIQUIDATION_BOUNTY_BPS (1000 = 10%)
+    // bounty = collateral * 1000 / 10_000 = collateral / 10
+    let collateral = 2_500 * shared::constants::PRECISION;
+    let bounty = math::calc_liquidation_bounty(
+        collateral,
+        shared::constants::MAX_LIQUIDATION_BOUNTY_BPS,
+    );
+    assert_eq!(bounty, collateral / 10);
+}
+
+#[test]
+fn test_liquidation_bounty_boundary_exact_math() {
+    // collateral=10_000 (raw), bps=MAX (1000) => bounty = 10_000 * 1000 / 10_000 = 1000
+    let bounty = math::calc_liquidation_bounty(10_000, shared::constants::MAX_LIQUIDATION_BOUNTY_BPS);
+    assert_eq!(bounty, 1_000);
+}
+
+#[test]
+fn test_liquidation_bounty_large_collateral_near_overflow_boundary() {
+    // Adversarial: collateral = i128::MAX / BPS, bps = 1 => no overflow.
+    let collateral = i128::MAX / shared::constants::BPS;
+    let bounty = math::calc_liquidation_bounty(collateral, 1);
+    let expected = collateral * 1 / shared::constants::BPS;
+    assert_eq!(bounty, expected);
+}

@@ -27,7 +27,8 @@ use soroban_sdk::{
 };
 
 use crate::contract::PositionManagerContract;
-use shared::constants::PRECISION;
+use shared::constants::{BPS, PRECISION};
+use shared::FeeConfig;
 use crate::storage;
 use crate::PositionManagerClient;
 
@@ -149,9 +150,9 @@ fn setup_full<'a>() -> TestFixture<'a> {
     config_client.update_fee_splits(
         &admin,
         &config_manager::FeeSplits {
-            keeper_bps: 500,
-            dev_bps: 500,
             lp_bps: 9000,
+            dev_bps: 500,
+            staker_bps: 500,
         },
     );
 
@@ -309,26 +310,6 @@ fn test_liquidate_reverts_not_initialized() {
     let trader = Address::generate(&env);
 
     pm_client.liquidate_position(&caller, &trader, &symbol_short!("BTC"));
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #7)")]
-fn test_liquidate_reverts_unauthorized_caller() {
-    // Scenario: A non-KEEPER address attempts to liquidate. Must revert with
-    // PositionManagerError::Unauthorized (7) — panic comes from PM's wrapper.
-    let f = setup_full();
-    let random_caller = Address::generate(&f.env);
-
-    // Open a position first so the revert is specifically about auth, not missing position.
-    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
-
-    // Advance time and crash price so position is underwater
-    let crash_price: i128 = 40_000 * PRECISION;
-    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
-
-    // random_caller does NOT have KEEPER role
-    f.pm_client
-        .liquidate_position(&random_caller, &f.trader, &symbol_short!("BTC"));
 }
 
 #[test]
@@ -694,4 +675,468 @@ fn test_liquidate_one_position_does_not_affect_other_traders() {
         pos2.collateral, safe_collateral,
         "Trader2 collateral must be unaffected"
     );
+}
+
+// ===========================================================================
+// 7. Liquidation bounty + escrow forfeit lifecycle
+// ===========================================================================
+
+/// Default flat TP/SL execution fee planted by ConfigManager::initialize.
+const TP_SL_FEE: i128 = 5_000_000;
+
+/// Default liquidation bounty in basis points planted by ConfigManager::initialize.
+const DEFAULT_BOUNTY_BPS: i128 = 100;
+
+#[test]
+fn liquidation_pays_bounty_to_caller() {
+    // Long BTC at 50k, collateral=1000 USDC. Crash price to 44k so the
+    // position is liquidatable. With default liquidation_bounty_bps == 100
+    // and collateral_delta == DEFAULT_COLLATERAL, the bounty is
+    // `DEFAULT_COLLATERAL * 100 / 10_000 == DEFAULT_COLLATERAL / 100`.
+    // pm_to_vault on this crash exceeds the bounty, so the liquidator gets
+    // the full bps-derived bounty paid PM -> caller.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    let crash_price: i128 = 44_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    let caller_balance_before = f.usdc_client.balance(&f.keeper);
+
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
+
+    let caller_balance_after = f.usdc_client.balance(&f.keeper);
+    let expected_bounty = DEFAULT_COLLATERAL * DEFAULT_BOUNTY_BPS / BPS;
+
+    assert_eq!(
+        caller_balance_after - caller_balance_before,
+        expected_bounty,
+        "Liquidator must receive bounty == collateral_delta * bounty_bps / BPS"
+    );
+}
+
+#[test]
+fn liquidation_bounty_clamped_when_absorbed_lt_bounty() {
+    // The bounty formula is `min(collateral_delta * bps / BPS, pm_to_vault)`.
+    // Under the ConfigManager validation bounds (MAX_LIQUIDATION_BOUNTY_BPS
+    // == 1000 and MAX_LIQUIDATION_THRESHOLD_BPS == 1000), the bps amount
+    // cannot exceed 10% of collateral_delta, and pm_to_vault on a
+    // liquidation is at least 90% of collateral_delta — so the min() will
+    // bind on pm_to_vault only when the bps cap is also at its max and the
+    // trader_payout is at its max. This test verifies the INVARIANT that
+    // the caller never receives more than pm_to_vault for any liquidation,
+    // regardless of bounty configuration.
+    //
+    // Setup: bounty_bps at max (1000); barely-underwater liquidation where
+    // the trader keeps a small portion of collateral. The bounty must be
+    // capped by pm_to_vault.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 10,
+            liquidation_bounty_bps: 1_000, // 10% — max allowed
+            tp_sl_execution_fee: TP_SL_FEE,
+        },
+    );
+
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    // Crash JUST enough to be liquidatable. With threshold_bps=200, health
+    // must be < 20 USDC. Use barely-crash price (44_990) -> health ~ -2.
+    // pm_to_vault ~ DEFAULT_COLLATERAL (fully absorbed). bps_bounty = 100.
+    let crash_price: i128 = 44_990 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    let caller_balance_before = f.usdc_client.balance(&f.keeper);
+
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
+
+    let caller_balance_after = f.usdc_client.balance(&f.keeper);
+    let received = caller_balance_after - caller_balance_before;
+
+    // Invariant: bounty <= min(bps_bounty, pm_to_vault).
+    let bps_bounty = DEFAULT_COLLATERAL * 1_000 / BPS;
+    assert!(
+        received <= bps_bounty,
+        "Bounty must not exceed bps_bounty. Got {}, bps_bounty {}",
+        received,
+        bps_bounty
+    );
+    assert!(
+        received <= DEFAULT_COLLATERAL,
+        "Bounty must not exceed pm_to_vault (≤ collateral_delta). Got {}, collateral {}",
+        received,
+        DEFAULT_COLLATERAL
+    );
+    // And it must be POSITIVE (the bounty path actually fired).
+    assert!(received > 0, "Bounty must be paid when bps > 0 and pm_to_vault > 0");
+}
+
+#[test]
+fn liquidation_bounty_zero_when_bps_zero() {
+    // Admin disables the liquidation bounty (bps == 0). Caller receives
+    // nothing from the bounty path.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 10,
+            liquidation_bounty_bps: 0,
+            tp_sl_execution_fee: TP_SL_FEE,
+        },
+    );
+
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    let crash_price: i128 = 44_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    let caller_balance_before = f.usdc_client.balance(&f.keeper);
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
+    let caller_balance_after = f.usdc_client.balance(&f.keeper);
+
+    assert_eq!(
+        caller_balance_after, caller_balance_before,
+        "Caller must receive zero bounty when liquidation_bounty_bps == 0"
+    );
+}
+
+#[test]
+fn liquidation_forfeits_escrow_to_revenue_split() {
+    // Open with TP active. The flat `tp_sl_execution_fee` lives in PM as
+    // `pos.execution_fee_escrow`. On liquidation the escrow is forfeited:
+    // moved PM -> vault and bookkept through `distribute_revenue_fees`, so
+    // the (dev+staker) slice grows `vault.unclaimed_fees` and the LP slice
+    // stays implicitly in `vault.total_assets`.
+    //
+    // The default FeeSplits are LP=9000, dev=500, staker=500 (non-LP = 1000
+    // bps = 10%). So unclaimed_fees grows by escrow * 10%.
+    //
+    // Because the Vault contract exposes no public getter for unclaimed_fees
+    // we infer it via `free_liquidity = total_assets - reserved - unclaimed
+    // - max(0, pnl)`. With reserved at 0 post-close and pnl shared via the
+    // PM net_pnl push, we reason about the differential.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    // Set TP -> trader pays TP_SL_FEE; escrow recorded on position.
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_FEE,
+        "Setup: position must record TP_SL_FEE as escrow"
+    );
+
+    let vault_total_before = f._vault_client.total_assets();
+    let vault_free_before = f._vault_client.free_liquidity();
+    let reserved_before = f._vault_client.reserved_usdc();
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let caller_balance_before = f.usdc_client.balance(&f.keeper);
+
+    let crash_price: i128 = 44_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
+
+    let vault_total_after = f._vault_client.total_assets();
+    let vault_free_after = f._vault_client.free_liquidity();
+    let reserved_after = f._vault_client.reserved_usdc();
+    let trader_balance_after = f.usdc_client.balance(&f.trader);
+    let caller_balance_after = f.usdc_client.balance(&f.keeper);
+
+    // The trader must NOT receive the escrow back on liquidation.
+    let trader_received = trader_balance_after - trader_balance_before;
+    assert!(
+        trader_received < TP_SL_FEE,
+        "Trader must NOT receive escrow refund on liquidation. Got: {}",
+        trader_received
+    );
+
+    // The caller (liquidator) receives only the bounty, NOT the escrow.
+    let bounty_expected = DEFAULT_COLLATERAL * DEFAULT_BOUNTY_BPS / BPS;
+    let caller_received = caller_balance_after - caller_balance_before;
+    assert_eq!(
+        caller_received, bounty_expected,
+        "Liquidator receives bounty only; escrow must NOT flow to caller"
+    );
+
+    // The vault grows by the absorbed collateral PLUS the forfeited escrow.
+    // total_assets delta is at least the escrow amount (escrow moved in,
+    // plus whatever absorbed collateral remains after bounty).
+    let total_delta = vault_total_after - vault_total_before;
+    assert!(
+        total_delta >= TP_SL_FEE,
+        "Vault total_assets must grow by at least the forfeited escrow. Got: {}",
+        total_delta
+    );
+
+    // Decompose free_liquidity = total - reserved - unclaimed - max(0, pnl).
+    // The reserved component drops by the released position size on close,
+    // so to isolate the unclaimed_fees growth we adjust the free delta by
+    // the reserved release. The non-LP slice of the forfeited escrow must
+    // appear in unclaimed_fees.
+    let non_lp_slice = TP_SL_FEE / 10;
+    let free_delta = vault_free_after - vault_free_before;
+    let reserved_delta = reserved_after - reserved_before;
+    // delta_unclaimed = total_delta - reserved_delta - max_pnl_delta - free_delta.
+    // For this scenario PnL is non-positive so max(0, pnl) contributes 0 to
+    // both endpoints and drops out.
+    let inferred_unclaimed = total_delta - reserved_delta - free_delta;
+    assert!(
+        inferred_unclaimed >= non_lp_slice,
+        "Vault unclaimed_fees must grow by at least the non-LP slice of escrow. Inferred: {}, expected at least: {}",
+        inferred_unclaimed,
+        non_lp_slice
+    );
+}
+
+#[test]
+fn liquidation_with_zero_escrow_no_extra_transfer() {
+    // Position has no TP/SL — escrow == 0. Liquidation must skip the
+    // escrow flow entirely: no extra accrual to unclaimed_fees and no
+    // additional vault growth beyond the absorbed collateral.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    // Confirm no escrow recorded.
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, 0,
+        "Setup: opening without TP/SL must leave escrow at 0"
+    );
+
+    let vault_total_before = f._vault_client.total_assets();
+
+    let crash_price: i128 = 44_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
+
+    let vault_total_after = f._vault_client.total_assets();
+    let total_delta = vault_total_after - vault_total_before;
+
+    // Vault must grow by at most the absorbed collateral (DEFAULT_COLLATERAL).
+    // Without any escrow, there is no additional amount routed in.
+    assert!(
+        total_delta <= DEFAULT_COLLATERAL,
+        "Without escrow, vault must NOT grow beyond absorbed collateral. Got: {}",
+        total_delta
+    );
+}
+
+#[test]
+fn liquidation_bounty_priority_over_revenue_fees() {
+    // Bounty has priority over revenue fees: revenue fee accrual clamps to
+    // `pm_to_vault - bounty`. Use max allowed bounty_bps (1000) so the
+    // bounty is the maximum the protocol can pay, then verify the vault
+    // receives `pm_to_vault - bounty` rather than the full `pm_to_vault`.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    f._config_client.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 10,
+            liquidation_bounty_bps: 1_000, // max
+            tp_sl_execution_fee: TP_SL_FEE,
+        },
+    );
+
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    let vault_total_before = f._vault_client.total_assets();
+    let caller_balance_before = f.usdc_client.balance(&f.keeper);
+
+    let crash_price: i128 = 40_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    f.pm_client
+        .liquidate_position(&f.keeper, &f.trader, &symbol);
+
+    let vault_total_after = f._vault_client.total_assets();
+    let caller_balance_after = f.usdc_client.balance(&f.keeper);
+
+    let caller_received = caller_balance_after - caller_balance_before;
+    let total_delta = vault_total_after - vault_total_before;
+
+    // Bounty is the bps-derived amount (does not clamp under valid bounds).
+    assert_eq!(
+        caller_received,
+        DEFAULT_COLLATERAL * 1_000 / BPS,
+        "Liquidator receives bps-derived bounty when pm_to_vault > bps_bounty"
+    );
+
+    // Vault gain == pm_to_vault - bounty. The bounty stays in PM until
+    // paid out; the rest is transferred PM -> vault for absorption.
+    assert!(
+        total_delta <= DEFAULT_COLLATERAL - caller_received,
+        "Vault must receive pm_to_vault - bounty. total_delta={}, bounty={}, collateral={}",
+        total_delta,
+        caller_received,
+        DEFAULT_COLLATERAL
+    );
+
+    // Bounty has priority: total_delta must be strictly less than the
+    // pre-bounty pm_to_vault (DEFAULT_COLLATERAL on a full wipe).
+    assert!(
+        total_delta < DEFAULT_COLLATERAL,
+        "Bounty must come off the top, so vault gain < collateral_delta. total_delta={}",
+        total_delta
+    );
+}
+
+// ===========================================================================
+// 8. Permissionless liquidation
+//
+// `liquidate_position` is permissionless: any address that signs the call may
+// trigger liquidation when the position is underwater. The caller still has
+// to `require_auth` so a third party cannot pass someone else's address as
+// `caller` to steal the bounty. The KEEPER role check is removed; only the
+// underwater health condition gates execution.
+// ===========================================================================
+
+#[test]
+fn non_keeper_can_liquidate() {
+    // Scenario: an arbitrary Address that has NEVER been granted the KEEPER
+    // role triggers a liquidation. The position must be deleted and the
+    // bounty must flow to the non-keeper caller.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // Brand-new address — not the fixture's `keeper` and never granted any role.
+    let random_liquidator = Address::generate(&f.env);
+
+    // Sanity check: the random liquidator must NOT hold the KEEPER role on
+    // the ConfigManager. If this assertion ever fails the test is invalid
+    // (the address would be implicitly authorized).
+    let keeper_role = Symbol::new(&f.env, "KEEPER");
+    assert!(
+        !f._config_client.has_role(&keeper_role, &random_liquidator),
+        "Setup invariant: random_liquidator must not hold KEEPER"
+    );
+
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    // Crash the price so the position is underwater.
+    let crash_price: i128 = 44_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    let liquidator_balance_before = f.usdc_client.balance(&random_liquidator);
+
+    // Non-keeper triggers the liquidation. Must NOT panic with Unauthorized.
+    f.pm_client
+        .liquidate_position(&random_liquidator, &f.trader, &symbol);
+
+    // The position must be deleted, exactly like the keeper-driven path.
+    f.env.as_contract(&f.pm_addr, || {
+        let pos = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(
+            pos.is_none(),
+            "Permissionless liquidation must delete the underwater position"
+        );
+    });
+
+    // The non-keeper caller must receive the bounty == collateral_delta * bps / BPS.
+    let liquidator_balance_after = f.usdc_client.balance(&random_liquidator);
+    let expected_bounty = DEFAULT_COLLATERAL * DEFAULT_BOUNTY_BPS / BPS;
+    assert_eq!(
+        liquidator_balance_after - liquidator_balance_before,
+        expected_bounty,
+        "Non-keeper liquidator must receive the bps-derived bounty"
+    );
+}
+
+#[test]
+fn non_keeper_can_liquidate_short() {
+    // Mirror of the long case for symmetry — a non-keeper liquidates an
+    // underwater short. Validates the permissionless path does not silently
+    // depend on position direction.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    let random_liquidator = Address::generate(&f.env);
+    let keeper_role = Symbol::new(&f.env, "KEEPER");
+    assert!(
+        !f._config_client.has_role(&keeper_role, &random_liquidator),
+        "Setup invariant: random_liquidator must not hold KEEPER"
+    );
+
+    open_short_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    let spike_price: i128 = 56_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, spike_price);
+
+    let liquidator_balance_before = f.usdc_client.balance(&random_liquidator);
+
+    f.pm_client
+        .liquidate_position(&random_liquidator, &f.trader, &symbol);
+
+    f.env.as_contract(&f.pm_addr, || {
+        let pos = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(
+            pos.is_none(),
+            "Permissionless short liquidation must delete the position"
+        );
+    });
+
+    let liquidator_balance_after = f.usdc_client.balance(&random_liquidator);
+    let expected_bounty = DEFAULT_COLLATERAL * DEFAULT_BOUNTY_BPS / BPS;
+    assert_eq!(
+        liquidator_balance_after - liquidator_balance_before,
+        expected_bounty,
+        "Non-keeper short liquidator must receive the bounty"
+    );
+}
+
+#[test]
+#[should_panic]
+fn liquidator_must_authorize_call() {
+    // Regression-lock: the caller passed to `liquidate_position` is the
+    // bounty recipient, so the contract MUST call `caller.require_auth()`.
+    // Without that check, any third party could pass a victim's Address as
+    // `caller` and have the protocol pay the bounty to the victim's account.
+    //
+    // Soroban's test harness defaults to `mock_all_auths()`, which makes
+    // every `require_auth` call succeed silently. To assert the contract
+    // actually invokes `require_auth(caller)` we open the position while
+    // mock_all_auths is active, then strip auths with `set_auths(&[])`
+    // before triggering the liquidation. The liquidation call passes no
+    // auth entry for `caller`, so it must panic on the missing requirement.
+    let f = setup_full();
+    let symbol = symbol_short!("BTC");
+
+    // Open the position while mock_all_auths is still active.
+    open_long_position(&f, DEFAULT_SIZE, DEFAULT_COLLATERAL);
+
+    // Crash the price so the position is liquidatable.
+    let crash_price: i128 = 44_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, crash_price);
+
+    let random_liquidator = Address::generate(&f.env);
+
+    // Strip blanket auth mocking. From this point forward, every
+    // `require_auth` invocation must be backed by an explicit auth entry.
+    f.env.set_auths(&[]);
+
+    // No auth is granted for `random_liquidator`. The contract MUST call
+    // `caller.require_auth()`, so this call must panic.
+    f.pm_client
+        .liquidate_position(&random_liquidator, &f.trader, &symbol);
 }

@@ -41,7 +41,7 @@ fn test_minimum_collateral_position() {
     f.set_btc_price(50_000);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0);
@@ -66,7 +66,7 @@ fn test_partial_close_then_increase() {
     f.set_btc_price(50_000);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
 
     let pos_mid = f
         .position_manager
@@ -107,7 +107,7 @@ fn test_close_exactly_full_size() {
 
     // Close with exactly size == position.size
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // Position should be deleted — get_position should panic
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -137,7 +137,7 @@ fn test_multiple_partial_closes() {
     // 4 partial closes
     for i in 0..4 {
         f.position_manager
-            .decrease_position(&f.trader, &symbol_short!("BTC"), &quarter);
+            .decrease_position(&f.trader, &symbol_short!("BTC"), &quarter, &0_i128);
 
         let market = f.position_manager.get_market(&symbol_short!("BTC"));
         let expected_remaining = size - quarter * (i + 1);
@@ -215,7 +215,7 @@ fn test_increase_position_resets_min_lifetime() {
         f.position_manager.decrease_position(
             &f.trader,
             &symbol_short!("BTC"),
-            &(15_000 * USDC_UNIT),
+            &(15_000 * USDC_UNIT), &0_i128,
         );
     }));
     assert!(
@@ -307,7 +307,7 @@ fn test_zero_pnl_close() {
     f.set_btc_price(50_000);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let returned = balance_after_close - balance_after_open;
@@ -380,7 +380,7 @@ fn test_close_after_index_updates_pays_fees() {
 
     // Close at same price — PnL = 0 but fees should be deducted
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let returned = balance_after_close - balance_before_close;

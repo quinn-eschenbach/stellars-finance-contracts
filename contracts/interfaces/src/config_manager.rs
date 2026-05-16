@@ -1,4 +1,4 @@
-use shared::{BorrowRateConfig, FeeSplits, ProtocolLimits};
+use shared::{BorrowRateConfig, FeeConfig, FeeSplits, ProtocolLimits};
 use soroban_sdk::{contractclient, Address, BytesN, Env, Symbol};
 
 /// ConfigManager contract interface.
@@ -20,7 +20,7 @@ pub trait ConfigManager {
     fn has_role(env: Env, role: Symbol, account: Address) -> bool;
 
     /// Update the fee split configuration. Callable only by DEFAULT_ADMIN_ROLE.
-    /// Validates that keeper_bps + dev_bps + lp_bps == 10_000.
+    /// Validates that lp_bps + dev_bps + staker_bps == 10_000.
     fn update_fee_splits(env: Env, caller: Address, fee_splits: FeeSplits);
 
     /// Update global protocol limits. Callable only by DEFAULT_ADMIN_ROLE.
@@ -31,6 +31,12 @@ pub trait ConfigManager {
 
     /// Returns the current fee split configuration.
     fn get_fee_splits(env: Env) -> FeeSplits;
+
+    /// Update execution-bounty and open-fee parameters. Admin-only.
+    fn set_fee_config(env: Env, caller: Address, config: FeeConfig);
+
+    /// Returns the current execution-bounty and open-fee parameters.
+    fn get_fee_config(env: Env) -> FeeConfig;
 
     /// Extends the Soroban TTL of critical config variables to prevent archival.
     fn bump_config_state(env: Env);

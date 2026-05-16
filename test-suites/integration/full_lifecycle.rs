@@ -53,7 +53,7 @@ fn test_full_lifecycle_trader_profits_lp_absorbs_loss() {
 
     // Trader closes
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let trader_balance_after_close = f.usdc.balance(&f.trader);
     let trader_pnl = trader_balance_after_close - trader_balance_after_open;
@@ -106,7 +106,7 @@ fn test_full_lifecycle_trader_loses_lp_profits() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &drop_price);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // LP withdraws — should get more than deposited (trader loss stays in vault)
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 200);
@@ -149,7 +149,7 @@ fn test_full_lifecycle_partial_then_full_close() {
     // Partial close — half the position
     let half = size / 2;
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &half);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &half, &0_i128);
 
     let pos = f
         .position_manager
@@ -161,7 +161,7 @@ fn test_full_lifecycle_partial_then_full_close() {
 
     // Full close the remainder
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &half);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &half, &0_i128);
 
     let market_after = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market_after.long_open_interest, 0);
@@ -197,7 +197,7 @@ fn test_full_lifecycle_short_position_profit() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &drop_price);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let received = balance_after_close - balance_after_open;

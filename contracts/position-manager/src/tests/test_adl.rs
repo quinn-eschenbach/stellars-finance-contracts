@@ -142,9 +142,9 @@ fn setup_adl<'a>() -> TestFixture<'a> {
     config_client.update_fee_splits(
         &admin,
         &config_manager::FeeSplits {
-            keeper_bps: 500,
-            dev_bps: 500,
             lp_bps: 9000,
+            dev_bps: 500,
+            staker_bps: 500,
         },
     );
 
@@ -289,9 +289,9 @@ fn setup_no_adl<'a>() -> TestFixture<'a> {
     config_client.update_fee_splits(
         &admin,
         &config_manager::FeeSplits {
-            keeper_bps: 500,
-            dev_bps: 500,
             lp_bps: 9000,
+            dev_bps: 500,
+            staker_bps: 500,
         },
     );
 
@@ -721,4 +721,152 @@ fn test_adl_does_not_affect_other_traders_positions() {
         pos2.size, size2,
         "Trader2 position must be unaffected by trader1 ADL"
     );
+}
+
+// ===========================================================================
+// 7. ADL escrow lifecycle
+// ===========================================================================
+
+/// Default flat TP/SL execution fee planted by ConfigManager::initialize.
+const TP_SL_FEE: i128 = 5_000_000;
+
+#[test]
+fn adl_refunds_escrow_to_trader() {
+    // Open two identical longs, one for `trader` WITH TP (escrow charged)
+    // and one for `trader2` WITHOUT TP (no escrow). Trigger ADL for both
+    // and compare the trader receipts: the difference must equal the
+    // escrow refund.
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    let trader2 = Address::generate(&f.env);
+    f.usdc_client.mint(&trader2, &TRADER_BALANCE);
+
+    let size = 40_000 * USDC_UNIT;
+    let collateral = 4_000 * USDC_UNIT;
+    // Trader 1 (escrow) -> open + set TP
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
+    let tp = 55_000 * PRECISION;
+    f.pm_client.set_tp_sl(&f.trader, &symbol, &tp, &0);
+
+    let pos = f.pm_client.get_position(&f.trader, &symbol);
+    assert_eq!(
+        pos.execution_fee_escrow, TP_SL_FEE,
+        "Setup: trader's position must record TP_SL_FEE as escrow"
+    );
+
+    // Trader 2 (no escrow)
+    f.pm_client
+        .increase_position(&trader2, &symbol, &size, &collateral, &true, &0, &0, &0i128);
+
+    // Push utilization > 95%.
+    force_reserved(&f, 96_000 * USDC_UNIT);
+
+    let higher_price: i128 = 55_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, higher_price);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let trader2_balance_before = f.usdc_client.balance(&trader2);
+    let keeper_balance_before = f.usdc_client.balance(&f.keeper);
+
+    // ADL trader1 first.
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
+    // Re-arm utilization so trader2's ADL trigger still fires after the
+    // first close released reservations. Keep the ledger timestamp fixed so
+    // the two closes accrue identical borrow/funding fees — the asymmetry
+    // under test is the escrow refund only.
+    force_reserved(&f, 96_000 * USDC_UNIT);
+    f.pm_client
+        .deleverage_position(&f.keeper, &trader2, &symbol);
+
+    let trader_received = f.usdc_client.balance(&f.trader) - trader_balance_before;
+    let trader2_received = f.usdc_client.balance(&trader2) - trader2_balance_before;
+    let keeper_received = f.usdc_client.balance(&f.keeper) - keeper_balance_before;
+
+    // The difference equals the escrow — the only asymmetry between the
+    // two ADL closes is the escrow refund.
+    assert_eq!(
+        trader_received - trader2_received,
+        TP_SL_FEE,
+        "ADL must refund the escrow to the trader. Diff: {}",
+        trader_received - trader2_received
+    );
+
+    // Keeper must NOT receive any escrow on ADL.
+    assert_eq!(
+        keeper_received, 0,
+        "ADL must NOT pay any escrow to the keeper. Got: {}",
+        keeper_received
+    );
+
+    // Position deleted.
+    f.env.as_contract(&f.pm_addr, || {
+        let p = storage::get_position(&f.env, &f.trader, &symbol);
+        assert!(p.is_none(), "Position must be deleted after ADL");
+    });
+}
+
+#[test]
+fn adl_with_zero_escrow_no_extra_transfer() {
+    // Run two ADL closes side-by-side: both positions have NO TP/SL.
+    // Confirm the receipts are identical — no phantom escrow flow distorts
+    // the no-escrow path. This is a regression check; any future change
+    // that routes TP_SL_FEE on the no-escrow path would diverge the two.
+    let f = setup_adl();
+    let symbol = symbol_short!("BTC");
+
+    let trader2 = Address::generate(&f.env);
+    f.usdc_client.mint(&trader2, &TRADER_BALANCE);
+
+    let size = 40_000 * USDC_UNIT;
+    let collateral = 4_000 * USDC_UNIT;
+    f.pm_client
+        .increase_position(&f.trader, &symbol, &size, &collateral, &true, &0, &0, &0i128);
+    f.pm_client
+        .increase_position(&trader2, &symbol, &size, &collateral, &true, &0, &0, &0i128);
+
+    // Both positions have escrow == 0.
+    let p1 = f.pm_client.get_position(&f.trader, &symbol);
+    let p2 = f.pm_client.get_position(&trader2, &symbol);
+    assert_eq!(p1.execution_fee_escrow, 0);
+    assert_eq!(p2.execution_fee_escrow, 0);
+
+    force_reserved(&f, 96_000 * USDC_UNIT);
+
+    let higher_price: i128 = 55_000 * PRECISION;
+    advance_time_and_set_price(&f, TEST_TIMESTAMP + TIME_ADVANCE, higher_price);
+
+    let trader_balance_before = f.usdc_client.balance(&f.trader);
+    let trader2_balance_before = f.usdc_client.balance(&trader2);
+    let keeper_balance_before = f.usdc_client.balance(&f.keeper);
+
+    f.pm_client
+        .deleverage_position(&f.keeper, &f.trader, &symbol);
+    // Re-arm utilization for the second ADL. Keep the ledger timestamp
+    // fixed so both closes accrue identical fees — any divergence in
+    // receipts would point at a phantom escrow flow.
+    force_reserved(&f, 96_000 * USDC_UNIT);
+    f.pm_client
+        .deleverage_position(&f.keeper, &trader2, &symbol);
+
+    let trader_received = f.usdc_client.balance(&f.trader) - trader_balance_before;
+    let trader2_received = f.usdc_client.balance(&trader2) - trader2_balance_before;
+    let keeper_received = f.usdc_client.balance(&f.keeper) - keeper_balance_before;
+
+    // Symmetric outcome — no escrow path fires on either close.
+    assert_eq!(
+        trader_received, trader2_received,
+        "Without escrow, ADL receipts must be identical across traders. {} vs {}",
+        trader_received, trader2_received
+    );
+
+    // Keeper got nothing — ADL never pays the keeper from the escrow path.
+    assert_eq!(
+        keeper_received, 0,
+        "Keeper must NOT receive funds on ADL. Got: {}",
+        keeper_received
+    );
+
 }

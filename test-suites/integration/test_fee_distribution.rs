@@ -1,26 +1,36 @@
 //! Fee distribution integration tests.
 //!
-//! Validates that the protocol correctly splits fees between keeper, dev (protocol),
-//! and LP according to the FeeSplits config when positions are closed via different
-//! close types:
+//! Validates the multi-contract flow for the three revenue streams charged by
+//! the protocol:
 //!
-//! | Close Type            | Keeper share        | Dev share (unclaimed_fees) | LP share (pool) |
-//! |-----------------------|---------------------|----------------------------|-----------------|
-//! | User close            | 0                   | fees * dev_bps / 10000     | remainder       |
-//! | TP/SL execution       | fees * keeper_bps   | fees * dev_bps / 10000     | remainder       |
-//! | Liquidation           | fees * keeper_bps   | fees * dev_bps / 10000     | remainder       |
-//! | ADL (deleverage)      | 0                   | fees * dev_bps / 10000     | remainder       |
+//! - Open fee: `size * open_fee_bps / BPS`, charged on every `increase_position`.
+//!   Trader -> PM -> Vault. Non-LP slice (dev+staker bps of FeeSplits) accrues
+//!   to `vault.unclaimed_fees`; LP slice stays in `vault.total_assets` implicitly.
+//! - Close-time revenue fees (borrow + funding_protocol_cut): split via the
+//!   same FeeSplits.
+//! - Liquidation bounty: `min(collateral * liquidation_bounty_bps / BPS, pm_to_vault)`,
+//!   paid PM -> liquidator. Separate from the revenue split.
+//! - TP/SL execution escrow: a flat `tp_sl_execution_fee` USDC amount paid by
+//!   the trader on first TP/SL set. Refunded on full UserClose / Deleverage;
+//!   forfeited to vault on Liquidation; paid to the executor on OrderExecution.
 //!
-//! Fixture defaults: keeper_bps=500, dev_bps=500, lp_bps=9000
+//! Fixture defaults: FeeSplits { lp_bps=9000, dev_bps=1000, staker_bps=0 };
+//! FeeConfig { open_fee_bps=10, liquidation_bounty_bps=100, tp_sl_execution_fee=5_000_000 }.
 
+use shared::constants::{
+    self, BPS, DEFAULT_MIN_POSITION_LIFETIME, DEFAULT_TP_SL_EXECUTION_FEE, PRECISION,
+};
+use shared::FeeConfig;
 use soroban_sdk::{symbol_short, testutils::Address as _, Address, Env};
 use test_suites::testutils::{Fixture, TEST_TIMESTAMP, USDC_UNIT};
 
-const PRECISION: i128 = 10_000_000;
-const MIN_POSITION_LIFETIME: u64 = 60;
+const MIN_POSITION_LIFETIME: u64 = DEFAULT_MIN_POSITION_LIFETIME;
+const DEFAULT_OPEN_FEE_BPS: i128 = constants::DEFAULT_OPEN_FEE_BPS as i128;
+const DEFAULT_LIQ_BOUNTY_BPS: i128 = constants::DEFAULT_LIQUIDATION_BOUNTY_BPS as i128;
+const DEFAULT_TP_SL_FEE: i128 = DEFAULT_TP_SL_EXECUTION_FEE;
 
 // ---------------------------------------------------------------------------
-// 1. User close (decrease_position): keeper gets nothing
+// 1. User close (decrease_position): no bounty, no escrow payout, dev share accrues
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -30,48 +40,41 @@ fn test_user_close_no_keeper_share() {
 
     let keeper_balance_before = f.usdc.balance(&f.keeper);
 
-    // Open a position so borrow fees accumulate
     let size = 50_000 * USDC_UNIT;
     let collateral = 5_000 * USDC_UNIT;
     f.open_long(&f.trader, size, collateral);
 
-    // Advance 1 hour to accumulate borrow fees
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(50_000);
     f.position_manager
         .update_indices(&f.keeper, &symbol_short!("BTC"));
 
-    // User closes own position (decrease_position)
     f.advance_time(TEST_TIMESTAMP + 3_600 + MIN_POSITION_LIFETIME + 1);
     f.set_btc_price(50_000);
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
-    // ASSERT 1: Keeper balance must be unchanged (no keeper share for user close)
+    // Keeper balance unchanged: keepers no longer get a slice of revenue fees,
+    // and there is no bounty path on user close.
     let keeper_balance_after = f.usdc.balance(&f.keeper);
     assert_eq!(
         keeper_balance_after, keeper_balance_before,
-        "Keeper must NOT receive any fees on user close (decrease_position)"
+        "Keeper must NOT receive funds on user close (no bounty path)"
     );
 
-    // ASSERT 2: Vault should have unclaimed_fees == dev_share only (5% of total fees).
-    // We verify this by having admin claim fees and checking the claimed amount is > 0.
+    // Dev share (open_fee_bps non-LP slice + close-time non-LP slice) must be claimable.
     let recipient = Address::generate(&env);
     f.vault.claim_fees(&f.admin, &recipient);
     let dev_claimed = f.usdc.balance(&recipient);
-
     assert!(
         dev_claimed > 0,
-        "Dev share must be positive after user close with borrow fees: claimed={}",
+        "Dev share must be positive after user close: claimed={}",
         dev_claimed
     );
-
-    // ASSERT 3: After claiming, free_liquidity should increase (unclaimed_fees cleared).
-    // The LP share should remain in the vault pool, not in unclaimed_fees.
 }
 
 // ---------------------------------------------------------------------------
-// 2. TP/SL execution: keeper gets keeper_bps share
+// 2. TP/SL execution: executor receives flat tp_sl_execution_fee (escrow)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -79,9 +82,10 @@ fn test_tp_sl_keeper_gets_share() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    let keeper_balance_before = f.usdc.balance(&f.keeper);
+    let executor = Address::generate(&env);
+    let executor_balance_before = f.usdc.balance(&executor);
 
-    // Open long with TP at 55k
+    // Open long with TP set on increase_position — escrow charged at open.
     let size = 50_000 * USDC_UNIT;
     let collateral = 5_000 * USDC_UNIT;
     let tp_price: i128 = 55_000 * PRECISION;
@@ -92,52 +96,39 @@ fn test_tp_sl_keeper_gets_share() {
         &collateral,
         &true,
         &tp_price,
-        &0, &0i128
+        &0,
+        &0i128,
     );
 
-    // Advance time to accumulate borrow fees
+    // Confirm escrow was paid at open (escrow != 0 -> the escrow path fires).
+    let pos = f
+        .position_manager
+        .get_position(&f.trader, &symbol_short!("BTC"));
+    assert_eq!(
+        pos.execution_fee_escrow, DEFAULT_TP_SL_FEE,
+        "Position must record tp_sl_execution_fee escrow on open with TP"
+    );
+
     f.advance_time(TEST_TIMESTAMP + 3_600);
-    f.set_btc_price(56_000); // above TP, triggers
+    f.set_btc_price(56_000); // above TP triggers
 
-    // Keeper executes the order
+    // Permissionless executor (no KEEPER role) calls execute_order.
     f.position_manager
-        .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
+        .execute_order(&executor, &f.trader, &symbol_short!("BTC"));
 
-    // ASSERT 1: Keeper must receive keeper_share (5% of total_fees)
-    let keeper_balance_after = f.usdc.balance(&f.keeper);
-    let keeper_received = keeper_balance_after - keeper_balance_before;
-    assert!(
-        keeper_received > 0,
-        "Keeper must receive fee share on TP/SL execution: received={}",
-        keeper_received
-    );
-
-    // ASSERT 2: Vault has dev_share in unclaimed_fees, claim it.
-    let recipient = Address::generate(&env);
-    f.vault.claim_fees(&f.admin, &recipient);
-    let dev_claimed = f.usdc.balance(&recipient);
-
-    assert!(
-        dev_claimed > 0,
-        "Dev share must be positive after TP/SL execution: claimed={}",
-        dev_claimed
-    );
-
-    // ASSERT 3: Keeper share and dev share should be approximately equal
-    // (both are 500 bps = 5% of total fees).
-    // Allow 1 stroop tolerance for rounding.
-    let diff = (keeper_received - dev_claimed).abs();
-    assert!(
-        diff <= 1,
-        "Keeper share ({}) and dev share ({}) must be equal (both 5% of total fees), diff={}",
-        keeper_received,
-        dev_claimed,
-        diff
+    // Executor must receive the escrowed tp_sl_execution_fee (flat amount).
+    let executor_balance_after = f.usdc.balance(&executor);
+    let executor_received = executor_balance_after - executor_balance_before;
+    assert_eq!(
+        executor_received, DEFAULT_TP_SL_FEE,
+        "Executor must receive the flat tp_sl_execution_fee escrow on order execution: \
+         got {}, expected {}",
+        executor_received, DEFAULT_TP_SL_FEE
     );
 }
 
 // ---------------------------------------------------------------------------
-// 3. Liquidation: keeper gets keeper_bps share
+// 3. Liquidation: liquidator receives bounty (collateral * bps / BPS)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -145,54 +136,35 @@ fn test_liquidation_keeper_gets_share() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    let keeper_balance_before = f.usdc.balance(&f.keeper);
+    // Permissionless liquidator address, never granted KEEPER.
+    let liquidator = Address::generate(&env);
+    let liq_balance_before = f.usdc.balance(&liquidator);
 
-    // Open a 10x long (thin margin, easy to liquidate)
     let size = 20_000 * USDC_UNIT;
     let collateral = 2_000 * USDC_UNIT;
     f.open_long(&f.trader, size, collateral);
 
-    // Advance time for borrow fees, then crash price to make position underwater
     f.advance_time(TEST_TIMESTAMP + 3_600);
-    f.set_btc_price(44_000); // 12% drop, enough to liquidate 10x leverage
+    f.set_btc_price(44_000); // crash, position liquidatable
 
-    // Keeper liquidates
     f.position_manager
-        .liquidate_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
+        .liquidate_position(&liquidator, &f.trader, &symbol_short!("BTC"));
 
-    // ASSERT 1: Keeper receives keeper_share of borrow fees
-    let keeper_balance_after = f.usdc.balance(&f.keeper);
-    let keeper_received = keeper_balance_after - keeper_balance_before;
-    assert!(
-        keeper_received > 0,
-        "Keeper must receive fee share on liquidation: received={}",
-        keeper_received
-    );
-
-    // ASSERT 2: Dev share should be in unclaimed_fees
-    let recipient = Address::generate(&env);
-    f.vault.claim_fees(&f.admin, &recipient);
-    let dev_claimed = f.usdc.balance(&recipient);
-
-    assert!(
-        dev_claimed > 0,
-        "Dev share must be positive after liquidation: claimed={}",
-        dev_claimed
-    );
-
-    // ASSERT 3: Keeper and dev share should be approximately equal (both 5%)
-    let diff = (keeper_received - dev_claimed).abs();
-    assert!(
-        diff <= 1,
-        "Keeper share ({}) and dev share ({}) must be equal for liquidation, diff={}",
-        keeper_received,
-        dev_claimed,
-        diff
+    // Bounty = collateral * liquidation_bounty_bps / BPS. pm_to_vault on this
+    // crash exceeds the bounty, so the clamp does not bind.
+    let liq_balance_after = f.usdc.balance(&liquidator);
+    let received = liq_balance_after - liq_balance_before;
+    let expected_bounty = collateral * DEFAULT_LIQ_BOUNTY_BPS / BPS;
+    assert_eq!(
+        received, expected_bounty,
+        "Liquidator must receive bounty == collateral * liquidation_bounty_bps / BPS: \
+         got {}, expected {}",
+        received, expected_bounty
     );
 }
 
 // ---------------------------------------------------------------------------
-// 4. ADL (deleverage_position): keeper gets nothing
+// 4. ADL (deleverage_position): no keeper share, no bounty, escrow refunded
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -200,7 +172,7 @@ fn test_adl_no_keeper_share() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // Lower ADL utilization threshold to make it triggerable
+    // Lower ADL utilization threshold so the test trigger is reachable.
     f.config_manager.update_protocol_limits(
         &f.admin,
         &config_manager::ProtocolLimits {
@@ -210,53 +182,53 @@ fn test_adl_no_keeper_share() {
             max_utilization_ratio: 8_500,
             funding_cut_bps: 500,
             adl_pnl_bps: 9_000,
-            adl_utilization_bps: 3_000, // 30% util triggers ADL
+            adl_utilization_bps: 3_000,
             liquidation_threshold_bps: 200,
         },
     );
-    f.config_manager.update_borrow_rate_config(&f.admin, &config_manager::BorrowRateConfig {
-        base_borrow_rate_bps: 100,
-        slope1_bps: 500,
-        slope2_bps: 5_000,
-        optimal_utilization_bps: 8_000,
-        base_funding_rate_bps: 100,
-    });
+    f.config_manager.update_borrow_rate_config(
+        &f.admin,
+        &config_manager::BorrowRateConfig {
+            base_borrow_rate_bps: 100,
+            slope1_bps: 500,
+            slope2_bps: 5_000,
+            optimal_utilization_bps: 8_000,
+            base_funding_rate_bps: 100,
+        },
+    );
 
     let keeper_balance_before = f.usdc.balance(&f.keeper);
 
-    // Open large position to exceed 30% utilization
     let trader = f.create_funded_trader(50_000 * USDC_UNIT);
     f.open_long(&trader, 400_000 * USDC_UNIT, 40_000 * USDC_UNIT);
 
-    // Advance time for borrow fees; price up slightly so position is profitable (ADL requires pnl > 0)
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(50_100);
 
-    // Keeper ADLs the position
     f.position_manager
         .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
 
-    // ASSERT 1: Keeper balance must be unchanged (no keeper share for ADL)
+    // Keeper balance unchanged: ADL pays no bounty and there is no TP/SL
+    // escrow on this position (none was set).
     let keeper_balance_after = f.usdc.balance(&f.keeper);
     assert_eq!(
         keeper_balance_after, keeper_balance_before,
-        "Keeper must NOT receive any fees on ADL (deleverage_position)"
+        "Keeper must NOT receive funds on ADL (no bounty, no escrow payout)"
     );
 
-    // ASSERT 2: Dev share should still be accrued to unclaimed_fees
+    // Dev share still accrues from open_fee + close-time fees.
     let recipient = Address::generate(&env);
     f.vault.claim_fees(&f.admin, &recipient);
     let dev_claimed = f.usdc.balance(&recipient);
-
     assert!(
         dev_claimed > 0,
-        "Dev share must be positive after ADL with borrow fees: claimed={}",
+        "Dev share must be positive after ADL: claimed={}",
         dev_claimed
     );
 }
 
 // ---------------------------------------------------------------------------
-// 5. Admin claims dev fees after user close
+// 5. Admin claims dev fees — non-zero after open + close lifecycle
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -264,26 +236,17 @@ fn test_admin_claims_dev_fees() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // Open position, let borrow fees accrue, then close
     let size = 50_000 * USDC_UNIT;
     let collateral = 5_000 * USDC_UNIT;
     f.open_long(&f.trader, size, collateral);
-    let trader_balance_after_open = f.usdc.balance(&f.trader);
 
-    f.advance_time(TEST_TIMESTAMP + 86_400); // 24 hours for substantial fees
+    f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(50_000);
     f.position_manager
         .update_indices(&f.keeper, &symbol_short!("BTC"));
-
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
-    // Calculate total borrow fee paid by trader
-    let trader_returned = f.usdc.balance(&f.trader) - trader_balance_after_open;
-    let total_fee_paid = collateral - trader_returned;
-    assert!(total_fee_paid > 0, "Trader must have paid borrow fees");
-
-    // Admin claims dev fees to a recipient
     let recipient = Address::generate(&env);
     let recipient_balance_before = f.usdc.balance(&recipient);
     f.vault.claim_fees(&f.admin, &recipient);
@@ -295,21 +258,21 @@ fn test_admin_claims_dev_fees() {
         dev_claimed
     );
 
-    // Dev share should be 5% of (borrow_fee + funding_protocol_cut), not 5% of total_fee_paid.
-    // total_fee_paid includes the full funding_fee, but only the protocol cut portion
-    // goes through distribute_fees. Verify dev_claimed is a small fraction of total fees.
+    // Lower bound: dev_claimed must include at least the non-LP slice of the
+    // open fee (open_fee_bps * size / BPS, then dev_bps slice of that).
+    let open_fee = size * DEFAULT_OPEN_FEE_BPS / BPS;
+    let fee_splits = f.config_manager.get_fee_splits();
+    let non_lp_bps = (fee_splits.dev_bps + fee_splits.staker_bps) as i128;
+    let open_fee_dev_slice = open_fee * non_lp_bps / BPS;
     assert!(
-        dev_claimed < total_fee_paid,
-        "Dev share ({}) must be less than total fees paid ({})",
+        dev_claimed >= open_fee_dev_slice,
+        "dev_claimed must include at least the open-fee non-LP slice: \
+         dev_claimed={}, open_fee_dev_slice={}",
         dev_claimed,
-        total_fee_paid
-    );
-    assert!(
-        dev_claimed > 0,
-        "Dev share must be positive"
+        open_fee_dev_slice
     );
 
-    // After claiming, a second claim should panic (ZeroAmount)
+    // Second claim must panic — unclaimed_fees was zeroed.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         f.vault.claim_fees(&f.admin, &recipient);
     }));
@@ -328,119 +291,107 @@ fn test_zero_fees_no_distribution() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
+    // Disable open fee + TP/SL escrow so the position lifecycle generates only
+    // the negligible borrow fee that ~60 seconds will accrue.
+    f.config_manager.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: 0,
+            liquidation_bounty_bps: DEFAULT_LIQ_BOUNTY_BPS as u32,
+            tp_sl_execution_fee: 0,
+        },
+    );
+
     let keeper_balance_before = f.usdc.balance(&f.keeper);
 
-    // Open and immediately close (no time elapsed, zero borrow fees)
     let size = 10_000 * USDC_UNIT;
     let collateral = 1_000 * USDC_UNIT;
     f.open_long(&f.trader, size, collateral);
 
-    // Close immediately (but after min_position_lifetime)
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 1);
     f.set_btc_price(50_000);
-    // Do NOT call update_indices — no time for fees to accrue significantly
 
-    let _trader_balance_before_close = f.usdc.balance(&f.trader);
+    let trader_balance_before_close = f.usdc.balance(&f.trader);
 
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size);
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
-    // Keeper balance should be unchanged
     let keeper_balance_after = f.usdc.balance(&f.keeper);
     assert_eq!(
         keeper_balance_after, keeper_balance_before,
         "Keeper must not receive fees when there are zero/minimal fees"
     );
 
-    // Trader should get back approximately full collateral (minimal/zero fees)
-    let trader_returned = f.usdc.balance(&f.trader) - _trader_balance_before_close;
-    // With only ~61 seconds, borrow fee should be negligible
+    let trader_returned = f.usdc.balance(&f.trader) - trader_balance_before_close;
     assert!(
-        trader_returned >= collateral - USDC_UNIT, // allow up to 1 USDC tolerance
-        "Trader should get back ~full collateral with minimal time elapsed: returned={}",
+        trader_returned >= collateral - USDC_UNIT,
+        "Trader should get back ~full collateral with minimal time and zero open fee: returned={}",
         trader_returned
     );
-
-    // Attempting to claim fees should either panic (zero amount) or yield negligible amount
-    let _result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.vault.claim_fees(&f.admin, &f.admin);
-    }));
-    // Either no fees accrued (panic) or a tiny amount — both are acceptable
-    // The key assertion is that no panic occurred during the close itself.
 }
 
 // ---------------------------------------------------------------------------
-// ADVERSARIAL: Verify fee split math with precise BPS calculation
+// 7. Revenue fee split: LP slice stays in pool, dev slice accrues
 // ---------------------------------------------------------------------------
 
+/// Verifies the LP vs dev split on the open-fee revenue stream: with FeeSplits
+/// {9000/1000/0}, `vault.unclaimed_fees` grows by exactly `dev_bps + staker_bps`
+/// of the open fee, and `total_assets - unclaimed_fees` grows by the LP slice.
+/// Isolates the open-fee split from close-time funding-no-counterparty drift.
 #[test]
 fn test_fee_split_bps_precision() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // Open position, accrue fees over 24h, close via TP (keeper gets share)
+    let total_assets_before = f.vault.total_assets();
+
     let size = 100_000 * USDC_UNIT;
     let collateral = 10_000 * USDC_UNIT;
-    let tp_price: i128 = 55_000 * PRECISION;
+    f.open_long(&f.trader, size, collateral);
 
-    f.position_manager.increase_position(
-        &f.trader,
-        &symbol_short!("BTC"),
-        &size,
-        &collateral,
-        &true,
-        &tp_price,
-        &0, &0i128
-    );
-
-    let _trader_balance_after_open = f.usdc.balance(&f.trader);
-    let keeper_balance_before = f.usdc.balance(&f.keeper);
-
-    // 24h to build up fees
-    f.advance_time(TEST_TIMESTAMP + 86_400);
-    f.set_btc_price(56_000); // above TP
-
-    f.position_manager
-        .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
-
-    let keeper_received = f.usdc.balance(&f.keeper) - keeper_balance_before;
-
-    // Claim dev fees
+    // Drain the unclaimed_fees produced by the open fee. After the claim,
+    // `total_assets - total_assets_before` is the LP residue from the open fee
+    // alone (no close-time fees have fired and no PnL has settled).
     let dev_recipient = Address::generate(&env);
     f.vault.claim_fees(&f.admin, &dev_recipient);
     let dev_claimed = f.usdc.balance(&dev_recipient);
 
-    // Both keeper and dev should get 500/10000 = 5% of total fees.
-    // Since keeper_bps == dev_bps, they should be equal (within rounding).
     assert!(
-        keeper_received > 0 && dev_claimed > 0,
-        "Both keeper and dev must receive positive fees"
+        dev_claimed > 0,
+        "Dev share of open fee must be positive"
     );
 
-    let diff = (keeper_received - dev_claimed).abs();
-    assert!(
-        diff <= 1,
-        "Keeper ({}) and dev ({}) shares must match when bps are equal, diff={}",
-        keeper_received,
-        dev_claimed,
-        diff
+    // Open fee = size * open_fee_bps / BPS. With defaults (10 bps) and 100k
+    // size that's 100 USDC. Dev gets 10%, LP gets 90%.
+    let expected_open_fee = size * DEFAULT_OPEN_FEE_BPS / BPS;
+    let splits = f.config_manager.get_fee_splits();
+    let non_lp_bps = (splits.dev_bps + splits.staker_bps) as i128;
+    let expected_dev = expected_open_fee * non_lp_bps / BPS;
+    let expected_lp = expected_open_fee - expected_dev;
+
+    assert_eq!(
+        dev_claimed, expected_dev,
+        "Dev claim must equal open_fee * (dev_bps + staker_bps) / BPS"
     );
 
-    // LP share = 90% of total fees. Verify the remaining pool has it:
-    // total_fees = keeper_received + dev_claimed + lp_share
-    // lp_share should be ~9x the keeper or dev share
-    let implied_total_fees = keeper_received + dev_claimed; // this is 10% of total
-    let _implied_lp_share = implied_total_fees * 9; // 90% = 9x the 10%
-    // The LP share stays in the vault pool. Verify vault total_assets reflects it.
-    let total_assets = f.vault.total_assets();
-    assert!(
-        total_assets > 0,
-        "Vault must still have assets after fee distribution"
+    let total_assets_after = f.vault.total_assets();
+    let lp_residue_in_vault = total_assets_after - total_assets_before;
+    assert_eq!(
+        lp_residue_in_vault, expected_lp,
+        "LP residue must equal open_fee * lp_bps / BPS"
+    );
+
+    // Sanity: with default 9000/1000/0, LP slice is exactly 9x dev slice.
+    let expected_ratio = (splits.lp_bps as i128) / non_lp_bps;
+    assert_eq!(
+        lp_residue_in_vault, dev_claimed * expected_ratio,
+        "LP residue must be exactly {}x dev share under default FeeSplits",
+        expected_ratio
     );
 }
 
 // ---------------------------------------------------------------------------
-// ADVERSARIAL: Multiple closes accumulate dev fees correctly
+// 8. ADVERSARIAL: Multiple closes accumulate dev fees correctly
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -448,7 +399,6 @@ fn test_multiple_closes_accumulate_dev_fees() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // Close 1: user close
     let trader1 = f.create_funded_trader(10_000 * USDC_UNIT);
     f.open_long(&trader1, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
 
@@ -456,11 +406,9 @@ fn test_multiple_closes_accumulate_dev_fees() {
     f.set_btc_price(50_000);
     f.position_manager
         .update_indices(&f.keeper, &symbol_short!("BTC"));
-
     f.position_manager
-        .decrease_position(&trader1, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&trader1, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
-    // Close 2: another user close
     let trader2 = f.create_funded_trader(10_000 * USDC_UNIT);
     f.open_long(&trader2, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
 
@@ -468,11 +416,9 @@ fn test_multiple_closes_accumulate_dev_fees() {
     f.set_btc_price(50_000);
     f.position_manager
         .update_indices(&f.keeper, &symbol_short!("BTC"));
-
     f.position_manager
-        .decrease_position(&trader2, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&trader2, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
-    // Claim accumulated dev fees from both closes
     let recipient = Address::generate(&env);
     f.vault.claim_fees(&f.admin, &recipient);
     let total_dev_claimed = f.usdc.balance(&recipient);
@@ -485,7 +431,7 @@ fn test_multiple_closes_accumulate_dev_fees() {
 }
 
 // ---------------------------------------------------------------------------
-// ADVERSARIAL: Non-admin cannot claim dev fees
+// 9. ADVERSARIAL: Non-admin cannot claim dev fees
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -493,16 +439,14 @@ fn test_non_admin_cannot_claim_dev_fees() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    // Generate some fees
     f.open_long(&f.trader, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
     f.advance_time(TEST_TIMESTAMP + 3_600 + MIN_POSITION_LIFETIME + 1);
     f.set_btc_price(50_000);
     f.position_manager
         .update_indices(&f.keeper, &symbol_short!("BTC"));
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
-    // Random user tries to claim
     let random = Address::generate(&env);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         f.vault.claim_fees(&random, &random);
@@ -514,7 +458,7 @@ fn test_non_admin_cannot_claim_dev_fees() {
 }
 
 // ---------------------------------------------------------------------------
-// ADVERSARIAL: LP share stays in vault pool, not in unclaimed_fees
+// 10. ADVERSARIAL: LP share stays in vault pool, not in unclaimed_fees
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -524,47 +468,205 @@ fn test_lp_share_stays_in_vault_pool() {
 
     let total_assets_before = f.vault.total_assets();
 
-    // Open + close to generate fees
-    f.open_long(&f.trader, 50_000 * USDC_UNIT, 5_000 * USDC_UNIT);
-    let trader_balance_after_open = f.usdc.balance(&f.trader);
+    let size = 50_000 * USDC_UNIT;
+    let collateral = 5_000 * USDC_UNIT;
+    f.open_long(&f.trader, size, collateral);
 
     f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(50_000);
     f.position_manager
         .update_indices(&f.keeper, &symbol_short!("BTC"));
-
     f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT));
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
-    // Calculate total fees from trader's perspective
-    let trader_returned = f.usdc.balance(&f.trader) - trader_balance_after_open;
-    let total_fee_paid = 5_000 * USDC_UNIT - trader_returned;
-    assert!(total_fee_paid > 0, "Must have paid borrow fees");
-
-    // Claim dev share
     let recipient = Address::generate(&env);
     f.vault.claim_fees(&f.admin, &recipient);
     let dev_claimed = f.usdc.balance(&recipient);
 
-    // LP share = total_fee_paid - dev_claimed (for user close, keeper=0)
-    let lp_share = total_fee_paid - dev_claimed;
+    // FeeSplits has no keeper field — only lp / dev / staker.
+    let splits = f.config_manager.get_fee_splits();
+    let lp_bps = splits.lp_bps as i128;
+    let non_lp_bps = (splits.dev_bps + splits.staker_bps) as i128;
 
-    // The vault total_assets should reflect the LP share remaining in the pool.
-    // After close: vault got collateral back (minus PnL=0), so total_assets = before + fees_kept_in_pool
-    // fees_kept_in_pool = lp_share (dev was claimed out)
+    // After draining the dev slice, vault.total_assets grew exactly by the
+    // LP residue (PnL was 0 on this close so no payouts moved capital out).
     let total_assets_after = f.vault.total_assets();
+    let lp_residue_in_vault = total_assets_after - total_assets_before;
 
-    // total_assets_after should be total_assets_before - dev_claimed (sent out via claim)
-    // but LP share (90% of fees) stays in, increasing vault value for LPs
+    // With defaults (9000/1000/0) the LP residue is 9x the dev share.
+    let expected_ratio = lp_bps / non_lp_bps;
     assert!(
-        total_assets_after > total_assets_before - total_fee_paid,
-        "Vault total_assets must reflect LP share remaining in pool"
+        lp_residue_in_vault >= dev_claimed * expected_ratio - USDC_UNIT,
+        "LP residue ({}) must be ~{}x dev share ({}) under default FeeSplits",
+        lp_residue_in_vault,
+        expected_ratio,
+        dev_claimed
+    );
+    assert!(
+        lp_residue_in_vault > 0,
+        "LP residue must be positive — open fee and close fees both have an LP slice"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 11. End-to-end: Liquidation bounty zero-bps edge case
+// ---------------------------------------------------------------------------
+
+/// Admin disables liquidation bounty (bps=0). Liquidator gets nothing from
+/// the bounty path even though pm_to_vault is non-zero — bounty is gated on
+/// bps alone, not on availability.
+#[test]
+fn test_liquidation_bounty_zero_bps_pays_nothing() {
+    let env = Env::default();
+    let f = Fixture::deploy(&env);
+
+    f.config_manager.set_fee_config(
+        &f.admin,
+        &FeeConfig {
+            open_fee_bps: DEFAULT_OPEN_FEE_BPS as u32,
+            liquidation_bounty_bps: 0,
+            tp_sl_execution_fee: DEFAULT_TP_SL_FEE,
+        },
     );
 
+    let liquidator = Address::generate(&env);
+    let liq_balance_before = f.usdc.balance(&liquidator);
+
+    f.open_long(&f.trader, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
+
+    f.advance_time(TEST_TIMESTAMP + 3_600);
+    f.set_btc_price(44_000);
+
+    f.position_manager
+        .liquidate_position(&liquidator, &f.trader, &symbol_short!("BTC"));
+
+    let liq_balance_after = f.usdc.balance(&liquidator);
+    assert_eq!(
+        liq_balance_after, liq_balance_before,
+        "Zero bounty_bps must produce zero payout to liquidator regardless of pm_to_vault"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 12. End-to-end: TP/SL escrow refunded on full UserClose
+// ---------------------------------------------------------------------------
+
+/// Position opened with TP set -> escrow paid trader -> PM at open. Full
+/// UserClose refunds the escrow back to the trader.
+#[test]
+fn test_tp_sl_escrow_refunded_on_full_user_close() {
+    let env = Env::default();
+    let f = Fixture::deploy(&env);
+
+    let size = 50_000 * USDC_UNIT;
+    let collateral = 5_000 * USDC_UNIT;
+    let tp_price: i128 = 55_000 * PRECISION;
+
+    let trader_balance_before_open = f.usdc.balance(&f.trader);
+
+    f.position_manager.increase_position(
+        &f.trader,
+        &symbol_short!("BTC"),
+        &size,
+        &collateral,
+        &true,
+        &tp_price,
+        &0,
+        &0i128,
+    );
+
+    // After open, trader has paid: collateral + open_fee + escrow.
+    let trader_after_open = f.usdc.balance(&f.trader);
+    let paid_at_open = trader_balance_before_open - trader_after_open;
+    let open_fee = size * DEFAULT_OPEN_FEE_BPS / BPS;
+    let expected_paid = collateral + open_fee + DEFAULT_TP_SL_FEE;
+    assert_eq!(
+        paid_at_open, expected_paid,
+        "Open with TP must charge collateral + open_fee + tp_sl_execution_fee"
+    );
+
+    // Close at flat price (PnL=0) after min_lifetime.
+    f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
+    f.set_btc_price(50_000);
+    f.position_manager
+        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+
+    // Trader must receive: collateral (minus minor borrow fee for 70s) + escrow refund.
+    let trader_after_close = f.usdc.balance(&f.trader);
+    let net_paid = trader_balance_before_open - trader_after_close;
+    // Net cost = open_fee + borrow_fee. Escrow was fully refunded.
     assert!(
-        lp_share > dev_claimed * 8,
-        "LP share ({}) must be significantly larger than dev share ({}) at 90% vs 5%",
-        lp_share,
-        dev_claimed
+        net_paid >= open_fee,
+        "Net cost must be at least the open fee: net_paid={}, open_fee={}",
+        net_paid,
+        open_fee
+    );
+    // Generous upper bound — short close should not drain anywhere near the escrow.
+    assert!(
+        net_paid < open_fee + DEFAULT_TP_SL_FEE,
+        "Trader must keep the refunded escrow: net_paid={}, open_fee+escrow={}",
+        net_paid,
+        open_fee + DEFAULT_TP_SL_FEE
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 13. End-to-end: TP/SL escrow forfeited on liquidation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_tp_sl_escrow_forfeited_on_liquidation() {
+    let env = Env::default();
+    let f = Fixture::deploy(&env);
+
+    let size = 20_000 * USDC_UNIT;
+    let collateral = 2_000 * USDC_UNIT;
+    let tp_price: i128 = 60_000 * PRECISION;
+
+    f.position_manager.increase_position(
+        &f.trader,
+        &symbol_short!("BTC"),
+        &size,
+        &collateral,
+        &true,
+        &tp_price,
+        &0,
+        &0i128,
+    );
+
+    let pos = f
+        .position_manager
+        .get_position(&f.trader, &symbol_short!("BTC"));
+    assert_eq!(
+        pos.execution_fee_escrow, DEFAULT_TP_SL_FEE,
+        "Setup: position must record escrow before liquidation"
+    );
+
+    let trader_balance_pre_crash = f.usdc.balance(&f.trader);
+
+    let liquidator = Address::generate(&env);
+    let liq_balance_before = f.usdc.balance(&liquidator);
+
+    f.advance_time(TEST_TIMESTAMP + 3_600);
+    f.set_btc_price(44_000); // crash
+
+    f.position_manager
+        .liquidate_position(&liquidator, &f.trader, &symbol_short!("BTC"));
+
+    // Trader gets NO escrow refund on liquidation.
+    let trader_balance_post = f.usdc.balance(&f.trader);
+    assert_eq!(
+        trader_balance_post, trader_balance_pre_crash,
+        "Trader must not be refunded the escrow on liquidation"
+    );
+
+    // Liquidator receives only the bounty (NOT the escrow).
+    let liq_received = f.usdc.balance(&liquidator) - liq_balance_before;
+    let expected_bounty = collateral * DEFAULT_LIQ_BOUNTY_BPS / BPS;
+    assert_eq!(
+        liq_received, expected_bounty,
+        "Liquidator must receive only the bounty, not the forfeited escrow: \
+         got {}, expected bounty {}",
+        liq_received, expected_bounty
     );
 }

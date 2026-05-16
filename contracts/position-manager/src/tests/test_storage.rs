@@ -144,6 +144,7 @@ fn sample_position() -> Position {
         last_increased_time: 1_700_000_000,
         take_profit: 0,
         stop_loss: 0,
+        execution_fee_escrow: 0,
     }
 }
 
@@ -161,7 +162,11 @@ fn test_set_and_get_position() {
     with_contract(|env, _| {
         let trader = Address::generate(env);
         let symbol = symbol_short!("BTC");
-        let pos = sample_position();
+        let mut pos = sample_position();
+        // Non-zero execution_fee_escrow to verify the new field round-trips
+        // through persistent storage. Field holds the flat USDC fee paid when
+        // TP or SL is first activated on a position.
+        pos.execution_fee_escrow = 5_000_000; // $0.5 at PRECISION
 
         storage::set_position(env, &trader, &symbol, &pos);
         let loaded = storage::get_position(env, &trader, &symbol).unwrap();
@@ -173,6 +178,42 @@ fn test_set_and_get_position() {
         assert_eq!(loaded.entry_funding_index, pos.entry_funding_index);
         assert_eq!(loaded.is_long, pos.is_long);
         assert_eq!(loaded.last_increased_time, pos.last_increased_time);
+        assert_eq!(loaded.execution_fee_escrow, pos.execution_fee_escrow);
+    });
+}
+
+#[test]
+fn test_position_execution_fee_escrow_defaults_to_zero() {
+    // Verifies that a Position with no TP/SL active stores a zero escrow.
+    with_contract(|env, _| {
+        let trader = Address::generate(env);
+        let symbol = symbol_short!("BTC");
+        let pos = sample_position(); // execution_fee_escrow defaults to 0
+
+        storage::set_position(env, &trader, &symbol, &pos);
+        let loaded = storage::get_position(env, &trader, &symbol).unwrap();
+
+        assert_eq!(loaded.execution_fee_escrow, 0);
+    });
+}
+
+#[test]
+fn test_position_execution_fee_escrow_round_trips_max_value() {
+    // Adversarial: maximum allowed execution fee at PRECISION scale should
+    // survive the SDK XDR encode/decode without truncation.
+    with_contract(|env, _| {
+        let trader = Address::generate(env);
+        let symbol = symbol_short!("BTC");
+        let mut pos = sample_position();
+        pos.execution_fee_escrow = shared::constants::MAX_TP_SL_EXECUTION_FEE;
+
+        storage::set_position(env, &trader, &symbol, &pos);
+        let loaded = storage::get_position(env, &trader, &symbol).unwrap();
+
+        assert_eq!(
+            loaded.execution_fee_escrow,
+            shared::constants::MAX_TP_SL_EXECUTION_FEE
+        );
     });
 }
 
@@ -345,6 +386,7 @@ fn test_position_with_extreme_values() {
             entry_borrow_index: i128::MAX, entry_funding_index: i128::MIN,
             is_long: false, last_increased_time: u64::MAX,
             take_profit: 0, stop_loss: 0,
+            execution_fee_escrow: i128::MAX,
         };
 
         storage::set_position(env, &trader, &symbol, &extreme);
@@ -357,6 +399,7 @@ fn test_position_with_extreme_values() {
         assert_eq!(loaded.entry_funding_index, i128::MIN);
         assert_eq!(loaded.is_long, false);
         assert_eq!(loaded.last_increased_time, u64::MAX);
+        assert_eq!(loaded.execution_fee_escrow, i128::MAX);
     });
 }
 

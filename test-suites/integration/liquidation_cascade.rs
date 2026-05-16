@@ -89,7 +89,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 100);
     f.mock_oracle.set_price(&symbol_short!("BTC"), &crash_price);
     f.position_manager
-        .decrease_position(&safe_c, &symbol_short!("BTC"), &(40_000 * USDC_UNIT));
+        .decrease_position(&safe_c, &symbol_short!("BTC"), &(40_000 * USDC_UNIT), &0_i128);
 
     let market_empty = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market_empty.long_open_interest, 0);

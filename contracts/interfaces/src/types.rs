@@ -45,6 +45,8 @@ pub struct Position {
     pub take_profit: i128,
     /// Stop-loss price (scaled by 1e7). 0 = not set.
     pub stop_loss: i128,
+    /// Flat USDC fee escrowed when TP or SL is set. Paid to executor on trigger, refunded on user close / ADL, forfeited to revenue on liquidation.
+    pub execution_fee_escrow: i128,
 }
 
 /// Global market state for a single tradeable asset symbol.
