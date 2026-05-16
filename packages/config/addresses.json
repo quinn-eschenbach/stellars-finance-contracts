@@ -9,36 +9,36 @@
     ],
     "contracts": {
       "vault": {
-        "address": "CCIXSGUSESO6NKXG5BWKYWZUFPNVZHRAOIFB77BUHKMELOJJBNNAQJ2L",
-        "startLedger": 137
+        "address": "CAUKWHL2JBFGQ5HLJRAZPQUYRT7ZXNEKN76BTQRTLGIHGQGNL5DD3DO7",
+        "startLedger": 132
       },
       "positionManager": {
-        "address": "CC7B7B7VZRJGGHOQEFRNCV3CGMCB6WIYFECZY67JSS56SWPGEWIXNKQH",
-        "startLedger": 141
+        "address": "CCSZ664RTXIUJJHD5HXTBGTZGJ7LVUP2UYVO67TPGSJEYDTNGGXUELBA",
+        "startLedger": 136
       },
       "configManager": {
-        "address": "CDPOMSQ6OQ6J2IRI7WB4ABDCTL3UVMJNOLTLJXZLI6UHIWJXDPMRN3NS",
-        "startLedger": 125
+        "address": "CCVUPU6X332WBOREBFPH47OHTJ7YVHUFTPVBHBURGXSGCFLR26QISJ7V",
+        "startLedger": 122
       },
       "oracleRouter": {
-        "address": "CD72BSJSVSQNGG33G2KWKQCWWF7QCQU5NAOHA6OLYR56HHG5GM4QCPNX",
-        "startLedger": 127
+        "address": "CCDZ36ED7PNGEZY3JSVATVUSKRSBQH62Z4E33VUAFXLFGA4CPKSRABH3",
+        "startLedger": 124
       },
       "oracle": {
-        "address": "CAELW5YN3KTR6IRJFMQTZ4EOUDEZH6JA6LZ5ZE7WU6FQ3O4DPBPSJQG4",
-        "startLedger": 131
+        "address": "CBQW5CBO2LJ2LLQZICZXZLLQUVWTQX4BMHGI2ATHVSAMDEFZ3CWS7C6Q",
+        "startLedger": 126
       },
       "binanceOracle": {
-        "address": "CCHDXYNGSR3XH4DGAVXPXXPS5DLR2XCQ5UP2F7RPEYVXGGG6YRR7ZDVK",
-        "startLedger": 180
+        "address": "CD5IDSN4SLH5464PFUBEAEZUKS4F7Y75XHAMUSNKJWQQJMDENPLPUQEI",
+        "startLedger": 170
       },
       "kucoinOracle": {
-        "address": "CDBBWLYIET2VQEHPHZ2YMPYTD6KILFDALEWVU4PD7WUUEZ6HDFVSXQTF",
-        "startLedger": 181
+        "address": "CAUM2K4XVHSRD72K2G4XKCRIZKVDF6MVXMLLPYIVM7ZF5LZRJIJYVO2X",
+        "startLedger": 171
       },
       "mockToken": {
-        "address": "CCPOTE5JJYDYHQXRU6KI2P6FBFXZDBOURQFRIVDQSSNC23A7HK2QOSIG",
-        "startLedger": 135
+        "address": "CBRCXEFYCK23QQQAZCBOL3TOM3OBDQOL2CFBO4SMFOISOODOFUYF5BEL",
+        "startLedger": 130
       }
     }
   },

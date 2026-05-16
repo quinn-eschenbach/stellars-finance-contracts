@@ -64,6 +64,13 @@
       "when": 1778900100000,
       "tag": "0008_keeper_fees",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778900200000,
+      "tag": "0009_trades_executor",
+      "breakpoints": true
     }
   ]
 }
