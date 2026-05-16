@@ -15,16 +15,13 @@ export declare const ConfigManagerError: {
         message: string;
     };
     /**
-     * FeeSplits values do not sum to 10_000 bps, are zero, or exceed BPS.
-     * Catch-all for any FeeSplits violation — kept stable so existing
-     * tests / indexer consumers don't break. Per-rule codes 20-22 below.
+     * Catch-all for FeeSplits violations. Per-rule codes 20–22 below.
      */
     4: {
         message: string;
     };
     /**
-     * One or more ProtocolLimits values are out of acceptable range.
-     * Catch-all — per-rule codes 30-37 below.
+     * Catch-all for ProtocolLimits violations. Per-rule codes 30–37 below.
      */
     5: {
         message: string;
@@ -163,12 +160,33 @@ export declare const ConfigManagerError: {
     43: {
         message: string;
     };
+    /**
+     * `open_fee_bps` exceeds `MAX_OPEN_FEE_BPS`.
+     */
+    44: {
+        message: string;
+    };
+    /**
+     * `liquidation_bounty_bps` exceeds `MAX_LIQUIDATION_BOUNTY_BPS`.
+     */
+    45: {
+        message: string;
+    };
+    /**
+     * `tp_sl_execution_fee` is negative or exceeds `MAX_TP_SL_EXECUTION_FEE`.
+     */
+    46: {
+        message: string;
+    };
 };
 export type StorageKey = {
     tag: "Initialized";
     values: void;
 } | {
     tag: "FeeSplits";
+    values: void;
+} | {
+    tag: "FeeConfig";
     values: void;
 } | {
     tag: "ProtocolLimits";
@@ -305,6 +323,10 @@ export interface Position {
    * Oracle price at the time the position was opened (scaled by 1e7).
    */
     entry_price: i128;
+    /**
+   * Flat USDC fee escrowed when TP or SL is set. Paid to executor on trigger, refunded on user close / ADL, forfeited to revenue on liquidation.
+   */
+    execution_fee_escrow: i128;
     /**
    * True for a long position, false for a short.
    */
@@ -514,13 +536,23 @@ export type PausableStorageKey = {
     values: void;
 };
 /**
+ * Execution-bounty and open-fee parameters charged to traders.
+ * `open_fee_bps` and `liquidation_bounty_bps` are in basis points;
+ * `tp_sl_execution_fee` is a flat USDC amount at PRECISION scale.
+ */
+export interface FeeConfig {
+    liquidation_bounty_bps: u32;
+    open_fee_bps: u32;
+    tp_sl_execution_fee: i128;
+}
+/**
  * Defines how protocol revenue is split between parties.
  * All values are in basis points (bps). Must sum to 10_000.
  */
 export interface FeeSplits {
     dev_bps: u32;
-    keeper_bps: u32;
     lp_bps: u32;
+    staker_bps: u32;
 }
 /**
  * Global protocol risk and timing parameters.
@@ -609,9 +641,20 @@ export interface Client {
         caller: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
+     * Construct and simulate a get_fee_config transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    get_fee_config: (options?: MethodOptions) => Promise<AssembledTransaction<FeeConfig>>;
+    /**
      * Construct and simulate a get_fee_splits transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     get_fee_splits: (options?: MethodOptions) => Promise<AssembledTransaction<FeeSplits>>;
+    /**
+     * Construct and simulate a set_fee_config transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    set_fee_config: ({ caller, config }: {
+        caller: string;
+        config: FeeConfig;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a propose_upgrade transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
@@ -697,7 +740,9 @@ export declare class Client extends ContractClient {
         accept_admin: (json: string) => AssembledTransaction<null>;
         propose_admin: (json: string) => AssembledTransaction<null>;
         cancel_upgrade: (json: string) => AssembledTransaction<null>;
+        get_fee_config: (json: string) => AssembledTransaction<FeeConfig>;
         get_fee_splits: (json: string) => AssembledTransaction<FeeSplits>;
+        set_fee_config: (json: string) => AssembledTransaction<null>;
         propose_upgrade: (json: string) => AssembledTransaction<null>;
         bump_config_state: (json: string) => AssembledTransaction<null>;
         get_pending_admin: (json: string) => AssembledTransaction<Option<string>>;

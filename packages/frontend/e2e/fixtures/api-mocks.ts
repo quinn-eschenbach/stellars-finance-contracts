@@ -76,9 +76,9 @@ export const DEFAULT_VAULT: VaultStateRow = {
 
 export const DEFAULT_CONFIG: ProtocolConfigRow = {
   id: 1,
-  keeper_bps: 1000,
-  dev_bps: 2000,
   lp_bps: 7000,
+  dev_bps: 2000,
+  staker_bps: 1000,
   min_collateral: s(10n * SCALE),
   cooldown_duration: "0",
   min_position_lifetime: "0",

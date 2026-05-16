@@ -51,9 +51,9 @@ function fixtureVault(over: Partial<VaultStateRow> = {}): VaultStateRow {
 function fixtureConfig(over: Partial<ProtocolConfigRow> = {}): ProtocolConfigRow {
   return {
     id: 1,
-    keeper_bps: 1000,
-    dev_bps: 2000,
     lp_bps: 7000,
+    dev_bps: 2000,
+    staker_bps: 1000,
     min_collateral: "10000000",
     cooldown_duration: "0",
     min_position_lifetime: "0",

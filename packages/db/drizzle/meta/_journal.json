@@ -71,6 +71,13 @@
       "when": 1778900200000,
       "tag": "0009_trades_executor",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778900300000,
+      "tag": "0010_protocol_config_staker_bps",
+      "breakpoints": true
     }
   ]
 }

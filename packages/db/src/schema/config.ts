@@ -2,10 +2,10 @@ import { pgTable, integer, numeric, timestamp } from "drizzle-orm/pg-core";
 
 export const protocolConfig = pgTable("protocol_config", {
   id: integer().primaryKey().default(1),
-  // Fee splits
-  keeper_bps: integer().notNull().default(0),
-  dev_bps: integer().notNull().default(0),
+  // Revenue split (sums to 10_000)
   lp_bps: integer().notNull().default(0),
+  dev_bps: integer().notNull().default(0),
+  staker_bps: integer().notNull().default(0),
   // Protocol limits
   min_collateral: numeric().notNull().default("0"),
   cooldown_duration: numeric().notNull().default("0"),

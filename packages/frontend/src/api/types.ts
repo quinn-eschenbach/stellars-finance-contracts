@@ -65,10 +65,12 @@ export interface VaultStateRow {
  */
 export interface ProtocolConfigRow {
   id: number;
-  // Fee splits (bps; sum to 10_000)
-  keeper_bps: number;
-  dev_bps: number;
+  // Revenue split (bps; sum to 10_000). Distinct from `FeeConfig`
+  // (open_fee / liquidation_bounty / tp_sl_execution_fee), which is not
+  // mirrored in this row.
   lp_bps: number;
+  dev_bps: number;
+  staker_bps: number;
   // Protocol limits (scaled bigints as strings)
   min_collateral: string;
   cooldown_duration: string;

@@ -1202,6 +1202,10 @@ export interface Position {
    */
     entry_price: i128;
     /**
+   * Flat USDC fee escrowed when TP or SL is set. Paid to executor on trigger, refunded on user close / ADL, forfeited to revenue on liquidation.
+   */
+    execution_fee_escrow: i128;
+    /**
    * True for a long position, false for a short.
    */
     is_long: boolean;
@@ -1410,13 +1414,23 @@ export type PausableStorageKey = {
     values: void;
 };
 /**
+ * Execution-bounty and open-fee parameters charged to traders.
+ * `open_fee_bps` and `liquidation_bounty_bps` are in basis points;
+ * `tp_sl_execution_fee` is a flat USDC amount at PRECISION scale.
+ */
+export interface FeeConfig {
+    liquidation_bounty_bps: u32;
+    open_fee_bps: u32;
+    tp_sl_execution_fee: i128;
+}
+/**
  * Defines how protocol revenue is split between parties.
  * All values are in basis points (bps). Must sum to 10_000.
  */
 export interface FeeSplits {
     dev_bps: u32;
-    keeper_bps: u32;
     lp_bps: u32;
+    staker_bps: u32;
 }
 /**
  * Global protocol risk and timing parameters.

@@ -186,11 +186,11 @@ describe("GET /vault", () => {
 describe("GET /config", () => {
   it("returns the singleton row", async () => {
     const db = new FakeDb();
-    db.enqueueSelect([{ id: 1, keeper_bps: 1000, dev_bps: 2000, lp_bps: 7000 }]);
+    db.enqueueSelect([{ id: 1, lp_bps: 7000, dev_bps: 2000, staker_bps: 1000 }]);
 
     const res = await makeApp(db).request("/config");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ id: 1, keeper_bps: 1000, dev_bps: 2000, lp_bps: 7000 });
+    expect(await res.json()).toEqual({ id: 1, lp_bps: 7000, dev_bps: 2000, staker_bps: 1000 });
   });
 
   it("returns 404 when the config row is missing", async () => {

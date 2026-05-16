@@ -14,9 +14,9 @@ interface RoleChangeData {
 }
 
 interface FeeSplitsUpdateData {
-  keeper_bps: number;
-  dev_bps: number;
   lp_bps: number;
+  dev_bps: number;
+  staker_bps: number;
 }
 
 interface LimitsUpdateData {
@@ -78,17 +78,17 @@ async function handleFeeSplits(db: Db, event: ParsedEvent) {
     .insert(protocolConfig)
     .values({
       id: SINGLETON_ID,
-      keeper_bps: d.keeper_bps,
-      dev_bps: d.dev_bps,
       lp_bps: d.lp_bps,
+      dev_bps: d.dev_bps,
+      staker_bps: d.staker_bps,
       updated_at_ledger: event.ledger,
     })
     .onConflictDoUpdate({
       target: protocolConfig.id,
       set: {
-        keeper_bps: d.keeper_bps,
-        dev_bps: d.dev_bps,
         lp_bps: d.lp_bps,
+        dev_bps: d.dev_bps,
+        staker_bps: d.staker_bps,
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },
