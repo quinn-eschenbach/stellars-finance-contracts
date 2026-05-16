@@ -160,6 +160,6 @@ export interface TradeRow {
   is_long: boolean | null;
   is_full_close: boolean | null;
   is_tp: boolean | null;
-  keeper: string | null;
+  executor: string | null;
   created_at: string;
 }

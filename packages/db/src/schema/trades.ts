@@ -18,6 +18,6 @@ export const trades = pgTable("trades", {
   is_long: boolean(),
   is_full_close: boolean(),
   is_tp: boolean(),
-  keeper: text(),
+  executor: text(),
   created_at: timestamp().defaultNow().notNull(),
 });

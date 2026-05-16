@@ -575,10 +575,11 @@ export interface Client {
     /**
      * Construct and simulate a decrease_position transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
-    decrease_position: ({ trader, symbol, size_delta }: {
+    decrease_position: ({ trader, symbol, size_delta, acceptable_price }: {
         trader: string;
         symbol: string;
         size_delta: i128;
+        acceptable_price: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
     /**
      * Construct and simulate a increase_position transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.

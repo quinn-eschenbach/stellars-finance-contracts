@@ -46,7 +46,7 @@ interface LiquidateData {
   borrow_fee: bigint;
   funding_fee: bigint;
   mark_price: bigint;
-  keeper: string;
+  executor: string;
 }
 
 interface ExecuteOrderData {
@@ -56,7 +56,7 @@ interface ExecuteOrderData {
   pnl: bigint;
   mark_price: bigint;
   is_tp: boolean;
-  keeper: string;
+  executor: string;
 }
 
 interface AdlData {
@@ -295,7 +295,7 @@ async function handleLiquidation(db: Db, event: ParsedEvent) {
     borrow_fee: toNumericString(d.borrow_fee),
     funding_fee: toNumericString(d.funding_fee),
     is_full_close: true,
-    keeper: d.keeper,
+    executor: d.executor,
   });
   await refreshMarketAggregates(db, d.symbol, event.ledger);
 }
@@ -319,7 +319,7 @@ async function handleExecuteOrder(db: Db, event: ParsedEvent) {
     pnl: toNumericString(d.pnl),
     is_full_close: true,
     is_tp: d.is_tp,
-    keeper: d.keeper,
+    executor: d.executor,
   });
   await refreshMarketAggregates(db, d.symbol, event.ledger);
 }

@@ -43,6 +43,10 @@ export function PositionRow({ position, markPrice, tick, readOnly = false }: Pos
         trader: address,
         symbol: position.symbol,
         size_delta: BigInt(position.size),
+        // 0 = no slippage cap for now. Once close-side slippage UX lands
+        // (slider on the close confirmation modal), thread the user's
+        // chosen acceptable price through here.
+        acceptable_price: 0n,
       });
     },
   });

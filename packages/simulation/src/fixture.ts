@@ -489,7 +489,7 @@ export class Fixture {
   async closePosition(kp: Keypair, symbol: string, sizeDelta: bigint): Promise<void> {
     const client = this.pmFor(kp);
     await sendWithRetry(
-      () => client.decrease_position({ trader: kp.publicKey(), symbol, size_delta: sizeDelta }),
+      () => client.decrease_position({ trader: kp.publicKey(), symbol, size_delta: sizeDelta, acceptable_price: 0n }),
       `closePosition(${kp.publicKey().slice(0, 8)}…, ${symbol})`,
     );
   }
