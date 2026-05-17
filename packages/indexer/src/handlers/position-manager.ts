@@ -183,12 +183,18 @@ async function handleIncrease(db: Db, event: ParsedEvent) {
 
   const ts = unixSeconds(event.timestamp);
   if (existing.length > 0) {
+    // PM recomputes a weighted-average entry index when adding to an existing
+    // Position and emits the new values on every IncreasePosition; persist
+    // them so off-chain fee accrual stays aligned with the on-chain
+    // accumulator scale.
     await db
       .update(positions)
       .set({
         size: toNumericString(d.new_total_size),
         collateral: toNumericString(d.new_total_collateral),
         entry_price: toNumericString(d.entry_price),
+        entry_borrow_index: toNumericString(d.entry_borrow_index),
+        entry_funding_index: toNumericString(d.entry_funding_index),
         is_long: d.is_long,
         take_profit: toNumericString(d.tp),
         stop_loss: toNumericString(d.sl),
