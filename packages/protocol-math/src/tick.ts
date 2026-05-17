@@ -7,6 +7,7 @@
 // matches what an immediate on-chain refresh would produce (modulo the
 // inevitable skew between `now` here and ledger time on-chain).
 
+import { BPS } from "./constants.js";
 import {
   calcUnrealizedPnl,
   calcBorrowFee,
@@ -81,11 +82,13 @@ export class MarketTick {
   }
 
   /**
-   * Compute (pnl, borrow_fee, funding_fee, health) for a Position slice.
-   * `slice` defaults to the whole Position (`size`, `collateral`); pass an
-   * explicit slice for partial-close evaluations to mirror the contract.
+   * Mirrors `MarketTick::evaluate` in `contracts/position-manager/src/tick.rs`.
+   * `funding_cut_bps` defaults to 0n; callers without access to the protocol
+   * config still get correct raw fields and a zero-sum-scaled
+   * `effective_funding`, but `funding_protocol_cut` and `effective_health`
+   * will under-cut a positive-funding receiver.
    */
-  evaluate(pos: PositionState, slice?: Slice): PositionEvaluation {
+  evaluate(pos: PositionState, slice?: Slice, funding_cut_bps: bigint = 0n): PositionEvaluation {
     const size = slice?.size ?? pos.size;
     const collateral = slice?.collateral ?? pos.collateral;
 
@@ -101,8 +104,40 @@ export class MarketTick {
       this.market.acc_funding_index,
       pos.is_long,
     );
+
+    // Zero-sum cap: receivers (funding_fee > 0) are scaled by
+    // payer_oi / receiver_oi so total received never exceeds total paid.
+    let zero_sum_funding = funding_fee;
+    if (funding_fee > 0n) {
+      const payer_oi = pos.is_long
+        ? this.market.short_open_interest
+        : this.market.long_open_interest;
+      const receiver_oi = pos.is_long
+        ? this.market.long_open_interest
+        : this.market.short_open_interest;
+      if (receiver_oi <= 0n) {
+        zero_sum_funding = 0n;
+      } else if (payer_oi < receiver_oi) {
+        zero_sum_funding = (funding_fee * payer_oi) / receiver_oi;
+      }
+    }
+
+    const funding_protocol_cut =
+      zero_sum_funding > 0n ? (zero_sum_funding * funding_cut_bps) / BPS : 0n;
+    const effective_funding = zero_sum_funding - funding_protocol_cut;
+
     const health = calcHealth(collateral, pnl, borrow_fee, funding_fee);
-    return { pnl, borrow_fee, funding_fee, health };
+    const effective_health = calcHealth(collateral, pnl, borrow_fee, effective_funding);
+
+    return {
+      pnl,
+      borrow_fee,
+      funding_fee,
+      effective_funding,
+      funding_protocol_cut,
+      health,
+      effective_health,
+    };
   }
 
   isTpTriggered(take_profit: bigint, is_long: boolean): boolean {

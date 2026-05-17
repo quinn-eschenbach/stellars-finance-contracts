@@ -148,6 +148,63 @@ describe("MarketTick.evaluate", () => {
     const e = tick.evaluate(pos);
     expect(e.funding_fee).toBeLessThan(0n);
   });
+
+  it("payer-side funding passes through to effective_funding", () => {
+    const market = {
+      ...baseMarket,
+      acc_funding_index: INDEX_PRECISION / 100n,
+      long_open_interest: pos.size,
+      short_open_interest: 0n,
+    };
+    const tick = new MarketTick(market, 100n * PRECISION);
+    const e = tick.evaluate(pos, undefined, 500n);
+    expect(e.funding_fee).toBeLessThan(0n);
+    expect(e.funding_protocol_cut).toBe(0n);
+    expect(e.effective_funding).toBe(e.funding_fee);
+    expect(e.effective_health).toBe(e.health);
+  });
+
+  it("receiver-side funding is zero-sum-capped when payer_oi < receiver_oi", () => {
+    const shortPos: PositionState = { ...pos, is_long: false };
+    const market = {
+      ...baseMarket,
+      acc_funding_index: INDEX_PRECISION / 100n,
+      long_open_interest: pos.size / 4n,
+      short_open_interest: pos.size,
+    };
+    const tick = new MarketTick(market, 100n * PRECISION);
+    const e = tick.evaluate(shortPos, undefined, 0n);
+    expect(e.funding_fee).toBeGreaterThan(0n);
+    expect(e.effective_funding).toBe(e.funding_fee / 4n);
+  });
+
+  it("receiver-side funding takes the protocol cut after zero-sum scaling", () => {
+    const shortPos: PositionState = { ...pos, is_long: false };
+    const market = {
+      ...baseMarket,
+      acc_funding_index: INDEX_PRECISION / 100n,
+      long_open_interest: pos.size,
+      short_open_interest: pos.size,
+    };
+    const tick = new MarketTick(market, 100n * PRECISION);
+    const e = tick.evaluate(shortPos, undefined, 1000n);
+    expect(e.funding_protocol_cut).toBe(e.funding_fee / 10n);
+    expect(e.effective_funding).toBe(e.funding_fee - e.funding_protocol_cut);
+  });
+
+  it("receiver with zero opposing OI gets nothing", () => {
+    const shortPos: PositionState = { ...pos, is_long: false };
+    const market = {
+      ...baseMarket,
+      acc_funding_index: INDEX_PRECISION / 100n,
+      long_open_interest: 0n,
+      short_open_interest: pos.size,
+    };
+    const tick = new MarketTick(market, 100n * PRECISION);
+    const e = tick.evaluate(shortPos);
+    expect(e.funding_fee).toBeGreaterThan(0n);
+    expect(e.effective_funding).toBe(0n);
+  });
 });
 
 describe("MarketTick.isTpTriggered / isSlTriggered", () => {

@@ -10,7 +10,7 @@ import { positionManager } from "@/contracts/clients";
 import { useTxMutation } from "@/contracts/useTxMutation";
 import { formatPrice, parsePrice, cn } from "@/lib/utils";
 import { type MarketTick, calcUnrealizedPnl } from "@stellars/protocol-math";
-import { queryKeys } from "@/api/hooks";
+import { queryKeys, useProtocolConfig } from "@/api/hooks";
 import type { PositionRow as PositionRowData } from "@/api/types";
 
 interface PositionRowProps {
@@ -32,6 +32,7 @@ interface PositionRowProps {
 export function PositionRow({ position, markPrice, tick, readOnly = false }: PositionRowProps) {
   const address = useAddress();
   const [editing, setEditing] = useState(false);
+  const fundingCutBps = BigInt(useProtocolConfig().data?.funding_cut_bps ?? 0);
 
   const close = useTxMutation({
     action: `Close ${position.is_long ? "long" : "short"} ${position.symbol}`,
@@ -52,14 +53,18 @@ export function PositionRow({ position, markPrice, tick, readOnly = false }: Pos
   });
 
   const evaluation = tick
-    ? tick.evaluate({
-        is_long: position.is_long,
-        size: BigInt(position.size),
-        collateral: BigInt(position.collateral),
-        entry_price: BigInt(position.entry_price),
-        entry_borrow_index: BigInt(position.entry_borrow_index),
-        entry_funding_index: BigInt(position.entry_funding_index),
-      })
+    ? tick.evaluate(
+        {
+          is_long: position.is_long,
+          size: BigInt(position.size),
+          collateral: BigInt(position.collateral),
+          entry_price: BigInt(position.entry_price),
+          entry_borrow_index: BigInt(position.entry_borrow_index),
+          entry_funding_index: BigInt(position.entry_funding_index),
+        },
+        undefined,
+        fundingCutBps,
+      )
     : null;
 
   const pnl =
@@ -153,14 +158,14 @@ export function PositionRow({ position, markPrice, tick, readOnly = false }: Pos
             <span
               className={cn(
                 "tabular-nums",
-                evaluation.funding_fee > 0n
+                evaluation.effective_funding > 0n
                   ? "text-bull"
-                  : evaluation.funding_fee < 0n
+                  : evaluation.effective_funding < 0n
                     ? "text-bear"
                     : "text-foreground/90",
               )}
             >
-              <NumberFlowUsd value={evaluation.funding_fee} signDisplay="exceptZero" />
+              <NumberFlowUsd value={evaluation.effective_funding} signDisplay="exceptZero" />
             </span>
           </span>
           <span className="flex items-baseline gap-1.5">
@@ -168,14 +173,14 @@ export function PositionRow({ position, markPrice, tick, readOnly = false }: Pos
             <span
               className={cn(
                 "tabular-nums",
-                evaluation.health > BigInt(position.collateral) / 2n
+                evaluation.effective_health > BigInt(position.collateral) / 2n
                   ? "text-bull"
-                  : evaluation.health > 0n
+                  : evaluation.effective_health > 0n
                     ? "text-foreground/90"
                     : "text-bear",
               )}
             >
-              <NumberFlowUsd value={evaluation.health} />
+              <NumberFlowUsd value={evaluation.effective_health} />
             </span>
           </span>
         </div>

@@ -70,6 +70,11 @@ function scanLiquidationCandidates(
     world.protocolConfig?.liquidation_threshold_bps ?? config.liquidationSafetyMarginBps,
   );
 
+  // The on-chain liquidation gate compares `effective_health` (post zero-sum
+  // funding cap + protocol funding cut) against the threshold; off-chain
+  // must use the same value.
+  const fundingCutBps = BigInt(world.protocolConfig?.funding_cut_bps ?? 0);
+
   const candidates: LiquidationCandidate[] = [];
   for (const pos of world.positions) {
     const tick = world.ticks.get(pos.symbol);
@@ -77,10 +82,10 @@ function scanLiquidationCandidates(
 
     const collateral = toBigInt(pos.collateral);
     const threshold = (collateral * thresholdBps) / BPS;
-    const { health } = tick.evaluate(toPositionState(pos));
-    if (health >= threshold) continue;
+    const { effective_health } = tick.evaluate(toPositionState(pos), undefined, fundingCutBps);
+    if (effective_health >= threshold) continue;
 
-    candidates.push({ pos, health });
+    candidates.push({ pos, health: effective_health });
   }
 
   // Worst-health-first so we minimise cumulative bad debt during cascades.

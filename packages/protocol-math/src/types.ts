@@ -35,8 +35,20 @@ export interface BorrowRateConfig {
 export interface PositionEvaluation {
   pnl: bigint;
   borrow_fee: bigint;
+  /** Raw direction-corrected funding accrual. Display-only — settlement and
+   *  the liquidation gate use `effective_funding`. */
   funding_fee: bigint;
+  /** `funding_fee` after zero-sum scaling (`min(payer_oi, receiver_oi) /
+   *  receiver_oi`) and the protocol funding cut. Matches the value the
+   *  contract moves between accounts. */
+  effective_funding: bigint;
+  /** Protocol slice of positive funding accruals (zero when paying). */
+  funding_protocol_cut: bigint;
+  /** Display-only raw health using `funding_fee`. */
   health: bigint;
+  /** Health using `effective_funding`. The on-chain liquidation gate
+   *  compares this against the threshold — off-chain gates must too. */
+  effective_health: bigint;
 }
 
 /** Optional slice — defaults to (size, collateral) of the whole Position. */
