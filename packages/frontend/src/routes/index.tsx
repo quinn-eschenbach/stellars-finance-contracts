@@ -36,7 +36,11 @@ function Landing() {
       <Hero priceBySymbol={priceBySymbol} />
 
       <StatsStrip
-        tvl={vault.data?.total_assets}
+        tvl={
+          vault.data
+            ? (BigInt(vault.data.free_liquidity) + BigInt(vault.data.reserved_usdc)).toString()
+            : undefined
+        }
         openInterest={totalOi.toString()}
         marketCount={markets.data?.length ?? 0}
       />

@@ -15,6 +15,14 @@ function VaultPage() {
   const profitability = useVaultProfitability(30);
   useStreamVault();
 
+  // LP-claimable total. `total_assets` on the contract also carries pending
+  // dev/staker `unclaimed_fees` and outstanding trader PnL liability, so it
+  // overstates what LPs own; `free_liquidity + reserved_usdc` is the LP NAV
+  // that share value tracks against.
+  const lpTotal = vault.data
+    ? (BigInt(vault.data.free_liquidity) + BigInt(vault.data.reserved_usdc)).toString()
+    : null;
+
   // 30d total = trading + fees. Both are bigints (× 10^7). Render the sum
   // as the headline number with the breakdown below it.
   const profitTotal = profitability.data
@@ -46,11 +54,11 @@ function VaultPage() {
       </header>
 
       {/* Big TVL hero strip */}
-      {vault.data && (
+      {vault.data && lpTotal !== null && (
         <div className="grid gap-3 md:grid-cols-3">
           <HeroStat
             label="Total assets"
-            value={<NumberFlowUsd value={vault.data.total_assets} decimals={0} />}
+            value={<NumberFlowUsd value={lpTotal} decimals={0} />}
             emphasis
           />
           <HeroStat
@@ -70,12 +78,12 @@ function VaultPage() {
             <CardTitle>Vault state</CardTitle>
           </CardHeader>
           <CardContent>
-            {vault.data && (
+            {vault.data && lpTotal !== null && (
               <div className="space-y-7">
                 {/* Holdings group: TVL as the headline, idle/active as sub-rows */}
                 <StatGroup
                   label="Total assets"
-                  value={<NumberFlowUsd value={vault.data.total_assets} decimals={2} />}
+                  value={<NumberFlowUsd value={lpTotal} decimals={2} />}
                   breakdown={[
                     {
                       label: "Idle funds",

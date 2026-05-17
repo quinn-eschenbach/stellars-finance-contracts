@@ -23,6 +23,11 @@ function InsightsPage() {
   const totalOi = totalLongOi + totalShortOi;
   const totalMarketPnl = sumScaled(marketRows.map((m) => m.market_unrealized_pnl));
 
+  // LP-claimable total — see vault.tsx for why this isn't `total_assets`.
+  const lpTotal = vault.data
+    ? (BigInt(vault.data.free_liquidity) + BigInt(vault.data.reserved_usdc)).toString()
+    : null;
+
   const priceBySymbol = new Map((prices.data ?? []).map((p) => [p.symbol, p.price]));
 
   return (
@@ -54,9 +59,7 @@ function InsightsPage() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Kpi
             label="TVL (vault assets)"
-            value={
-              vault.data ? <NumberFlowUsd value={vault.data.total_assets} decimals={0} /> : "—"
-            }
+            value={lpTotal !== null ? <NumberFlowUsd value={lpTotal} decimals={0} /> : "—"}
             tone="default"
           />
           <Kpi
@@ -222,9 +225,7 @@ function InsightsPage() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Kpi
             label="Total assets"
-            value={
-              vault.data ? <NumberFlowUsd value={vault.data.total_assets} decimals={2} /> : "—"
-            }
+            value={lpTotal !== null ? <NumberFlowUsd value={lpTotal} decimals={2} /> : "—"}
           />
           <Kpi
             label="Active funds (margin)"
