@@ -78,48 +78,62 @@ export function buildRestRoutes(db: QueryRunner): Hono {
   /**
    * GET /vault/profitability?days=30
    *
-   * LP-side rolling-window profitability — what the underwriting pool has
-   * actually earned. Two scoped lines:
-   *   - `lp_net_from_trades` = SUM(-pnl) over closing events. Positive when
-   *     traders lost more than they won.
-   *   - `lp_net_from_fees`   = SUM(borrow_fee + funding_fee) * lp_bps/10_000
-   *     over closing events. The LP share of the fee pool — the other split
-   *     (keeper + dev) is accrued separately and does not show up here.
+   * LP-side rolling-window profitability:
+   *   - `lp_net_from_trades` = SUM(-pnl) over closing trade events.
+   *   - `lp_net_from_fees`   derived from `fee_events.accrue` (the dev+staker
+   *     slice) — the LP slice stays implicitly in `total_assets` with no
+   *     event. Algebra:
+   *       lp_net_from_fees = sum_of_accruals × lp_bps / (dev_bps + staker_bps)
+   *     Returns 0 when `dev_bps + staker_bps == 0` (no accrual fires on
+   *     chain in that config).
    *
-   * `days` is clamped to 1..365 — 30 by default to match the "monthly"
-   * intuition the marketing copy uses on /insights and /vault.
+   * `days` is clamped to 1..365 (default 30).
    */
   r.get("/vault/profitability", async (c) => {
     const daysRaw = Number(c.req.query("days") ?? 30);
     const days = Math.min(Math.max(1, Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 30), 365);
 
     const cfg = await db
-      .select({ lp_bps: protocolConfig.lp_bps })
+      .select({
+        lp_bps: protocolConfig.lp_bps,
+        dev_bps: protocolConfig.dev_bps,
+        staker_bps: protocolConfig.staker_bps,
+      })
       .from(protocolConfig)
       .where(eq(protocolConfig.id, 1))
       .limit(1);
     const lpBps = cfg[0]?.lp_bps ?? 0;
+    const devBps = cfg[0]?.dev_bps ?? 0;
+    const stakerBps = cfg[0]?.staker_bps ?? 0;
 
     const rows = await db.execute(sql`
+      WITH window_trades AS (
+        SELECT COALESCE(SUM(-pnl::numeric), 0)::text AS lp_net_from_trades
+        FROM trades
+        WHERE event_type <> 'increase'
+          AND created_at > now() - (${days}::text || ' days')::interval
+      ),
+      window_accruals AS (
+        SELECT COALESCE(SUM(amount::numeric), 0)::text AS total_accrued
+        FROM fee_events
+        WHERE event_type = 'accrue'
+          AND created_at > now() - (${days}::text || ' days')::interval
+      )
       SELECT
-        COALESCE(SUM(-pnl::numeric), 0)::text AS lp_net_from_trades,
-        COALESCE(SUM(borrow_fee::numeric + funding_fee::numeric), 0)::text AS total_fees_charged
-      FROM trades
-      WHERE event_type <> 'increase'
-        AND created_at > now() - (${days}::text || ' days')::interval
+        (SELECT lp_net_from_trades FROM window_trades) AS lp_net_from_trades,
+        (SELECT total_accrued FROM window_accruals) AS total_accrued
     `);
 
-    type Row = { lp_net_from_trades: string; total_fees_charged: string };
+    type Row = { lp_net_from_trades: string; total_accrued: string };
     const row = (rows.rows[0] as Row | undefined) ?? {
       lp_net_from_trades: "0",
-      total_fees_charged: "0",
+      total_accrued: "0",
     };
 
-    // Apply the LP cut in JS using BigInt to avoid drift on the i128-scale
-    // numbers. trades.borrow_fee/funding_fee are i128 stored as numeric, but
-    // the values we sum will always be exact integers at this scale.
-    const totalFees = BigInt(row.total_fees_charged);
-    const lpNetFromFees = (totalFees * BigInt(lpBps)) / 10_000n;
+    const nonLpBps = BigInt(devBps + stakerBps);
+    const totalAccrued = BigInt(row.total_accrued);
+    const lpNetFromFees =
+      nonLpBps > 0n ? (totalAccrued * BigInt(lpBps)) / nonLpBps : 0n;
 
     return c.json({
       window_days: days,

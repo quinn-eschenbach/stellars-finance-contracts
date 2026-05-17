@@ -204,11 +204,12 @@ describe("GET /config", () => {
 });
 
 describe("GET /vault/profitability", () => {
-  it("defaults to a 30-day window, applies lp_bps to fees, and stringifies the result", async () => {
+  it("derives lp_net_from_fees from accruals × lp_bps / (dev_bps + staker_bps)", async () => {
     const db = new FakeDb();
-    db.enqueueSelect([{ lp_bps: 9000 }]);
+    db.enqueueSelect([{ lp_bps: 9000, dev_bps: 1000, staker_bps: 0 }]);
+    // 1_000_000 × 9000 / 1000 = 9_000_000.
     db.enqueueExecute([
-      { lp_net_from_trades: "100000000", total_fees_charged: "20000000" },
+      { lp_net_from_trades: "100000000", total_accrued: "1000000" },
     ]);
 
     const res = await makeApp(db).request("/vault/profitability");
@@ -216,26 +217,25 @@ describe("GET /vault/profitability", () => {
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.window_days).toBe(30);
     expect(body.lp_net_from_trades).toBe("100000000");
-    // 20_000_000 * 9000 / 10_000 = 18_000_000
-    expect(body.lp_net_from_fees).toBe("18000000");
+    expect(body.lp_net_from_fees).toBe("9000000");
     expect(body.lp_bps).toBe(9000);
     expect(typeof body.as_of).toBe("string");
   });
 
   it("clamps days to [1, 365] and accepts the query param", async () => {
     const db = new FakeDb();
-    db.enqueueSelect([{ lp_bps: 1000 }]);
-    db.enqueueExecute([{ lp_net_from_trades: "0", total_fees_charged: "0" }]);
+    db.enqueueSelect([{ lp_bps: 1000, dev_bps: 9000, staker_bps: 0 }]);
+    db.enqueueExecute([{ lp_net_from_trades: "0", total_accrued: "0" }]);
     const res = await makeApp(db).request("/vault/profitability?days=9999");
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.window_days).toBe(365);
   });
 
-  it("treats missing config lp_bps as 0 (zero LP share, no panic)", async () => {
+  it("treats a missing config row as zero splits", async () => {
     const db = new FakeDb();
     db.enqueueSelect([]);
     db.enqueueExecute([
-      { lp_net_from_trades: "500", total_fees_charged: "1000" },
+      { lp_net_from_trades: "500", total_accrued: "1000" },
     ]);
 
     const res = await makeApp(db).request("/vault/profitability");
@@ -245,9 +245,20 @@ describe("GET /vault/profitability", () => {
     expect(body.lp_net_from_trades).toBe("500");
   });
 
-  it("falls back to zeros when the trades aggregate returns no row", async () => {
+  it("returns 0 fee revenue when dev_bps + staker_bps == 0", async () => {
     const db = new FakeDb();
-    db.enqueueSelect([{ lp_bps: 9000 }]);
+    db.enqueueSelect([{ lp_bps: 10000, dev_bps: 0, staker_bps: 0 }]);
+    db.enqueueExecute([{ lp_net_from_trades: "42", total_accrued: "0" }]);
+
+    const res = await makeApp(db).request("/vault/profitability");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.lp_net_from_trades).toBe("42");
+    expect(body.lp_net_from_fees).toBe("0");
+  });
+
+  it("falls back to zeros when the aggregate query returns no row", async () => {
+    const db = new FakeDb();
+    db.enqueueSelect([{ lp_bps: 9000, dev_bps: 1000, staker_bps: 0 }]);
     db.enqueueExecute([]);
 
     const res = await makeApp(db).request("/vault/profitability");
