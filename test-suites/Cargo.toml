@@ -75,6 +75,10 @@ path = "integration/settlement_and_boundaries.rs"
 name = "test_fee_distribution"
 path = "integration/test_fee_distribution.rs"
 
+[[test]]
+name = "pnl_settlement_invariants"
+path = "integration/pnl_settlement_invariants.rs"
+
 # ---------------------------------------------------------------------------
 # Fuzz / property-based tests
 # ---------------------------------------------------------------------------
