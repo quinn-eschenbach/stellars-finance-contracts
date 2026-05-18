@@ -79,14 +79,12 @@ fn test_adl_triggers_via_pnl_ratio() {
     // Push fresh unrealized PnL into storage so the deleverage_position trigger
     // sees the post-pump combined PnL (the MarketTick refresh does not push
     // PnL — that responsibility lives in the trade paths and `update_indices`).
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     // ADL the smaller position. Its PnL is positive (AdlTargetNotProfitable
     // gate clears) and the global pnl-route trigger condition holds.
     let balance_before_adl = f.usdc.balance(&trader);
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
 
     // The trader's position is fully closed; only trader_b's OI remains.
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -145,8 +143,7 @@ fn test_adl_triggers_via_utilization() {
     f.set_btc_price(50_100);
 
     // utilization = 400k / 1M = 4000 bps > 3000 → ADL should trigger
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0, "ADL via utilization must close position");
@@ -193,8 +190,7 @@ fn test_adl_payout_zero_when_health_negative() {
     f.set_btc_price(42_500);
 
     // Should panic with AdlTargetNotProfitable (#17)
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +238,7 @@ fn test_adl_reduces_oi() {
     f.set_btc_price(50_100);
 
     // ADL the long position (utilization > 30%)
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader_a, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader_a, &symbol_short!("BTC"));
 
     let market_after = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(
@@ -301,17 +296,14 @@ fn test_adl_cascade_multiple_positions() {
 
     // Total utilization = 600k / 1M = 60% > 20% threshold
     // ADL all three sequentially
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader_a, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader_a, &symbol_short!("BTC"));
 
     // After first ADL, utilization = 400k/1M = 40% > 20%, still triggers
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader_b, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader_b, &symbol_short!("BTC"));
 
     // After second ADL, utilization = 200k/1M = 20% <= 20%, should NOT trigger
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .deleverage_position(&f.keeper, &trader_c, &symbol_short!("BTC"));
+        f.deleverage_position(&f.keeper, &trader_c, &symbol_short!("BTC"));
     }));
     assert!(
         result.is_err(),
@@ -366,8 +358,7 @@ fn test_adl_short_position() {
     let balance_before = f.usdc.balance(&trader);
 
     // util = 400k/1M = 40% > 30% → triggers ADL
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.short_open_interest, 0, "ADL must close short position");

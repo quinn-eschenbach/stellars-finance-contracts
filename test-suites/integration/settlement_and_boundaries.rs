@@ -27,22 +27,19 @@ fn test_partial_close_fee_proportional() {
     // Advance 24h and update indices to accrue borrow fees
     f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let balance_before_first_close = f.usdc.balance(&f.trader);
 
     // Close 50%
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
 
     let returned_first = f.usdc.balance(&f.trader) - balance_before_first_close;
 
     let balance_before_second_close = f.usdc.balance(&f.trader);
 
     // Close remaining 50%
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
 
     let returned_second = f.usdc.balance(&f.trader) - balance_before_second_close;
 
@@ -144,11 +141,9 @@ fn test_free_liquidity_formula_all_components() {
     // Close at profit to generate close-time fees and positive net_pnl.
     f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(55_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
-    f.position_manager
-        .decrease_position(&trader_a, &symbol_short!("BTC"), &(200_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&trader_a, &symbol_short!("BTC"), &(200_000 * USDC_UNIT), &0_i128);
 
     // Now: reserved=0, unclaimed_fees > 0 (close fees), net_pnl > 0 (realized profit).
     let free_after_close = f.vault.free_liquidity();
@@ -180,14 +175,12 @@ fn test_index_update_same_block_noop() {
     // Advance and update once
     f.advance_time(TEST_TIMESTAMP + 3600);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let market_first = f.position_manager.get_market(&symbol_short!("BTC"));
 
     // Update again at the same timestamp — should be a no-op
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let market_second = f.position_manager.get_market(&symbol_short!("BTC"));
 
@@ -220,8 +213,7 @@ fn test_min_lifetime_exact_boundary_passes() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME);
     f.set_btc_price(50_000);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(
@@ -246,8 +238,7 @@ fn test_min_lifetime_one_second_before_fails() {
     f.set_btc_price(50_000);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
+        f.decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
     }));
     assert!(
         result.is_err(),
@@ -276,7 +267,7 @@ fn test_multiple_increases_reaverage_entry_price() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(60_000);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -302,7 +293,7 @@ fn test_multiple_increases_reaverage_entry_price() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 200);
     f.set_btc_price(40_000);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -343,13 +334,11 @@ fn test_funding_fee_improves_short_health() {
     // Advance 7 days to accrue significant funding
     f.advance_time(TEST_TIMESTAMP + 7 * 86_400);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     // Close short at same price — PnL = 0 but funding should help short
     let balance_before = f.usdc.balance(&short_trader);
-    f.position_manager
-        .decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT), &0_i128);
 
     let returned = f.usdc.balance(&short_trader) - balance_before;
 
@@ -382,16 +371,14 @@ fn test_funding_fee_protocol_cut_accrued() {
     // Advance 7 days for significant funding accrual
     f.advance_time(TEST_TIMESTAMP + 7 * 86_400);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     // Close the short (short receives funding → protocol takes a cut)
-    f.position_manager
-        .decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&short_trader, &symbol_short!("BTC"), &(50_000 * USDC_UNIT), &0_i128);
 
     // Admin claims fees — should include borrow fees + funding fee protocol cut
     let admin_balance_before = f.usdc.balance(&f.admin);
-    f.vault.claim_fees(&f.admin, &f.admin);
+    f.claim_fees(&f.admin, &f.admin);
 
     let claimed = f.usdc.balance(&f.admin) - admin_balance_before;
     assert!(
@@ -472,8 +459,7 @@ fn test_entry_indices_reaverage_on_increase() {
     // Advance 24h and update indices
     f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     let updated_borrow_idx = market.acc_borrow_index;
@@ -483,7 +469,7 @@ fn test_entry_indices_reaverage_on_increase() {
     );
 
     // Increase position — entry_borrow_index should be re-averaged
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -529,8 +515,7 @@ fn test_profit_settlement_vault_pays_trader() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(60_000);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let trader_returned = f.usdc.balance(&f.trader) - trader_bal_after_open;
     let vault_total_after = f.vault.total_assets();
@@ -570,8 +555,7 @@ fn test_loss_settlement_vault_absorbs_margin() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(47_500);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let vault_total_after = f.vault.total_assets();
 

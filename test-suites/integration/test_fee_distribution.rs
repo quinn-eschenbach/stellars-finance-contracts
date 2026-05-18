@@ -46,13 +46,11 @@ fn test_user_close_no_keeper_share() {
 
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     f.advance_time(TEST_TIMESTAMP + 3_600 + MIN_POSITION_LIFETIME + 1);
     f.set_btc_price(50_000);
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // Keeper balance unchanged: keepers no longer get a slice of revenue fees,
     // and there is no bounty path on user close.
@@ -64,7 +62,7 @@ fn test_user_close_no_keeper_share() {
 
     // Dev share (open_fee_bps non-LP slice + close-time non-LP slice) must be claimable.
     let recipient = Address::generate(&env);
-    f.vault.claim_fees(&f.admin, &recipient);
+    f.claim_fees(&f.admin, &recipient);
     let dev_claimed = f.usdc.balance(&recipient);
     assert!(
         dev_claimed > 0,
@@ -89,7 +87,7 @@ fn test_tp_sl_keeper_gets_share() {
     let size = 50_000 * USDC_UNIT;
     let collateral = 5_000 * USDC_UNIT;
     let tp_price: i128 = 55_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -113,8 +111,7 @@ fn test_tp_sl_keeper_gets_share() {
     f.set_btc_price(56_000); // above TP triggers
 
     // Permissionless executor (no KEEPER role) calls execute_order.
-    f.position_manager
-        .execute_order(&executor, &f.trader, &symbol_short!("BTC"));
+    f.execute_order(&executor, &f.trader, &symbol_short!("BTC"));
 
     // Executor must receive the escrowed tp_sl_execution_fee (flat amount).
     let executor_balance_after = f.usdc.balance(&executor);
@@ -147,8 +144,7 @@ fn test_liquidation_keeper_gets_share() {
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(44_000); // crash, position liquidatable
 
-    f.position_manager
-        .liquidate_position(&liquidator, &f.trader, &symbol_short!("BTC"));
+    f.liquidate(&liquidator, &f.trader, &symbol_short!("BTC"));
 
     // Bounty = collateral * liquidation_bounty_bps / BPS. pm_to_vault on this
     // crash exceeds the bounty, so the clamp does not bind.
@@ -205,8 +201,7 @@ fn test_adl_no_keeper_share() {
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(50_100);
 
-    f.position_manager
-        .deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.deleverage_position(&f.keeper, &trader, &symbol_short!("BTC"));
 
     // Keeper balance unchanged: ADL pays no bounty and there is no TP/SL
     // escrow on this position (none was set).
@@ -218,7 +213,7 @@ fn test_adl_no_keeper_share() {
 
     // Dev share still accrues from open_fee + close-time fees.
     let recipient = Address::generate(&env);
-    f.vault.claim_fees(&f.admin, &recipient);
+    f.claim_fees(&f.admin, &recipient);
     let dev_claimed = f.usdc.balance(&recipient);
     assert!(
         dev_claimed > 0,
@@ -242,14 +237,12 @@ fn test_admin_claims_dev_fees() {
 
     f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let recipient = Address::generate(&env);
     let recipient_balance_before = f.usdc.balance(&recipient);
-    f.vault.claim_fees(&f.admin, &recipient);
+    f.claim_fees(&f.admin, &recipient);
 
     let dev_claimed = f.usdc.balance(&recipient) - recipient_balance_before;
     assert!(
@@ -274,7 +267,7 @@ fn test_admin_claims_dev_fees() {
 
     // Second claim must panic — unclaimed_fees was zeroed.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.vault.claim_fees(&f.admin, &recipient);
+        f.claim_fees(&f.admin, &recipient);
     }));
     assert!(
         result.is_err(),
@@ -313,8 +306,7 @@ fn test_zero_fees_no_distribution() {
 
     let trader_balance_before_close = f.usdc.balance(&f.trader);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let keeper_balance_after = f.usdc.balance(&f.keeper);
     assert_eq!(
@@ -353,7 +345,7 @@ fn test_fee_split_bps_precision() {
     // `total_assets - total_assets_before` is the LP residue from the open fee
     // alone (no close-time fees have fired and no PnL has settled).
     let dev_recipient = Address::generate(&env);
-    f.vault.claim_fees(&f.admin, &dev_recipient);
+    f.claim_fees(&f.admin, &dev_recipient);
     let dev_claimed = f.usdc.balance(&dev_recipient);
 
     assert!(
@@ -404,23 +396,19 @@ fn test_multiple_closes_accumulate_dev_fees() {
 
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
-    f.position_manager
-        .decrease_position(&trader1, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.decrease_position(&trader1, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let trader2 = f.create_funded_trader(10_000 * USDC_UNIT);
     f.open_long(&trader2, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
 
     f.advance_time(TEST_TIMESTAMP + 7_200);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
-    f.position_manager
-        .decrease_position(&trader2, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.decrease_position(&trader2, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let recipient = Address::generate(&env);
-    f.vault.claim_fees(&f.admin, &recipient);
+    f.claim_fees(&f.admin, &recipient);
     let total_dev_claimed = f.usdc.balance(&recipient);
 
     assert!(
@@ -442,14 +430,12 @@ fn test_non_admin_cannot_claim_dev_fees() {
     f.open_long(&f.trader, 20_000 * USDC_UNIT, 2_000 * USDC_UNIT);
     f.advance_time(TEST_TIMESTAMP + 3_600 + MIN_POSITION_LIFETIME + 1);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let random = Address::generate(&env);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.vault.claim_fees(&random, &random);
+        f.claim_fees(&random, &random);
     }));
     assert!(
         result.is_err(),
@@ -474,13 +460,11 @@ fn test_lp_share_stays_in_vault_pool() {
 
     f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let recipient = Address::generate(&env);
-    f.vault.claim_fees(&f.admin, &recipient);
+    f.claim_fees(&f.admin, &recipient);
     let dev_claimed = f.usdc.balance(&recipient);
 
     // FeeSplits has no keeper field — only lp / dev / staker.
@@ -537,8 +521,7 @@ fn test_liquidation_bounty_zero_bps_pays_nothing() {
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(44_000);
 
-    f.position_manager
-        .liquidate_position(&liquidator, &f.trader, &symbol_short!("BTC"));
+    f.liquidate(&liquidator, &f.trader, &symbol_short!("BTC"));
 
     let liq_balance_after = f.usdc.balance(&liquidator);
     assert_eq!(
@@ -564,7 +547,7 @@ fn test_tp_sl_escrow_refunded_on_full_user_close() {
 
     let trader_balance_before_open = f.usdc.balance(&f.trader);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -588,8 +571,7 @@ fn test_tp_sl_escrow_refunded_on_full_user_close() {
     // Close at flat price (PnL=0) after min_lifetime.
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(50_000);
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // Trader must receive: collateral (minus minor borrow fee for 70s) + escrow refund.
     let trader_after_close = f.usdc.balance(&f.trader);
@@ -623,7 +605,7 @@ fn test_tp_sl_escrow_forfeited_on_liquidation() {
     let collateral = 2_000 * USDC_UNIT;
     let tp_price: i128 = 60_000 * PRECISION;
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -650,8 +632,7 @@ fn test_tp_sl_escrow_forfeited_on_liquidation() {
     f.advance_time(TEST_TIMESTAMP + 3_600);
     f.set_btc_price(44_000); // crash
 
-    f.position_manager
-        .liquidate_position(&liquidator, &f.trader, &symbol_short!("BTC"));
+    f.liquidate(&liquidator, &f.trader, &symbol_short!("BTC"));
 
     // Trader gets NO escrow refund on liquidation.
     let trader_balance_post = f.usdc.balance(&f.trader);

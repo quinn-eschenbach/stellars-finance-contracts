@@ -429,6 +429,23 @@ impl VaultContract {
         vault_storage::get_reserved_usdc(&env)
     }
 
+    /// Accrued non-LP revenue awaiting `claim_fees` / `claim_fees_to`. Exposed
+    /// so tests can reconcile counter movement against token-side transfers
+    /// without inferring via subtraction.
+    pub fn unclaimed_fees(env: Env) -> i128 {
+        vault_logic::require_initialized(&env);
+        vault_storage::get_unclaimed_fees(&env)
+    }
+
+    /// Net unrealized PnL across all open trader positions, as last synced by
+    /// PM via `update_net_pnl`. Realized PnL is intentionally NOT included —
+    /// it has already moved physically through `pay_profit` /
+    /// `record_absorbed_collateral` and is reflected directly in `total_assets`.
+    pub fn net_global_trader_pnl(env: Env) -> i128 {
+        vault_logic::require_initialized(&env);
+        vault_storage::get_net_global_trader_pnl(&env)
+    }
+
     /// Returns the unix timestamp at which `user` may next withdraw/redeem.
     /// Returns 0 if `user` has never deposited (no lockup recorded).
     pub fn lockup_expires_at(env: Env, user: Address) -> u64 {

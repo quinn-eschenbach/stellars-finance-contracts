@@ -25,3 +25,4 @@ packages/frontend/test-results/
 packages/frontend/playwright-report/
 
 .DS_Store
+MUTATION_REPORT.md

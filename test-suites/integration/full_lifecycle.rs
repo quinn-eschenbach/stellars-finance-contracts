@@ -27,14 +27,14 @@ fn test_full_lifecycle_trader_profits_lp_absorbs_loss() {
     f.usdc.mint(&lp, &deposit);
 
     // LP deposits
-    let shares = f.vault.deposit(&deposit, &lp, &lp, &lp);
+    let shares = f.deposit(&deposit, &lp, &lp, &lp);
     assert!(shares > 0, "LP must receive shares");
 
     // --- Trader opens 10x long ---
     let size = 50_000 * USDC_UNIT;
     let collateral = 5_000 * USDC_UNIT;
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -52,8 +52,7 @@ fn test_full_lifecycle_trader_profits_lp_absorbs_loss() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &pump_price);
 
     // Trader closes
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let trader_balance_after_close = f.usdc.balance(&f.trader);
     let trader_pnl = trader_balance_after_close - trader_balance_after_open;
@@ -85,12 +84,12 @@ fn test_full_lifecycle_trader_loses_lp_profits() {
     let lp = Address::generate(&env);
     let deposit = 500_000 * USDC_UNIT;
     f.usdc.mint(&lp, &deposit);
-    f.vault.deposit(&deposit, &lp, &lp, &lp);
+    f.deposit(&deposit, &lp, &lp, &lp);
 
     // Trader opens long
     let size = 50_000 * USDC_UNIT;
     let collateral = 5_000 * USDC_UNIT;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -105,8 +104,7 @@ fn test_full_lifecycle_trader_loses_lp_profits() {
     let drop_price: i128 = 47_500 * PRECISION;
     f.mock_oracle.set_price(&symbol_short!("BTC"), &drop_price);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // LP withdraws — should get more than deposited (trader loss stays in vault)
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 200);
@@ -133,7 +131,7 @@ fn test_full_lifecycle_partial_then_full_close() {
     let size = 20_000 * USDC_UNIT;
     let collateral = 2_000 * USDC_UNIT;
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -148,8 +146,7 @@ fn test_full_lifecycle_partial_then_full_close() {
 
     // Partial close — half the position
     let half = size / 2;
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &half, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &half, &0_i128);
 
     let pos = f
         .position_manager
@@ -160,8 +157,7 @@ fn test_full_lifecycle_partial_then_full_close() {
     assert_eq!(market.long_open_interest, half);
 
     // Full close the remainder
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &half, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &half, &0_i128);
 
     let market_after = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market_after.long_open_interest, 0);
@@ -179,7 +175,7 @@ fn test_full_lifecycle_short_position_profit() {
     let size = 30_000 * USDC_UNIT;
     let collateral = 3_000 * USDC_UNIT;
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -196,8 +192,7 @@ fn test_full_lifecycle_short_position_profit() {
     let drop_price: i128 = 46_000 * PRECISION;
     f.mock_oracle.set_price(&symbol_short!("BTC"), &drop_price);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let received = balance_after_close - balance_after_open;

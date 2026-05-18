@@ -79,6 +79,14 @@ path = "integration/test_fee_distribution.rs"
 name = "pnl_settlement_invariants"
 path = "integration/pnl_settlement_invariants.rs"
 
+[[test]]
+name = "drift_pairs"
+path = "integration/drift_pairs.rs"
+
+[[test]]
+name = "role_enforcement"
+path = "integration/role_enforcement.rs"
+
 # ---------------------------------------------------------------------------
 # Fuzz / property-based tests
 # ---------------------------------------------------------------------------
@@ -90,3 +98,7 @@ path = "fuzz/position_fuzz.rs"
 [[test]]
 name = "vault_fuzz"
 path = "fuzz/vault_fuzz.rs"
+
+[[test]]
+name = "integrated_drift_fuzz"
+path = "fuzz/integrated_drift_fuzz.rs"

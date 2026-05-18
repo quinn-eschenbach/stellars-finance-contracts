@@ -29,7 +29,7 @@ proptest! {
         let deposit = deposit_mult * 1_000 * USDC_UNIT;
         fund_lp(&f, &lp, &deposit);
 
-        let shares = f.vault.deposit(&deposit, &lp, &lp, &lp);
+        let shares = f.deposit(&deposit, &lp, &lp, &lp);
         prop_assert!(shares > 0, "Must receive shares");
 
         // Wait for cooldown
@@ -72,7 +72,7 @@ proptest! {
         for _ in 0..num_lps {
             let lp = Address::generate(&env);
             fund_lp(&f, &lp, &per_deposit);
-            f.vault.deposit(&per_deposit, &lp, &lp, &lp);
+            f.deposit(&per_deposit, &lp, &lp, &lp);
             total_deposited += per_deposit;
         }
 
@@ -110,8 +110,8 @@ proptest! {
         fund_lp(&f, &lp_a, &dep_a);
         fund_lp(&f, &lp_b, &dep_b);
 
-        let shares_a = f.vault.deposit(&dep_a, &lp_a, &lp_a, &lp_a);
-        let shares_b = f.vault.deposit(&dep_b, &lp_b, &lp_b, &lp_b);
+        let shares_a = f.deposit(&dep_a, &lp_a, &lp_a, &lp_a);
+        let shares_b = f.deposit(&dep_b, &lp_b, &lp_b, &lp_b);
 
         // shares_b / shares_a should be ~ratio (within 1% tolerance)
         let actual_ratio_x100 = (shares_b * 100) / shares_a;
@@ -143,7 +143,7 @@ proptest! {
         let lp = Address::generate(&env);
         let deposit = deposit_mult * 1_000 * USDC_UNIT;
         fund_lp(&f, &lp, &deposit);
-        f.vault.deposit(&deposit, &lp, &lp, &lp);
+        f.deposit(&deposit, &lp, &lp, &lp);
 
         let free = f.vault.free_liquidity();
         prop_assert!(free >= 0, "Free liquidity must never be negative: {}", free);

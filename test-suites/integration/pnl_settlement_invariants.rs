@@ -44,8 +44,7 @@ fn test_free_liquidity_after_winning_close_does_not_double_deduct_realized() {
     f.set_btc_price(75_000);
 
     let trader_balance_before = f.usdc.balance(&f.trader);
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
     let trader_balance_after = f.usdc.balance(&f.trader);
 
     let trader_received = trader_balance_after - trader_balance_before;
@@ -105,8 +104,7 @@ fn test_alternating_win_loss_closes_leave_no_pnl_residue() {
     t += MIN_POSITION_LIFETIME + 11;
     f.advance_time(t);
     f.set_btc_price(65_000);
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // Reset price for the next entry. Round 2: trader loses on a long (-20%).
     t += 5;
@@ -116,8 +114,7 @@ fn test_alternating_win_loss_closes_leave_no_pnl_residue() {
     t += MIN_POSITION_LIFETIME + 11;
     f.advance_time(t);
     f.set_btc_price(40_000);
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // Reset, Round 3: trader wins again (+40%).
     t += 5;
@@ -127,8 +124,7 @@ fn test_alternating_win_loss_closes_leave_no_pnl_residue() {
     t += MIN_POSITION_LIFETIME + 11;
     f.advance_time(t);
     f.set_btc_price(70_000);
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let total = f.vault.total_assets();
     let reserved = f.vault.reserved_usdc();
@@ -168,7 +164,7 @@ fn test_partial_then_full_close_at_profit_leaves_no_pnl_residue() {
     f.set_btc_price(70_000); // +40%
 
     // Step 1: partial close — half the position.
-    f.position_manager.decrease_position(
+    f.decrease_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(size / 2),
@@ -178,7 +174,7 @@ fn test_partial_then_full_close_at_profit_leaves_no_pnl_residue() {
     // Step 2: close the rest at the same price.
     f.advance_time(TEST_TIMESTAMP + 2 * MIN_POSITION_LIFETIME + 22);
     f.set_btc_price(70_000);
-    f.position_manager.decrease_position(
+    f.decrease_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(size / 2),

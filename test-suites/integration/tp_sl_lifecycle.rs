@@ -22,7 +22,7 @@ fn test_short_tp_triggered() {
 
     // Short at 50k, TP at 45k (profit when price drops)
     let tp_price: i128 = 45_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -38,8 +38,7 @@ fn test_short_tp_triggered() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(44_000);
 
-    f.position_manager
-        .execute_order(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &trader, &symbol_short!("BTC"));
 
     // Position should be fully closed
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -68,7 +67,7 @@ fn test_short_sl_triggered() {
 
     // Short at 50k, SL at 53k (loss when price rises)
     let sl_price: i128 = 53_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -84,8 +83,7 @@ fn test_short_sl_triggered() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(54_000);
 
-    f.position_manager
-        .execute_order(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.short_open_interest, 0, "Short OI must be zero after SL");
@@ -113,7 +111,7 @@ fn test_long_tp_payout_correct() {
     let collateral = 2_000 * USDC_UNIT;
     let tp_price: i128 = 55_000 * PRECISION; // TP at 55k
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -129,8 +127,7 @@ fn test_long_tp_payout_correct() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(55_000);
 
-    f.position_manager
-        .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
 
     let balance_after = f.usdc.balance(&f.trader);
     let returned = balance_after - balance_after_open;
@@ -164,7 +161,7 @@ fn test_long_sl_payout_correct() {
     let collateral = 5_000 * USDC_UNIT;
     let sl_price: i128 = 45_000 * PRECISION; // SL at 45k
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -180,8 +177,7 @@ fn test_long_sl_payout_correct() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(45_000);
 
-    f.position_manager
-        .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
 
     let balance_after = f.usdc.balance(&f.trader);
     let returned = balance_after - balance_after_open;
@@ -222,8 +218,7 @@ fn test_set_tp_sl_after_open_takes_effect() {
     // Set TP/SL after open
     let tp = 55_000 * PRECISION;
     let sl = 45_000 * PRECISION;
-    f.position_manager
-        .set_tp_sl(&f.trader, &symbol_short!("BTC"), &tp, &sl);
+    f.set_tp_sl(&f.trader, &symbol_short!("BTC"), &tp, &sl);
 
     // Verify stored
     let pos2 = f
@@ -236,8 +231,7 @@ fn test_set_tp_sl_after_open_takes_effect() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(56_000); // above TP
 
-    f.position_manager
-        .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0, "TP set post-open must trigger");
@@ -255,7 +249,7 @@ fn test_set_tp_sl_reset_to_zero() {
     let tp = 55_000 * PRECISION;
     let sl = 45_000 * PRECISION;
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -266,8 +260,7 @@ fn test_set_tp_sl_reset_to_zero() {
     );
 
     // Reset to 0
-    f.position_manager
-        .set_tp_sl(&f.trader, &symbol_short!("BTC"), &0, &0);
+    f.set_tp_sl(&f.trader, &symbol_short!("BTC"), &0, &0);
 
     let pos = f
         .position_manager
@@ -280,8 +273,7 @@ fn test_set_tp_sl_reset_to_zero() {
     f.set_btc_price(56_000);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
+        f.execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
     }));
     assert!(
         result.is_err(),
@@ -299,7 +291,7 @@ fn test_tp_equal_entry_accepted_long() {
     let f = Fixture::deploy(&env);
 
     let tp_at_entry: i128 = 50_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -320,7 +312,7 @@ fn test_tp_equal_entry_accepted_short() {
     let f = Fixture::deploy(&env);
 
     let tp_at_entry: i128 = 50_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -341,7 +333,7 @@ fn test_sl_equal_entry_accepted_long() {
     let f = Fixture::deploy(&env);
 
     let sl_at_entry: i128 = 50_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -362,7 +354,7 @@ fn test_sl_equal_entry_accepted_short() {
     let f = Fixture::deploy(&env);
 
     let sl_at_entry: i128 = 50_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -387,7 +379,7 @@ fn test_short_tp_payout_correct() {
     let collateral = 4_000 * USDC_UNIT;
     let tp_price: i128 = 45_000 * PRECISION;
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &size,
@@ -403,8 +395,7 @@ fn test_short_tp_payout_correct() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(44_000);
 
-    f.position_manager
-        .execute_order(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let balance_after = f.usdc.balance(&trader);
     let returned = balance_after - balance_after_open;
@@ -442,8 +433,7 @@ fn test_set_tp_sl_short_position() {
     // Valid short TP/SL: TP below entry (profit target), SL above entry (stop loss)
     let tp = 45_000 * PRECISION;
     let sl = 55_000 * PRECISION;
-    f.position_manager
-        .set_tp_sl(&trader, &symbol_short!("BTC"), &tp, &sl);
+    f.set_tp_sl(&trader, &symbol_short!("BTC"), &tp, &sl);
 
     let pos = f
         .position_manager
@@ -455,8 +445,7 @@ fn test_set_tp_sl_short_position() {
     // TP/SL to entry-relative direction — trailing/profit-locking workflows
     // depend on this). Verify it persists.
     let aggressive_tp = 55_000 * PRECISION;
-    f.position_manager
-        .set_tp_sl(&trader, &symbol_short!("BTC"), &aggressive_tp, &0);
+    f.set_tp_sl(&trader, &symbol_short!("BTC"), &aggressive_tp, &0);
     let pos2 = f
         .position_manager
         .get_position(&trader, &symbol_short!("BTC"));

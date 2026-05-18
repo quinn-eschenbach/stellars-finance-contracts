@@ -1,3 +1,5 @@
+pub mod invariants;
+
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger, LedgerInfo},
@@ -190,7 +192,8 @@ impl<'a> Fixture<'a> {
         trader
     }
 
-    /// Shorthand: open a long BTC position.
+    /// Shorthand: open a long BTC position. Asserts protocol invariants on
+    /// success — every state-changing wrapper does, see `invariants::assert_protocol_invariants`.
     pub fn open_long(&self, trader: &Address, size: i128, collateral: i128) {
         self.position_manager.increase_position(
             trader,
@@ -199,8 +202,10 @@ impl<'a> Fixture<'a> {
             &collateral,
             &true,
             &0,
-            &0, &0i128
-    );
+            &0,
+            &0i128,
+        );
+        invariants::assert_protocol_invariants(self.env, self, "open_long");
     }
 
     /// Shorthand: open a short BTC position.
@@ -212,17 +217,219 @@ impl<'a> Fixture<'a> {
             &collateral,
             &false,
             &0,
-            &0, &0i128
-    );
+            &0,
+            &0i128,
+        );
+        invariants::assert_protocol_invariants(self.env, self, "open_short");
+    }
+
+    // -----------------------------------------------------------------------
+    // PositionManager wrappers — every state-changing op runs the invariant
+    // check immediately after. Direct calls through `f.position_manager.X(...)`
+    // still work but skip the check; prefer these wrappers.
+    // -----------------------------------------------------------------------
+
+    /// Open a position with full control over `is_long`, TP/SL, and slippage.
+    /// Arguments mirror the soroban client signature (all by reference) so
+    /// callers can `s/f.position_manager.increase_position/f.increase_position/`
+    /// without further changes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn increase_position(
+        &self,
+        trader: &Address,
+        symbol: &Symbol,
+        size: &i128,
+        collateral: &i128,
+        is_long: &bool,
+        take_profit: &i128,
+        stop_loss: &i128,
+        acceptable_price: &i128,
+    ) {
+        self.position_manager.increase_position(
+            trader,
+            symbol,
+            size,
+            collateral,
+            is_long,
+            take_profit,
+            stop_loss,
+            acceptable_price,
+        );
+        invariants::assert_protocol_invariants(self.env, self, "increase_position");
+    }
+
+    /// Reduce or fully close a position.
+    pub fn decrease_position(
+        &self,
+        trader: &Address,
+        symbol: &Symbol,
+        size_delta: &i128,
+        acceptable_price: &i128,
+    ) {
+        self.position_manager.decrease_position(trader, symbol, size_delta, acceptable_price);
+        invariants::assert_protocol_invariants(self.env, self, "decrease_position");
+    }
+
+    /// Force-close an undercollateralized position (KEEPER).
+    pub fn liquidate(&self, caller: &Address, trader: &Address, symbol: &Symbol) {
+        self.position_manager.liquidate_position(caller, trader, symbol);
+        invariants::assert_protocol_invariants(self.env, self, "liquidate");
+    }
+
+    /// Execute a TP/SL order (KEEPER).
+    pub fn execute_order(&self, caller: &Address, trader: &Address, symbol: &Symbol) {
+        self.position_manager.execute_order(caller, trader, symbol);
+        invariants::assert_protocol_invariants(self.env, self, "execute_order");
+    }
+
+    /// Auto-deleverage (KEEPER).
+    pub fn deleverage_position(&self, caller: &Address, trader: &Address, symbol: &Symbol) {
+        self.position_manager.deleverage_position(caller, trader, symbol);
+        invariants::assert_protocol_invariants(self.env, self, "deleverage_position");
+    }
+
+    /// Sync borrow/funding accumulators (KEEPER).
+    pub fn update_indices(&self, caller: &Address, symbol: &Symbol) {
+        self.position_manager.update_indices(caller, symbol);
+        invariants::assert_protocol_invariants(self.env, self, "update_indices");
+    }
+
+    /// Set or clear TP/SL on an existing position.
+    pub fn set_tp_sl(
+        &self,
+        trader: &Address,
+        symbol: &Symbol,
+        take_profit: &i128,
+        stop_loss: &i128,
+    ) {
+        self.position_manager.set_tp_sl(trader, symbol, take_profit, stop_loss);
+        invariants::assert_protocol_invariants(self.env, self, "set_tp_sl");
+    }
+
+    /// Set per-market max leverage (ADMIN).
+    pub fn set_max_leverage(&self, caller: &Address, symbol: &Symbol, max_leverage: &i128) {
+        self.position_manager.set_max_leverage(caller, symbol, max_leverage);
+        invariants::assert_protocol_invariants(self.env, self, "set_max_leverage");
+    }
+
+    /// Pause the position manager (PAUSER).
+    pub fn pause_pm(&self, caller: &Address) {
+        self.position_manager.pause(caller);
+        invariants::assert_protocol_invariants(self.env, self, "pause_pm");
+    }
+
+    /// Unpause the position manager (PAUSER).
+    pub fn unpause_pm(&self, caller: &Address) {
+        self.position_manager.unpause(caller);
+        invariants::assert_protocol_invariants(self.env, self, "unpause_pm");
+    }
+
+    /// Disable a market for opens (PAUSER).
+    pub fn disable_market(&self, caller: &Address, symbol: &Symbol) {
+        self.position_manager.disable_market(caller, symbol);
+        invariants::assert_protocol_invariants(self.env, self, "disable_market");
+    }
+
+    /// Re-enable a previously-disabled market (PAUSER).
+    pub fn enable_market(&self, caller: &Address, symbol: &Symbol) {
+        self.position_manager.enable_market(caller, symbol);
+        invariants::assert_protocol_invariants(self.env, self, "enable_market");
+    }
+
+    // -----------------------------------------------------------------------
+    // Vault wrappers
+    // -----------------------------------------------------------------------
+
+    /// Deposit USDC into the vault and receive LP shares.
+    pub fn deposit(
+        &self,
+        assets: &i128,
+        receiver: &Address,
+        from: &Address,
+        operator: &Address,
+    ) -> i128 {
+        let shares = self.vault.deposit(assets, receiver, from, operator);
+        invariants::assert_protocol_invariants(self.env, self, "deposit");
+        shares
+    }
+
+    /// Withdraw USDC from the vault by burning shares.
+    pub fn withdraw(
+        &self,
+        assets: &i128,
+        receiver: &Address,
+        owner: &Address,
+        operator: &Address,
+    ) -> i128 {
+        let shares = self.vault.withdraw(assets, receiver, owner, operator);
+        invariants::assert_protocol_invariants(self.env, self, "withdraw");
+        shares
+    }
+
+    /// Mint exact shares and pay the corresponding USDC.
+    pub fn mint_vault(
+        &self,
+        shares: &i128,
+        receiver: &Address,
+        from: &Address,
+        operator: &Address,
+    ) -> i128 {
+        let assets = self.vault.mint(shares, receiver, from, operator);
+        invariants::assert_protocol_invariants(self.env, self, "mint_vault");
+        assets
+    }
+
+    /// Redeem exact shares and receive USDC.
+    pub fn redeem(
+        &self,
+        shares: &i128,
+        receiver: &Address,
+        owner: &Address,
+        operator: &Address,
+    ) -> i128 {
+        let assets = self.vault.redeem(shares, receiver, owner, operator);
+        invariants::assert_protocol_invariants(self.env, self, "redeem");
+        assets
+    }
+
+    /// Pause the vault (PAUSER).
+    pub fn pause_vault(&self, caller: &Address) {
+        self.vault.pause(caller);
+        invariants::assert_protocol_invariants(self.env, self, "pause_vault");
+    }
+
+    /// Unpause the vault (PAUSER).
+    pub fn unpause_vault(&self, caller: &Address) {
+        self.vault.unpause(caller);
+        invariants::assert_protocol_invariants(self.env, self, "unpause_vault");
+    }
+
+    /// Claim all accrued fees to `recipient` (ADMIN).
+    pub fn claim_fees(&self, caller: &Address, recipient: &Address) {
+        self.vault.claim_fees(caller, recipient);
+        invariants::assert_protocol_invariants(self.env, self, "claim_fees");
     }
 
     /// Set the BTC oracle price. `price_usd` is in whole dollars (e.g. 50_000).
+    ///
+    /// Oracle price changes do not directly mutate vault/PM state but do
+    /// shift unrealized PnL on the next read. The invariants helper reads
+    /// PM's `total_unrealized_pnl` lazily, so this is a state-change for
+    /// invariant purposes — but we deliberately do NOT assert here, because
+    /// `vault.net_global_trader_pnl` is only refreshed by PM calls
+    /// (`update_indices`, `increase_position`, `decrease_position`, …). The
+    /// drift between `pm.total_unrealized` and `vault.net` is real and
+    /// expected between an oracle move and the next PM call — clause 5 of
+    /// the invariant would (correctly) fire here. Tests that move the
+    /// oracle should follow up with `update_indices` (or any PM op) before
+    /// the next assertion.
     pub fn set_btc_price(&self, price_usd: i128) {
         let scaled = price_usd * 10_000_000;
         self.mock_oracle.set_price(&symbol_short!("BTC"), &scaled);
     }
 
-    /// Advance the ledger timestamp and refresh oracle price.
+    /// Advance the ledger timestamp. Like `set_btc_price`, this is a
+    /// pre-state-change setup step and does not trigger an invariant check.
     pub fn advance_time(&self, new_ts: u64) {
         self.env.ledger().set(LedgerInfo {
             timestamp: new_ts,

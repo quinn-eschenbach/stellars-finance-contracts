@@ -18,7 +18,7 @@ fn test_open_position_zero_size() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &0, // zero size
@@ -35,7 +35,7 @@ fn test_open_position_zero_collateral() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -63,7 +63,7 @@ fn test_open_on_unconfigured_market() {
         &symbol_short!("ETH"),
         &soroban_sdk::vec![&env, f.mock_oracle.address.clone()]);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("ETH"),
         &(10_000 * USDC_UNIT),
@@ -85,7 +85,7 @@ fn test_excessive_leverage_rejected() {
     let f = Fixture::deploy(&env);
 
     // 100x max leverage is configured. Try 200x.
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(200_000 * USDC_UNIT), // 200k size
@@ -106,7 +106,7 @@ fn test_close_before_min_lifetime() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -117,7 +117,7 @@ fn test_close_before_min_lifetime() {
     );
 
     // Try to close immediately — min_position_lifetime is 60s
-    f.position_manager.decrease_position(
+    f.decrease_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT), &0_i128,
@@ -134,7 +134,7 @@ fn test_close_nonexistent_position() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.decrease_position(
+    f.decrease_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT), &0_i128,
@@ -151,7 +151,7 @@ fn test_liquidate_healthy_position() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -164,7 +164,7 @@ fn test_liquidate_healthy_position() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
-    f.position_manager.liquidate_position(
+    f.liquidate(
         &f.keeper,
         &f.trader,
         &symbol_short!("BTC"),
@@ -181,7 +181,7 @@ fn test_adl_when_conditions_not_met() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -195,7 +195,7 @@ fn test_adl_when_conditions_not_met() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
     // ADL conditions not met (low utilization, no extreme PnL)
-    f.position_manager.deleverage_position(
+    f.deleverage_position(
         &f.keeper,
         &f.trader,
         &symbol_short!("BTC"),
@@ -215,7 +215,7 @@ fn test_execute_order_no_trigger() {
     let tp_price: i128 = 60_000 * PRECISION; // TP at 60k
     let sl_price: i128 = 40_000 * PRECISION; // SL at 40k
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -229,7 +229,7 @@ fn test_execute_order_no_trigger() {
     // Price is still at 50k — neither TP (60k) nor SL (40k) hit
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
-    f.position_manager.execute_order(
+    f.execute_order(
         &f.keeper,
         &f.trader,
         &symbol_short!("BTC"),
@@ -248,7 +248,7 @@ fn test_utilization_cap_breach() {
 
     // Vault has ~1M USDC. 85% cap = 850k. Try to open 900k position.
     let trader = f.create_funded_trader(100_000 * USDC_UNIT);
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &(900_000 * USDC_UNIT),
@@ -269,7 +269,7 @@ fn test_invalid_tp_negative() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -291,7 +291,7 @@ fn test_invalid_sl_negative() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),

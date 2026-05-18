@@ -106,4 +106,22 @@ pub trait PositionManager {
 
     /// Read-only: get global market state for a symbol.
     fn get_market(env: Env, symbol: Symbol) -> MarketInfo;
+
+    /// Cumulative realized PnL across all closed positions (net of fees).
+    /// Read-only. Tracked separately from `total_unrealized_pnl` because
+    /// realized winnings/losses have already moved USDC through `pay_profit` /
+    /// `record_absorbed_collateral`, and are therefore reflected directly in
+    /// `vault.total_assets`. Used by the ADL trigger (combined with unrealized).
+    fn realized_pnl(env: Env) -> i128;
+
+    /// Net unrealized PnL across all open positions across all markets. This
+    /// is the value PM syncs to `vault.update_net_pnl` so `free_liquidity` can
+    /// clamp LP-claimable funds against open trader winnings. Realized PnL is
+    /// intentionally excluded.
+    fn total_unrealized_pnl(env: Env) -> i128;
+
+    /// Per-market unrealized PnL — the contribution of `symbol` to
+    /// `total_unrealized_pnl`. Sum across all active markets must equal
+    /// `total_unrealized_pnl` (an invariant the test suite asserts).
+    fn market_unrealized_pnl(env: Env, symbol: Symbol) -> i128;
 }

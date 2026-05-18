@@ -35,9 +35,9 @@ fn test_multi_lp_proportional_shares() {
     f.usdc.mint(&lp_b, &dep_b);
     f.usdc.mint(&lp_c, &dep_c);
 
-    let shares_a = f.vault.deposit(&dep_a, &lp_a, &lp_a, &lp_a);
-    let shares_b = f.vault.deposit(&dep_b, &lp_b, &lp_b, &lp_b);
-    let shares_c = f.vault.deposit(&dep_c, &lp_c, &lp_c, &lp_c);
+    let shares_a = f.deposit(&dep_a, &lp_a, &lp_a, &lp_a);
+    let shares_b = f.deposit(&dep_b, &lp_b, &lp_b, &lp_b);
+    let shares_c = f.deposit(&dep_c, &lp_c, &lp_c, &lp_c);
 
     // B deposited 2x A, so should have ~2x shares
     // (not exact due to the initial 1M deposit in Fixture, but ratio should hold for these)
@@ -81,7 +81,7 @@ fn test_opposing_traders_long_vs_short() {
     fund_trader(&f, &trader_short, &(collateral * 2));
 
     // Both open positions
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader_long,
         &symbol_short!("BTC"),
         &size,
@@ -91,7 +91,7 @@ fn test_opposing_traders_long_vs_short() {
         &0, &0i128
     );
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader_short,
         &symbol_short!("BTC"),
         &size,
@@ -114,10 +114,8 @@ fn test_opposing_traders_long_vs_short() {
     let long_balance_before = f.usdc.balance(&trader_long);
     let short_balance_before = f.usdc.balance(&trader_short);
 
-    f.position_manager
-        .decrease_position(&trader_long, &symbol_short!("BTC"), &size, &0_i128);
-    f.position_manager
-        .decrease_position(&trader_short, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&trader_long, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&trader_short, &symbol_short!("BTC"), &size, &0_i128);
 
     let long_pnl = f.usdc.balance(&trader_long) - long_balance_before;
     let short_pnl = f.usdc.balance(&trader_short) - short_balance_before;
@@ -147,7 +145,7 @@ fn test_multi_trader_with_keeper_index_updates() {
     fund_trader(&f, &trader_b, &(10_000 * USDC_UNIT));
 
     // Trader A opens
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader_a,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -160,8 +158,7 @@ fn test_multi_trader_with_keeper_index_updates() {
     // Advance 1 hour, keeper updates indices
     f.advance_time(TEST_TIMESTAMP + 3600);
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let market_mid = f.position_manager.get_market(&symbol_short!("BTC"));
     assert!(
@@ -170,7 +167,7 @@ fn test_multi_trader_with_keeper_index_updates() {
     );
 
     // Trader B opens after index update (will snapshot the newer index)
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader_b,
         &symbol_short!("BTC"),
         &(15_000 * USDC_UNIT),
@@ -209,7 +206,7 @@ fn test_lp_deposits_while_positions_open() {
     // Trader opens first
     let size = 40_000 * USDC_UNIT;
     let collateral = 4_000 * USDC_UNIT;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -223,7 +220,7 @@ fn test_lp_deposits_while_positions_open() {
     let lp = Address::generate(&env);
     let deposit = 200_000 * USDC_UNIT;
     f.usdc.mint(&lp, &deposit);
-    let shares = f.vault.deposit(&deposit, &lp, &lp, &lp);
+    let shares = f.deposit(&deposit, &lp, &lp, &lp);
     assert!(shares > 0, "LP must be able to deposit during active trading");
 
     // Free liquidity should reflect the reservation
@@ -249,7 +246,7 @@ fn test_concurrent_open_and_close() {
     fund_trader(&f, &trader_b, &(10_000 * USDC_UNIT));
 
     // A opens long
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader_a,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -263,7 +260,7 @@ fn test_concurrent_open_and_close() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
 
     // B opens long
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader_b,
         &symbol_short!("BTC"),
         &(15_000 * USDC_UNIT),
@@ -274,8 +271,7 @@ fn test_concurrent_open_and_close() {
     );
 
     // A closes (A had enough time)
-    f.position_manager
-        .decrease_position(&trader_a, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&trader_a, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     // Market should only have B's OI
     let market = f.position_manager.get_market(&symbol_short!("BTC"));

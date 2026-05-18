@@ -19,7 +19,7 @@ fn test_pause_blocks_new_positions_but_allows_close() {
     let f = Fixture::deploy(&env);
 
     // Trader opens before pause
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -30,13 +30,13 @@ fn test_pause_blocks_new_positions_but_allows_close() {
     );
 
     // Admin pauses
-    f.position_manager.pause(&f.admin);
+    f.pause_pm(&f.admin);
 
     // New position should fail
     let trader_b = Address::generate(&env);
     f.usdc.mint(&trader_b, &(5_000 * USDC_UNIT));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager.increase_position(
+        f.increase_position(
             &trader_b,
             &symbol_short!("BTC"),
             &(10_000 * USDC_UNIT),
@@ -51,8 +51,7 @@ fn test_pause_blocks_new_positions_but_allows_close() {
     // Existing position can still close
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.mock_oracle.set_price(&symbol_short!("BTC"), &BTC_PRICE);
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &(10_000 * USDC_UNIT), &0_i128);
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0);
@@ -63,11 +62,11 @@ fn test_unpause_restores_normal_operations() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.position_manager.pause(&f.admin);
-    f.position_manager.unpause(&f.admin);
+    f.pause_pm(&f.admin);
+    f.unpause_pm(&f.admin);
 
     // Should work again
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -92,13 +91,13 @@ fn test_vault_pause_blocks_deposits() {
     let env = Env::default();
     let f = Fixture::deploy(&env);
 
-    f.vault.pause(&f.admin);
+    f.pause_vault(&f.admin);
 
     let lp = Address::generate(&env);
     f.usdc.mint(&lp, &(100_000 * USDC_UNIT));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.vault.deposit(&(100_000 * USDC_UNIT), &lp, &lp, &lp);
+        f.deposit(&(100_000 * USDC_UNIT), &lp, &lp, &lp);
     }));
     assert!(result.is_err(), "Deposits must be blocked when paused");
 
@@ -124,8 +123,7 @@ fn test_revoke_keeper_blocks_index_updates() {
 
     // Keeper can no longer update indices
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .update_indices(&f.keeper, &symbol_short!("BTC"));
+        f.update_indices(&f.keeper, &symbol_short!("BTC"));
     }));
     assert!(
         result.is_err(),
@@ -146,7 +144,7 @@ fn test_grant_new_keeper_can_liquidate() {
     // Trader opens risky position
     let trader = Address::generate(&env);
     f.usdc.mint(&trader, &(5_000 * USDC_UNIT));
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -162,8 +160,7 @@ fn test_grant_new_keeper_can_liquidate() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &crash_price);
 
     // New keeper can liquidate
-    f.position_manager
-        .liquidate_position(&new_keeper, &trader, &symbol_short!("BTC"));
+    f.liquidate(&new_keeper, &trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0);
@@ -240,7 +237,7 @@ fn test_random_user_cannot_pause() {
     let f = Fixture::deploy(&env);
 
     let random = Address::generate(&env);
-    f.position_manager.pause(&random);
+    f.pause_pm(&random);
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +276,7 @@ fn test_updated_utilization_cap_allows_larger_positions() {
     let collateral = 90_000 * USDC_UNIT;
     f.usdc.mint(&f.trader, &collateral);
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,

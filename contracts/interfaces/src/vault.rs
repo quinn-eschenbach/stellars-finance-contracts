@@ -51,6 +51,16 @@ pub trait VaultInterface {
 
     fn reserved_usdc(env: Env) -> i128;
 
+    /// Accrued non-LP revenue awaiting `claim_fees` / `claim_fees_to`. Surfaced
+    /// publicly so tests can reconcile counter movement against token-side
+    /// transfers without inferring via subtraction.
+    fn unclaimed_fees(env: Env) -> i128;
+
+    /// Net unrealized PnL across all open trader positions, as last synced by
+    /// PM via `update_net_pnl`. Realized PnL is intentionally NOT included
+    /// (it has already moved physically) — see ADR-0001 / `pnl_refresh.rs`.
+    fn net_global_trader_pnl(env: Env) -> i128;
+
     fn query_asset(env: Env) -> Address;
 
     fn total_assets(env: Env) -> i128;

@@ -32,7 +32,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
     // Safe trader: 2x leverage (thick margin)
     fund_trader(&f, &safe_c, &(50_000 * USDC_UNIT));
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &risky_a,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -42,7 +42,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
         &0, &0i128
     );
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &risky_b,
         &symbol_short!("BTC"),
         &(30_000 * USDC_UNIT),
@@ -52,7 +52,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
         &0, &0i128
     );
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &safe_c,
         &symbol_short!("BTC"),
         &(40_000 * USDC_UNIT),
@@ -68,12 +68,10 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &crash_price);
 
     // Liquidate risky_a
-    f.position_manager
-        .liquidate_position(&f.keeper, &risky_a, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &risky_a, &symbol_short!("BTC"));
 
     // Liquidate risky_b
-    f.position_manager
-        .liquidate_position(&f.keeper, &risky_b, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &risky_b, &symbol_short!("BTC"));
 
     // safe_c should NOT be liquidatable — verify position still exists
     let pos_c = f
@@ -88,8 +86,7 @@ fn test_crash_liquidates_undercollateralized_spares_healthy() {
     // Vault must still be functional — safe_c can close
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 100);
     f.mock_oracle.set_price(&symbol_short!("BTC"), &crash_price);
-    f.position_manager
-        .decrease_position(&safe_c, &symbol_short!("BTC"), &(40_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&safe_c, &symbol_short!("BTC"), &(40_000 * USDC_UNIT), &0_i128);
 
     let market_empty = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market_empty.long_open_interest, 0);
@@ -107,7 +104,7 @@ fn test_liquidation_works_when_paused() {
     let trader = Address::generate(&env);
     fund_trader(&f, &trader, &(5_000 * USDC_UNIT));
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -123,11 +120,10 @@ fn test_liquidation_works_when_paused() {
     f.mock_oracle.set_price(&symbol_short!("BTC"), &crash_price);
 
     // Pause the protocol
-    f.position_manager.pause(&f.admin);
+    f.pause_pm(&f.admin);
 
     // Liquidation must still succeed — cannot block solvency protection
-    f.position_manager
-        .liquidate_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0);
@@ -145,12 +141,12 @@ fn test_vault_solvent_after_liquidations() {
     let lp = Address::generate(&env);
     let deposit = 500_000 * USDC_UNIT;
     f.usdc.mint(&lp, &deposit);
-    f.vault.deposit(&deposit, &lp, &lp, &lp);
+    f.deposit(&deposit, &lp, &lp, &lp);
 
     let trader = Address::generate(&env);
     fund_trader(&f, &trader, &(5_000 * USDC_UNIT));
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &(30_000 * USDC_UNIT),
@@ -165,8 +161,7 @@ fn test_vault_solvent_after_liquidations() {
     let crash_price: i128 = 44_000 * PRECISION;
     f.mock_oracle.set_price(&symbol_short!("BTC"), &crash_price);
 
-    f.position_manager
-        .liquidate_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &trader, &symbol_short!("BTC"));
 
     // LP can still withdraw after cooldown
     f.advance_time(TEST_TIMESTAMP + 300);
@@ -194,7 +189,7 @@ fn test_short_liquidation_on_price_spike() {
     fund_trader(&f, &trader, &(5_000 * USDC_UNIT));
 
     // 10x short
-    f.position_manager.increase_position(
+    f.increase_position(
         &trader,
         &symbol_short!("BTC"),
         &(20_000 * USDC_UNIT),
@@ -209,8 +204,7 @@ fn test_short_liquidation_on_price_spike() {
     let spike_price: i128 = 56_000 * PRECISION;
     f.mock_oracle.set_price(&symbol_short!("BTC"), &spike_price);
 
-    f.position_manager
-        .liquidate_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.short_open_interest, 0);

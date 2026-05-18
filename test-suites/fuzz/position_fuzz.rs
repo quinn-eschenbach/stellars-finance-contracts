@@ -38,7 +38,7 @@ proptest! {
         fund_trader(&f, &trader, &(collateral + 1_000 * USDC_UNIT));
 
         // Open position
-        f.position_manager.increase_position(
+        f.increase_position(
             &trader,
             &symbol_short!("BTC"),
             &size,
@@ -62,8 +62,7 @@ proptest! {
         f.mock_oracle.set_price(&symbol_short!("BTC"), &new_price);
 
         // Close position
-        f.position_manager
-            .decrease_position(&trader, &symbol_short!("BTC"), &size, &0_i128);
+        f.decrease_position(&trader, &symbol_short!("BTC"), &size, &0_i128);
 
         // INVARIANT: OI must be zero after full close
         let market_after_close = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -94,7 +93,7 @@ proptest! {
         let trader = Address::generate(&env);
         fund_trader(&f, &trader, &(collateral + 1_000 * USDC_UNIT));
 
-        f.position_manager.increase_position(
+        f.increase_position(
             &trader,
             &symbol_short!("BTC"),
             &size,
@@ -135,7 +134,7 @@ proptest! {
         let trader = Address::generate(&env);
         fund_trader(&f, &trader, &(collateral + 1_000 * USDC_UNIT));
 
-        f.position_manager.increase_position(
+        f.increase_position(
             &trader,
             &symbol_short!("BTC"),
             &size,
@@ -158,8 +157,7 @@ proptest! {
         f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
         f.mock_oracle.set_price(&symbol_short!("BTC"), &new_price);
 
-        f.position_manager
-            .decrease_position(&trader, &symbol_short!("BTC"), &size, &0_i128);
+        f.decrease_position(&trader, &symbol_short!("BTC"), &size, &0_i128);
 
         let balance_after_close = f.usdc.balance(&trader);
         let received = balance_after_close - balance_after_open;
@@ -210,7 +208,7 @@ proptest! {
 
         // All open longs
         for t in &traders {
-            f.position_manager.increase_position(
+            f.increase_position(
                 t,
                 &symbol_short!("BTC"),
                 &size,
@@ -232,8 +230,7 @@ proptest! {
 
         // All close
         for t in &traders {
-            f.position_manager
-                .decrease_position(t, &symbol_short!("BTC"), &size, &0_i128);
+            f.decrease_position(t, &symbol_short!("BTC"), &size, &0_i128);
         }
 
         let market_closed = f.position_manager.get_market(&symbol_short!("BTC"));

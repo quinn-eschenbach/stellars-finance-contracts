@@ -22,7 +22,7 @@ fn test_minimum_collateral_position() {
     let collateral = 1_000_000_i128; // exactly 1 USDC
     let size = 10 * USDC_UNIT;       // 10 USDC size = 10x leverage
 
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &size,
@@ -40,8 +40,7 @@ fn test_minimum_collateral_position() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(50_000);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0);
@@ -65,8 +64,7 @@ fn test_partial_close_then_increase() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(50_000);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &(size / 2), &0_i128);
 
     let pos_mid = f
         .position_manager
@@ -74,7 +72,7 @@ fn test_partial_close_then_increase() {
     assert_eq!(pos_mid.size, size / 2);
 
     // Increase the position again
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(15_000 * USDC_UNIT),
@@ -106,8 +104,7 @@ fn test_close_exactly_full_size() {
     f.set_btc_price(50_000);
 
     // Close with exactly size == position.size
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // Position should be deleted — get_position should panic
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -136,8 +133,7 @@ fn test_multiple_partial_closes() {
 
     // 4 partial closes
     for i in 0..4 {
-        f.position_manager
-            .decrease_position(&f.trader, &symbol_short!("BTC"), &quarter, &0_i128);
+        f.decrease_position(&f.trader, &symbol_short!("BTC"), &quarter, &0_i128);
 
         let market = f.position_manager.get_market(&symbol_short!("BTC"));
         let expected_remaining = size - quarter * (i + 1);
@@ -167,11 +163,11 @@ fn test_deposit_withdraw_same_block_blocked() {
     let amount = 100_000 * USDC_UNIT;
     f.usdc.mint(&lp, &amount);
 
-    f.vault.deposit(&amount, &lp, &lp, &lp);
+    f.deposit(&amount, &lp, &lp, &lp);
 
     // Try to withdraw immediately — cooldown should block
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.vault.withdraw(&amount, &lp, &lp, &lp);
+        f.withdraw(&amount, &lp, &lp, &lp);
     }));
     assert!(
         result.is_err(),
@@ -200,7 +196,7 @@ fn test_increase_position_resets_min_lifetime() {
     f.set_btc_price(50_000);
 
     // Increase the position — should reset the timer
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(5_000 * USDC_UNIT),
@@ -212,7 +208,7 @@ fn test_increase_position_resets_min_lifetime() {
 
     // Try to close immediately — should fail because timer reset
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager.decrease_position(
+        f.decrease_position(
             &f.trader,
             &symbol_short!("BTC"),
             &(15_000 * USDC_UNIT), &0_i128,
@@ -234,7 +230,7 @@ fn test_tp_exactly_at_current_price() {
     let f = Fixture::deploy(&env);
 
     let tp_price: i128 = 55_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -249,8 +245,7 @@ fn test_tp_exactly_at_current_price() {
     f.set_btc_price(55_000);
 
     // Should trigger
-    f.position_manager
-        .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0, "TP at exact price must trigger");
@@ -266,7 +261,7 @@ fn test_sl_exactly_at_current_price() {
     let f = Fixture::deploy(&env);
 
     let sl_price: i128 = 45_000 * PRECISION;
-    f.position_manager.increase_position(
+    f.increase_position(
         &f.trader,
         &symbol_short!("BTC"),
         &(10_000 * USDC_UNIT),
@@ -280,8 +275,7 @@ fn test_sl_exactly_at_current_price() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(45_000);
 
-    f.position_manager
-        .execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
+    f.execute_order(&f.keeper, &f.trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0, "SL at exact price must trigger");
@@ -306,8 +300,7 @@ fn test_zero_pnl_close() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(50_000);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let returned = balance_after_close - balance_after_open;
@@ -340,8 +333,7 @@ fn test_position_survives_at_exact_health_boundary() {
     f.set_btc_price(40_500); // -19% → PnL ≈ -4,750
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .liquidate_position(&f.keeper, &trader, &symbol_short!("BTC"));
+        f.liquidate(&f.keeper, &trader, &symbol_short!("BTC"));
     }));
     // If health >= 0, liquidation should fail with HealthFactorOk
     // If it succeeds, it means health was < 0 which is still correct behavior
@@ -373,14 +365,12 @@ fn test_close_after_index_updates_pays_fees() {
     // Advance 24 hours and update indices — accrue borrow fees
     f.advance_time(TEST_TIMESTAMP + 86_400);
     f.set_btc_price(50_000);
-    f.position_manager
-        .update_indices(&f.keeper, &symbol_short!("BTC"));
+    f.update_indices(&f.keeper, &symbol_short!("BTC"));
 
     let balance_before_close = f.usdc.balance(&f.trader);
 
     // Close at same price — PnL = 0 but fees should be deducted
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let returned = balance_after_close - balance_before_close;

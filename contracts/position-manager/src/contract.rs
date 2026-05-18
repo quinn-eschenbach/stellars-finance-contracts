@@ -242,6 +242,21 @@ impl PositionManager for PositionManagerContract {
         guards::require_initialized(&env);
         storage::get_market(&env, &symbol)
     }
+
+    fn realized_pnl(env: Env) -> i128 {
+        guards::require_initialized(&env);
+        storage::get_realized_pnl(&env)
+    }
+
+    fn total_unrealized_pnl(env: Env) -> i128 {
+        guards::require_initialized(&env);
+        storage::get_total_unrealized_pnl(&env)
+    }
+
+    fn market_unrealized_pnl(env: Env, symbol: Symbol) -> i128 {
+        guards::require_initialized(&env);
+        storage::get_market_unrealized_pnl(&env, &symbol)
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -20,7 +20,7 @@ fn test_sandwich_open_close_blocked_by_min_lifetime() {
 
     // Attempt instant close (same block / no time advance)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager.decrease_position(
+        f.decrease_position(
             &f.trader,
             &symbol_short!("BTC"),
             &(10_000 * USDC_UNIT), &0_i128,
@@ -43,8 +43,7 @@ fn test_non_keeper_cannot_update_indices() {
 
     let random = Address::generate(&env);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .update_indices(&random, &symbol_short!("BTC"));
+        f.update_indices(&random, &symbol_short!("BTC"));
     }));
     assert!(result.is_err(), "Non-keeper must not update indices");
 }
@@ -62,8 +61,7 @@ fn test_non_keeper_cannot_adl() {
 
     let random = Address::generate(&env);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .deleverage_position(&random, &f.trader, &symbol_short!("BTC"));
+        f.deleverage_position(&random, &f.trader, &symbol_short!("BTC"));
     }));
     assert!(result.is_err(), "Non-keeper must not ADL");
 }
@@ -84,8 +82,7 @@ fn test_trader_cannot_self_liquidate_healthy() {
 
     // Even if trader had keeper role, healthy position can't be liquidated
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .liquidate_position(&f.keeper, &f.trader, &symbol_short!("BTC"));
+        f.liquidate(&f.keeper, &f.trader, &symbol_short!("BTC"));
     }));
     assert!(
         result.is_err(),
@@ -130,7 +127,7 @@ fn test_vault_withdrawal_limited_during_high_utilization() {
     let lp = Address::generate(&env);
     let deposit = 200_000 * USDC_UNIT;
     f.usdc.mint(&lp, &deposit);
-    f.vault.deposit(&deposit, &lp, &lp, &lp);
+    f.deposit(&deposit, &lp, &lp, &lp);
 
     // Now vault has ~1.2M total. Reserve 840k (just under 85% of ~1M base).
     let trader = f.create_funded_trader(100_000 * USDC_UNIT);
@@ -205,8 +202,7 @@ fn test_non_admin_cannot_set_max_leverage() {
 
     let random = Address::generate(&env);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager
-            .set_max_leverage(&random, &symbol_short!("BTC"), &50_i128);
+        f.set_max_leverage(&random, &symbol_short!("BTC"), &50_i128);
     }));
     assert!(result.is_err(), "Non-admin cannot set max leverage");
 }
@@ -222,7 +218,7 @@ fn test_grief_dust_position_excessive_leverage() {
 
     // Dust collateral with high leverage (>100x) gets rejected by leverage check
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        f.position_manager.increase_position(
+        f.increase_position(
             &f.trader,
             &symbol_short!("BTC"),
             &(1_000 * USDC_UNIT), // 1k USDC size

@@ -34,8 +34,7 @@ fn test_50pct_crash_cascade_liquidation() {
 
     // Liquidate all 5
     for trader in &traders {
-        f.position_manager
-            .liquidate_position(&f.keeper, trader, &symbol_short!("BTC"));
+        f.liquidate(&f.keeper, trader, &symbol_short!("BTC"));
     }
 
     let market_after = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -67,8 +66,7 @@ fn test_price_doubles_short_wipeout() {
     f.set_btc_price(100_000);
 
     for trader in &traders {
-        f.position_manager
-            .liquidate_position(&f.keeper, trader, &symbol_short!("BTC"));
+        f.liquidate(&f.keeper, trader, &symbol_short!("BTC"));
     }
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
@@ -98,8 +96,7 @@ fn test_rapid_pump_dump_pnl_correct() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(42_000);
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let net_pnl = balance_after_close - balance_after_open;
@@ -130,8 +127,7 @@ fn test_99pct_crash_vault_survives() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(500);
 
-    f.position_manager
-        .liquidate_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let total = f.vault.total_assets();
     assert!(total > 0, "Vault must survive even 99% crash");
@@ -157,8 +153,7 @@ fn test_max_leverage_at_liquidation_boundary() {
     f.advance_time(TEST_TIMESTAMP + 75);
     f.set_btc_price(49_250); // -1.5%
 
-    f.position_manager
-        .liquidate_position(&f.keeper, &trader, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &trader, &symbol_short!("BTC"));
 
     let market = f.position_manager.get_market(&symbol_short!("BTC"));
     assert_eq!(market.long_open_interest, 0, "100x position liquidated on small move");
@@ -187,16 +182,14 @@ fn test_flash_crash_recovery() {
     f.set_btc_price(42_500);
 
     // Liquidate risky
-    f.position_manager
-        .liquidate_position(&f.keeper, &risky, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &risky, &symbol_short!("BTC"));
 
     // Price recovers to 55k (+10% from original)
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(55_000);
 
     // Safe trader closes with profit
-    f.position_manager
-        .decrease_position(&safe, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&safe, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let safe_balance_after_close = f.usdc.balance(&safe);
     let safe_net = safe_balance_after_close - safe_balance_after_open;
@@ -239,7 +232,7 @@ fn test_lp_withdraw_after_massive_trader_profit() {
     let lp = Address::generate(&env);
     let deposit = 500_000 * USDC_UNIT;
     f.usdc.mint(&lp, &deposit);
-    f.vault.deposit(&deposit, &lp, &lp, &lp);
+    f.deposit(&deposit, &lp, &lp, &lp);
 
     // Trader opens big and wins big (+20%)
     let size = 100_000 * USDC_UNIT;
@@ -249,8 +242,7 @@ fn test_lp_withdraw_after_massive_trader_profit() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(60_000); // +20%
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // LP withdraws — share value should have dropped
     f.advance_time(TEST_TIMESTAMP + 300);
@@ -276,7 +268,7 @@ fn test_lp_profit_after_massive_trader_loss() {
     let lp = Address::generate(&env);
     let deposit = 500_000 * USDC_UNIT;
     f.usdc.mint(&lp, &deposit);
-    f.vault.deposit(&deposit, &lp, &lp, &lp);
+    f.deposit(&deposit, &lp, &lp, &lp);
 
     // Trader opens and loses (-8%)
     let size = 100_000 * USDC_UNIT;
@@ -286,8 +278,7 @@ fn test_lp_profit_after_massive_trader_loss() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(46_000); // -8%
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     // LP withdraws — should be more than deposited
     f.advance_time(TEST_TIMESTAMP + 300);
@@ -323,12 +314,10 @@ fn test_opposing_positions_extreme_move() {
     f.set_btc_price(30_000);
 
     // Liquidate the long
-    f.position_manager
-        .liquidate_position(&f.keeper, &long_trader, &symbol_short!("BTC"));
+    f.liquidate(&f.keeper, &long_trader, &symbol_short!("BTC"));
 
     // Short trader closes with massive profit
-    f.position_manager
-        .decrease_position(&short_trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
+    f.decrease_position(&short_trader, &symbol_short!("BTC"), &(20_000 * USDC_UNIT), &0_i128);
 
     let short_bal_after = f.usdc.balance(&short_trader);
     let short_pnl = short_bal_after - short_bal_before;
@@ -361,8 +350,7 @@ fn test_price_unchanged_close_returns_collateral() {
     f.advance_time(TEST_TIMESTAMP + MIN_POSITION_LIFETIME + 10);
     f.set_btc_price(50_000); // same price
 
-    f.position_manager
-        .decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
+    f.decrease_position(&f.trader, &symbol_short!("BTC"), &size, &0_i128);
 
     let balance_after_close = f.usdc.balance(&f.trader);
     let returned = balance_after_close - balance_after_open;
@@ -400,8 +388,7 @@ fn test_many_small_positions_then_crash() {
 
     // Liquidate all
     for trader in &traders {
-        f.position_manager
-            .liquidate_position(&f.keeper, trader, &symbol_short!("BTC"));
+        f.liquidate(&f.keeper, trader, &symbol_short!("BTC"));
     }
 
     let market_after = f.position_manager.get_market(&symbol_short!("BTC"));
