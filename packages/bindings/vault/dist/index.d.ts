@@ -1654,6 +1654,12 @@ export interface Client {
      * Rejects when accruing would push `unclaimed_fees + reserved_usdc`
      * above `total_assets`. PM cannot accumulate book-only fees beyond
      * what is actually in the vault.
+     *
+     * Emits `TotalAssetsUpdate` alongside `AccrueFees`. PM's `recv_revenue`
+     * pushes fee USDC into the vault via a raw token transfer immediately
+     * before this call, and no other vault entrypoint witnesses that
+     * transfer — without the snapshot, off-chain indexers would lose the
+     * LP slice (`fee - non_lp_slice`) on every accrual.
      */
     accrue_fees: ({ caller, amount }: {
         caller: string;
@@ -1734,6 +1740,13 @@ export interface Client {
         shares: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
     /**
+     * Construct and simulate a unclaimed_fees transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Accrued non-LP revenue awaiting `claim_fees` / `claim_fees_to`. Exposed
+     * so tests can reconcile counter movement against token-side transfers
+     * without inferring via subtraction.
+     */
+    unclaimed_fees: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
+    /**
      * Construct and simulate a update_net_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     update_net_pnl: ({ caller, pnl }: {
@@ -1800,6 +1813,14 @@ export interface Client {
         caller: string;
         amount: i128;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a net_global_trader_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     * Net unrealized PnL across all open trader positions, as last synced by
+     * PM via `update_net_pnl`. Realized PnL is intentionally NOT included —
+     * it has already moved physically through `pay_profit` /
+     * `record_absorbed_collateral` and is reflected directly in `total_assets`.
+     */
+    net_global_trader_pnl: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
     /**
      * Construct and simulate a total_assets_excl_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      * Total assets minus only the fee buffer — PnL is excluded so consumers
@@ -1869,6 +1890,7 @@ export declare class Client extends ContractClient {
         cancel_upgrade: (json: string) => AssembledTransaction<null>;
         free_liquidity: (json: string) => AssembledTransaction<bigint>;
         preview_redeem: (json: string) => AssembledTransaction<bigint>;
+        unclaimed_fees: (json: string) => AssembledTransaction<bigint>;
         update_net_pnl: (json: string) => AssembledTransaction<null>;
         preview_deposit: (json: string) => AssembledTransaction<bigint>;
         propose_upgrade: (json: string) => AssembledTransaction<null>;
@@ -1879,6 +1901,7 @@ export declare class Client extends ContractClient {
         lockup_expires_at: (json: string) => AssembledTransaction<bigint>;
         release_liquidity: (json: string) => AssembledTransaction<null>;
         reserve_liquidity: (json: string) => AssembledTransaction<null>;
+        net_global_trader_pnl: (json: string) => AssembledTransaction<bigint>;
         total_assets_excl_pnl: (json: string) => AssembledTransaction<bigint>;
         record_absorbed_collateral: (json: string) => AssembledTransaction<null>;
     };

@@ -1305,6 +1305,12 @@ export interface Client {
    * Rejects when accruing would push `unclaimed_fees + reserved_usdc`
    * above `total_assets`. PM cannot accumulate book-only fees beyond
    * what is actually in the vault.
+   * 
+   * Emits `TotalAssetsUpdate` alongside `AccrueFees`. PM's `recv_revenue`
+   * pushes fee USDC into the vault via a raw token transfer immediately
+   * before this call, and no other vault entrypoint witnesses that
+   * transfer — without the snapshot, off-chain indexers would lose the
+   * LP slice (`fee - non_lp_slice`) on every accrual.
    */
   accrue_fees: ({caller, amount}: {caller: string, amount: i128}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
 
@@ -1376,6 +1382,14 @@ export interface Client {
   preview_redeem: ({shares}: {shares: i128}, options?: MethodOptions) => Promise<AssembledTransaction<i128>>
 
   /**
+   * Construct and simulate a unclaimed_fees transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Accrued non-LP revenue awaiting `claim_fees` / `claim_fees_to`. Exposed
+   * so tests can reconcile counter movement against token-side transfers
+   * without inferring via subtraction.
+   */
+  unclaimed_fees: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
+
+  /**
    * Construct and simulate a update_net_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   update_net_pnl: ({caller, pnl}: {caller: string, pnl: i128}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
@@ -1429,6 +1443,15 @@ export interface Client {
    * Construct and simulate a reserve_liquidity transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   reserve_liquidity: ({caller, amount}: {caller: string, amount: i128}, options?: MethodOptions) => Promise<AssembledTransaction<null>>
+
+  /**
+   * Construct and simulate a net_global_trader_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Net unrealized PnL across all open trader positions, as last synced by
+   * PM via `update_net_pnl`. Realized PnL is intentionally NOT included —
+   * it has already moved physically through `pay_profit` /
+   * `record_absorbed_collateral` and is reflected directly in `total_assets`.
+   */
+  net_global_trader_pnl: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
 
   /**
    * Construct and simulate a total_assets_excl_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
@@ -1499,7 +1522,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAAAAAAAKaW5pdGlhbGl6ZQAAAAAABAAAAAAAAAAFYWRtaW4AAAAAAAATAAAAAAAAAAVhc3NldAAAAAAAABMAAAAAAAAADmNvbmZpZ19tYW5hZ2VyAAAAAAATAAAAAAAAABBwb3NpdGlvbl9tYW5hZ2VyAAAAEwAAAAA=",
         "AAAAAAAAAAAAAAAKbWF4X3JlZGVlbQAAAAAAAQAAAAAAAAAFb3duZXIAAAAAAAATAAAAAQAAAAs=",
         "AAAAAAAAAINQYXkgYGFtb3VudGAgZnJvbSB0aGUgdmF1bHQgdG8gYHRyYWRlcmAgdG8gc2V0dGxlIGEgcHJvZml0YWJsZSBjbG9zZS4KTG9zcyBzZXR0bGVtZW50IGRvZXMgTk9UIHJvdXRlIHRocm91Z2ggaGVyZSDigJQgc2VlIEFEUi0wMDAxLgAAAAAKcGF5X3Byb2ZpdAAAAAAAAwAAAAAAAAAGY2FsbGVyAAAAAAATAAAAAAAAAAZ0cmFkZXIAAAAAABMAAAAAAAAABmFtb3VudAAAAAAACwAAAAA=",
-        "AAAAAAAAAKFSZWplY3RzIHdoZW4gYWNjcnVpbmcgd291bGQgcHVzaCBgdW5jbGFpbWVkX2ZlZXMgKyByZXNlcnZlZF91c2RjYAphYm92ZSBgdG90YWxfYXNzZXRzYC4gUE0gY2Fubm90IGFjY3VtdWxhdGUgYm9vay1vbmx5IGZlZXMgYmV5b25kCndoYXQgaXMgYWN0dWFsbHkgaW4gdGhlIHZhdWx0LgAAAAAAAAthY2NydWVfZmVlcwAAAAACAAAAAAAAAAZjYWxsZXIAAAAAABMAAAAAAAAABmFtb3VudAAAAAAACwAAAAA=",
+        "AAAAAAAAAeJSZWplY3RzIHdoZW4gYWNjcnVpbmcgd291bGQgcHVzaCBgdW5jbGFpbWVkX2ZlZXMgKyByZXNlcnZlZF91c2RjYAphYm92ZSBgdG90YWxfYXNzZXRzYC4gUE0gY2Fubm90IGFjY3VtdWxhdGUgYm9vay1vbmx5IGZlZXMgYmV5b25kCndoYXQgaXMgYWN0dWFsbHkgaW4gdGhlIHZhdWx0LgoKRW1pdHMgYFRvdGFsQXNzZXRzVXBkYXRlYCBhbG9uZ3NpZGUgYEFjY3J1ZUZlZXNgLiBQTSdzIGByZWN2X3JldmVudWVgCnB1c2hlcyBmZWUgVVNEQyBpbnRvIHRoZSB2YXVsdCB2aWEgYSByYXcgdG9rZW4gdHJhbnNmZXIgaW1tZWRpYXRlbHkKYmVmb3JlIHRoaXMgY2FsbCwgYW5kIG5vIG90aGVyIHZhdWx0IGVudHJ5cG9pbnQgd2l0bmVzc2VzIHRoYXQKdHJhbnNmZXIg4oCUIHdpdGhvdXQgdGhlIHNuYXBzaG90LCBvZmYtY2hhaW4gaW5kZXhlcnMgd291bGQgbG9zZSB0aGUKTFAgc2xpY2UgKGBmZWUgLSBub25fbHBfc2xpY2VgKSBvbiBldmVyeSBhY2NydWFsLgAAAAAAC2FjY3J1ZV9mZWVzAAAAAAIAAAAAAAAABmNhbGxlcgAAAAAAEwAAAAAAAAAGYW1vdW50AAAAAAALAAAAAA==",
         "AAAAAAAAAAAAAAALbWF4X2RlcG9zaXQAAAAAAQAAAAAAAAAIcmVjZWl2ZXIAAAATAAAAAQAAAAs=",
         "AAAAAAAAAAAAAAALcXVlcnlfYXNzZXQAAAAAAAAAAAEAAAAT",
         "AAAAAAAAAAAAAAAMbWF4X3dpdGhkcmF3AAAAAQAAAAAAAAAFb3duZXIAAAAAAAATAAAAAQAAAAs=",
@@ -1512,6 +1535,7 @@ export class Client extends ContractClient {
         "AAAAAAAAACFQQVVTRVIgdmV0byBvZiBhIHBlbmRpbmcgdXBncmFkZS4AAAAAAAAOY2FuY2VsX3VwZ3JhZGUAAAAAAAEAAAAAAAAABmNhbGxlcgAAAAAAEwAAAAA=",
         "AAAAAAAAAAAAAAAOZnJlZV9saXF1aWRpdHkAAAAAAAAAAAABAAAACw==",
         "AAAAAAAAAAAAAAAOcHJldmlld19yZWRlZW0AAAAAAAEAAAAAAAAABnNoYXJlcwAAAAAACwAAAAEAAAAL",
+        "AAAAAAAAAK9BY2NydWVkIG5vbi1MUCByZXZlbnVlIGF3YWl0aW5nIGBjbGFpbV9mZWVzYCAvIGBjbGFpbV9mZWVzX3RvYC4gRXhwb3NlZApzbyB0ZXN0cyBjYW4gcmVjb25jaWxlIGNvdW50ZXIgbW92ZW1lbnQgYWdhaW5zdCB0b2tlbi1zaWRlIHRyYW5zZmVycwp3aXRob3V0IGluZmVycmluZyB2aWEgc3VidHJhY3Rpb24uAAAAAA51bmNsYWltZWRfZmVlcwAAAAAAAAAAAAEAAAAL",
         "AAAAAAAAAAAAAAAOdXBkYXRlX25ldF9wbmwAAAAAAAIAAAAAAAAABmNhbGxlcgAAAAAAEwAAAAAAAAADcG5sAAAAAAsAAAAA",
         "AAAAAAAAAAAAAAAPcHJldmlld19kZXBvc2l0AAAAAAEAAAAAAAAABmFzc2V0cwAAAAAACwAAAAEAAAAL",
         "AAAAAAAAAK1Qcm9wb3NlIGEgV0FTTSB1cGdyYWRlLiBVUEdSQURFUiByb2xlIG9ubHkuIFJlY29yZHMgYHt3YXNtX2hhc2gsIGV0YX1gCndoZXJlIGBldGEgPSBub3cgKyB0aW1lbG9ja2Agc28gYHVwZ3JhZGVgIGNhbiByZWZ1c2UgdG8gaW5zdGFsbCBhCmRpZmZlcmVudCBoYXNoIG9yIGZpcmUgYmVmb3JlIGBldGFgLgAAAAAAAA9wcm9wb3NlX3VwZ3JhZGUAAAAAAgAAAAAAAAAGY2FsbGVyAAAAAAATAAAAAAAAAAl3YXNtX2hhc2gAAAAAAAPuAAAAIAAAAAA=",
@@ -1522,6 +1546,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAIJSZXR1cm5zIHRoZSB1bml4IHRpbWVzdGFtcCBhdCB3aGljaCBgdXNlcmAgbWF5IG5leHQgd2l0aGRyYXcvcmVkZWVtLgpSZXR1cm5zIDAgaWYgYHVzZXJgIGhhcyBuZXZlciBkZXBvc2l0ZWQgKG5vIGxvY2t1cCByZWNvcmRlZCkuAAAAAAARbG9ja3VwX2V4cGlyZXNfYXQAAAAAAAABAAAAAAAAAAR1c2VyAAAAEwAAAAEAAAAG",
         "AAAAAAAAAAAAAAARcmVsZWFzZV9saXF1aWRpdHkAAAAAAAACAAAAAAAAAAZjYWxsZXIAAAAAABMAAAAAAAAABmFtb3VudAAAAAAACwAAAAA=",
         "AAAAAAAAAAAAAAARcmVzZXJ2ZV9saXF1aWRpdHkAAAAAAAACAAAAAAAAAAZjYWxsZXIAAAAAABMAAAAAAAAABmFtb3VudAAAAAAACwAAAAA=",
+        "AAAAAAAAAQ9OZXQgdW5yZWFsaXplZCBQbkwgYWNyb3NzIGFsbCBvcGVuIHRyYWRlciBwb3NpdGlvbnMsIGFzIGxhc3Qgc3luY2VkIGJ5ClBNIHZpYSBgdXBkYXRlX25ldF9wbmxgLiBSZWFsaXplZCBQbkwgaXMgaW50ZW50aW9uYWxseSBOT1QgaW5jbHVkZWQg4oCUCml0IGhhcyBhbHJlYWR5IG1vdmVkIHBoeXNpY2FsbHkgdGhyb3VnaCBgcGF5X3Byb2ZpdGAgLwpgcmVjb3JkX2Fic29yYmVkX2NvbGxhdGVyYWxgIGFuZCBpcyByZWZsZWN0ZWQgZGlyZWN0bHkgaW4gYHRvdGFsX2Fzc2V0c2AuAAAAABVuZXRfZ2xvYmFsX3RyYWRlcl9wbmwAAAAAAAAAAAAAAQAAAAs=",
         "AAAAAAAAANRUb3RhbCBhc3NldHMgbWludXMgb25seSB0aGUgZmVlIGJ1ZmZlciDigJQgUG5MIGlzIGV4Y2x1ZGVkIHNvIGNvbnN1bWVycwooUE0ncyB1dGlsaXphdGlvbiBnYXRlKSBhcmUgbm90IHN1YmplY3QgdG8gbWFyay1wcmljZSBmZWVkYmFjayBpbnRvCnRoZSB1dGlsaXphdGlvbiBkZW5vbWluYXRvci4gTFAtZmFjaW5nIGZsb3dzIHN0aWxsIHVzZSBgZnJlZV9saXF1aWRpdHlgLgAAABV0b3RhbF9hc3NldHNfZXhjbF9wbmwAAAAAAAAAAAAAAQAAAAs=",
         "AAAAAAAAATxOb3RpZnkgdGhlIHZhdWx0IHRoYXQgUG9zaXRpb25NYW5hZ2VyIGhhcyBqdXN0IHRyYW5zZmVycmVkIGBhbW91bnRgClVTREMgb2Ygc2VpemVkL2xvc3Mtc2V0dGxlbWVudCBjb2xsYXRlcmFsIGRpcmVjdGx5IGludG8gdGhlIHZhdWx0J3MKd2FsbGV0LiBUaGlzIGNhbGwgZG9lcyBOT1QgbW92ZSB0b2tlbnMsIGJ1dCBpdCBET0VTIHZlcmlmeSB0aGUKb24tY2hhaW4gZGVsdGEg4oCUIGBwb3N0IC0gcHJlYCBtdXN0IGVxdWFsIGBhbW91bnRgLCBvdGhlcndpc2UgUE0gYW5kClZhdWx0IGhhdmUgZGl2ZXJnZWQgYW5kIHdlIHBhbmljLiBTZWUgQURSLTAwMDEuAAAAGnJlY29yZF9hYnNvcmJlZF9jb2xsYXRlcmFsAAAAAAAEAAAAAAAAAAZjYWxsZXIAAAAAABMAAAAAAAAABnRyYWRlcgAAAAAAEwAAAAAAAAAGYW1vdW50AAAAAAALAAAAAAAAAAtwcmVfYmFsYW5jZQAAAAALAAAAAA==",
         "AAAAAQAAAAAAAAAAAAAADk93bmVyVG9rZW5zS2V5AAAAAAACAAAAAAAAAAVpbmRleAAAAAAAAAQAAAAAAAAABW93bmVyAAAAAAAAEw==",
@@ -1689,6 +1714,7 @@ export class Client extends ContractClient {
         cancel_upgrade: this.txFromJSON<null>,
         free_liquidity: this.txFromJSON<i128>,
         preview_redeem: this.txFromJSON<i128>,
+        unclaimed_fees: this.txFromJSON<i128>,
         update_net_pnl: this.txFromJSON<null>,
         preview_deposit: this.txFromJSON<i128>,
         propose_upgrade: this.txFromJSON<null>,
@@ -1699,6 +1725,7 @@ export class Client extends ContractClient {
         lockup_expires_at: this.txFromJSON<u64>,
         release_liquidity: this.txFromJSON<null>,
         reserve_liquidity: this.txFromJSON<null>,
+        net_global_trader_pnl: this.txFromJSON<i128>,
         total_assets_excl_pnl: this.txFromJSON<i128>,
         record_absorbed_collateral: this.txFromJSON<null>
   }

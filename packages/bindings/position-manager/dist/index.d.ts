@@ -527,6 +527,10 @@ export interface Client {
         symbol: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<Position>>;
     /**
+     * Construct and simulate a realized_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    realized_pnl: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
+    /**
      * Construct and simulate a bump_position transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
      */
     bump_position: ({ user_address, symbol }: {
@@ -633,6 +637,16 @@ export interface Client {
         trader: string;
         symbol: string;
     }, options?: MethodOptions) => Promise<AssembledTransaction<null>>;
+    /**
+     * Construct and simulate a total_unrealized_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    total_unrealized_pnl: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
+    /**
+     * Construct and simulate a market_unrealized_pnl transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+     */
+    market_unrealized_pnl: ({ symbol }: {
+        symbol: string;
+    }, options?: MethodOptions) => Promise<AssembledTransaction<i128>>;
 }
 export declare class Client extends ContractClient {
     readonly options: ContractClientOptions;
@@ -656,6 +670,7 @@ export declare class Client extends ContractClient {
         get_market: (json: string) => AssembledTransaction<MarketInfo>;
         initialize: (json: string) => AssembledTransaction<null>;
         get_position: (json: string) => AssembledTransaction<Position>;
+        realized_pnl: (json: string) => AssembledTransaction<bigint>;
         bump_position: (json: string) => AssembledTransaction<null>;
         enable_market: (json: string) => AssembledTransaction<null>;
         execute_order: (json: string) => AssembledTransaction<null>;
@@ -670,5 +685,7 @@ export declare class Client extends ContractClient {
         is_market_disabled: (json: string) => AssembledTransaction<boolean>;
         liquidate_position: (json: string) => AssembledTransaction<null>;
         deleverage_position: (json: string) => AssembledTransaction<null>;
+        total_unrealized_pnl: (json: string) => AssembledTransaction<bigint>;
+        market_unrealized_pnl: (json: string) => AssembledTransaction<bigint>;
     };
 }
