@@ -1,10 +1,14 @@
-//! Unrealized PnL accounting. Owns the invariant that the Vault always sees
-//! `realized + unrealized` (combined) on every market mutation — keeping the
-//! free-liquidity formula in `Vault.free_liquidity` honest.
+//! Unrealized PnL accounting. Single writer of `MarketUnrealizedPnl(symbol)`
+//! and `TotalUnrealizedPnl`, and the only path that syncs the global
+//! unrealized PnL to the Vault — which `Vault.free_liquidity` uses to bound
+//! LP-claimable funds against open trader winnings.
 //!
 //! Every Close path and `update_indices` calls [`refresh_market_unrealized_pnl`]
-//! after the market's OI / avg / mark price has settled. The function is the
-//! single writer of `MarketUnrealizedPnl(symbol)` and `TotalUnrealizedPnl`.
+//! after the market's OI / avg / mark price has settled. `RealizedPnl` is
+//! tracked separately for ADL / off-chain reporting; it is NOT sent to the
+//! Vault, because realized winnings have already moved USDC at close time
+//! (via `vault.pay_profit` / `vault.record_absorbed_collateral`) and are
+//! reflected directly in `total_assets`.
 
 use soroban_sdk::{Env, Symbol};
 
@@ -14,9 +18,6 @@ use crate::events;
 use crate::math;
 use crate::storage;
 
-/// Recompute a market's unrealized PnL from its current OI / avg prices and
-/// the given mark price. Updates the per-market cache, the global total, and
-/// syncs the combined (realized + unrealized) PnL to the Vault.
 pub fn refresh_market_unrealized_pnl(env: &Env, symbol: &Symbol, mark_price: i128) {
     let market = storage::get_market(env, symbol);
     let new_market_pnl = math::calc_market_unrealized_pnl(
@@ -39,9 +40,8 @@ pub fn refresh_market_unrealized_pnl(env: &Env, symbol: &Symbol, mark_price: i12
     let new_total = storage::get_total_unrealized_pnl(env) + delta;
     storage::set_total_unrealized_pnl(env, new_total);
 
-    let combined = storage::get_realized_pnl(env) + new_total;
     let vault_addr = storage::get_vault_address(env);
     let vault = VaultClient::new(env, &vault_addr);
     let contract_addr = env.current_contract_address();
-    vault.update_net_pnl(&contract_addr, &combined);
+    vault.update_net_pnl(&contract_addr, &new_total);
 }
