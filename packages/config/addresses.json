@@ -9,36 +9,36 @@
     ],
     "contracts": {
       "vault": {
-        "address": "CCVC2PL4XM57FWMJOUA3PTWGK4QJJLENCQ6VLXKEA27JCGDKPJVYW6JB",
-        "startLedger": 134
-      },
-      "positionManager": {
-        "address": "CD5IP3QR7XRRVILS63WF4Q35E5WPITR7YS7KPJU43U4YSD7XGWKGFP7I",
+        "address": "CCK26HLDD2LBJQRZSZDH6CRDFHJQAV7NHXIRL7MAUU5T2QR4TKSVGZY2",
         "startLedger": 136
       },
-      "configManager": {
-        "address": "CBSRBQ2GIOBWH6XMYZY24VP5MNUKIJOWNAXWBOGEXVWQJFDQPN7DXHDD",
-        "startLedger": 120
+      "positionManager": {
+        "address": "CCJUT4TCQD2HVYAC6CQJ5FXW6MH4HZ3LL33DAUGFEMJBNNXPBKPZF5NT",
+        "startLedger": 140
       },
-      "oracleRouter": {
-        "address": "CDZWHPPZAOK7V65BDZV2WGS35P2CUNTI72IR5A2ZTFY6TQDBIYRDKPWV",
+      "configManager": {
+        "address": "CDN4DPPUA6ZXSO6VFLDSE5SC7D7XASSAQ664KASBW2DBXDZR7KIRERS7",
         "startLedger": 124
       },
-      "oracle": {
-        "address": "CAOKXYHA6W3Y6LGHBGUMVYSU62246A7YG7P2ZK75G5NTYDEUYHCAFJ43",
+      "oracleRouter": {
+        "address": "CB7PE3N23XMR2W3LYAKDQGZUMYTYHFPHFLIF53B6AS5A5KIVLFIGNWCG",
         "startLedger": 128
       },
+      "oracle": {
+        "address": "CCBMOV2EZO7KLPUOH66OSGAIGB4SN4EFN54WGX6VKAS6R43YZL3BCPB3",
+        "startLedger": 130
+      },
       "binanceOracle": {
-        "address": "CCOWIVO3I6XSAR4D2SB6GJUHQTYHGZ3LANIFA7S7H7QEKX5QA5VJE5FA",
-        "startLedger": 170
+        "address": "CCIQ2OKPHJ3YP4LHATFGTHLCN4OBY5FSV7E5KNFP4OF6FXU22NAUSJDJ",
+        "startLedger": 174
       },
       "kucoinOracle": {
-        "address": "CAE5H44VMVZCUMBHZRR4ZF3VSCANBYVZ3DRIBIP6CZEVRBRCBVNY47EW",
-        "startLedger": 171
+        "address": "CCQLWCGSQAIVAAK6HZ4NZTMUWLQ3M6TD3E4JVSTRYY3BZNVMXKTJPS6A",
+        "startLedger": 175
       },
       "mockToken": {
-        "address": "CA63I7QZXL3ZVECJYU5IZ7ZYNWAMV557DNSLZO2TILC73VLPH3ZC27ZA",
-        "startLedger": 130
+        "address": "CA2PXSKZIQCZTQFWCP4SSBB5L4DJOD5EI2Z3UUWKXQMQVIQLHKR4AKAK",
+        "startLedger": 134
       }
     }
   },
@@ -52,36 +52,36 @@
     ],
     "contracts": {
       "vault": {
-        "address": "CBGUMVXETE4KQCIAYVH6XVJGU4JIGUMXUH3FICWEGWVUVBVPYG2IIJ7I",
-        "startLedger": 2386056
+        "address": "CAX5JF7U7WFQDSX7CNEV6DDAQ5J5Q655NLATEUPU5D5GWIWT7T6SGYVO",
+        "startLedger": 2627197
       },
       "positionManager": {
-        "address": "CC7LKQXFIW3VM74IX3WFM5FKDOS4DJL5Q2BNLYJZO6MMOT2ZHCZO34P4",
-        "startLedger": 2386058
+        "address": "CBKWIM7PG2RYZAURKIJIIDN33U4HJ5AK5FTUMPVVWSM5AHVUKZS47TTJ",
+        "startLedger": 2627199
       },
       "configManager": {
-        "address": "CDOX7YU6NXB4ALYVPBQMJETJUDOMQMINJKEFKYFYXNPKLBRDA5ZJ4CUB",
-        "startLedger": 2386046
+        "address": "CDDOA6JJWVH4Q7SXTL7P6S56VFCVSIUKNPTBBXQYVD27V3P3PWSKBNBP",
+        "startLedger": 2627189
       },
       "oracleRouter": {
-        "address": "CCDAJO7NWQSUYJ5TO6JEAJKKXCTZSAEUHS2WBWIXI3XAXPAFQRVCH7WC",
-        "startLedger": 2386048
+        "address": "CCA6SWSBBNDVQRWYGYP7T6644K5OR3L35O7YGYLODDT2R2ZV7HG4GKBX",
+        "startLedger": 2627191
       },
       "oracle": {
-        "address": "CAIRXHIINS3IGSBXTVK3U4V2UY67XX2ZT3SALORSJQCOH7XTOEPEIGBU",
-        "startLedger": 2386050
+        "address": "CAACOFUFNVWOMBQU7MDKUKB3IGDW4EJGUZTTHN2Q4IDIA7WVDYXE54DG",
+        "startLedger": 2627193
       },
       "binanceOracle": {
-        "address": "CBNU3IHEPS4QF3UKGHKUWPFZDPOWTUF5QWRXMVJSXFJYMJ7IN6C4ZUJO",
-        "startLedger": 2386241
+        "address": "CBTVRC6X5Q6KJGAC7SOQHAKBQS4RS5MTOERWKPH5M5OF6FLGVCO6OOHC",
+        "startLedger": 2627236
       },
       "kucoinOracle": {
-        "address": "CASHCX4WQFFB5CFPQJGF2CQ5UZJVWPJ2VMTEQUS7Q7EV5JL7O5OQBYCG",
-        "startLedger": 2386242
+        "address": "CCNNEIHURTEROE7T34V2E5BDEPOLRBGZEB3V3A5F6A563IQR2E6VA5RV",
+        "startLedger": 2627237
       },
       "mockToken": {
-        "address": "CB2WJV6F57FHFUTYJGIGQZYH7JOUTQGPXZVI5NCFGHO4HW7UE74DPNXV",
-        "startLedger": 2386053
+        "address": "CBI2GEK27L4OCKBSKUF3XW3EZYO5WAI4NKYOWO5ZXSIBRUY5ELTDVLQA",
+        "startLedger": 2627195
       }
     }
   },
