@@ -15,7 +15,7 @@ import {
   StellarWalletsKit,
   type ModuleInterface,
 } from "@creit.tech/stellar-wallets-kit";
-import { Networks } from "@creit.tech/stellar-wallets-kit/types";
+import { Networks, type SwkAppTheme } from "@creit.tech/stellar-wallets-kit/types";
 import { AlbedoModule } from "@creit.tech/stellar-wallets-kit/modules/albedo";
 import { FreighterModule } from "@creit.tech/stellar-wallets-kit/modules/freighter";
 import { HanaModule } from "@creit.tech/stellar-wallets-kit/modules/hana";
@@ -64,12 +64,50 @@ function buildModules(): ModuleInterface[] {
   ];
 }
 
+/**
+ * Custom theme for the kit's auth modal. Mirrors `src/index.css` so the modal
+ * reads as part of the app, not a third-party widget. Token names are fixed
+ * by `SwkAppTheme`; map each one to the closest semantic equivalent in our
+ * own palette (ember = primary accent, card = background-secondary, etc.).
+ */
+const KIT_THEME: SwkAppTheme = {
+  // Near-black warm base + slightly lighter card surface — same hue family.
+  background: "hsl(30 10% 5%)",
+  "background-secondary": "hsl(30 8% 9%)",
+
+  // Foreground hierarchy mirrors --foreground / --muted-foreground.
+  "foreground-strong": "hsl(36 22% 96%)",
+  foreground: "hsl(36 22% 92%)",
+  "foreground-secondary": "hsl(36 12% 60%)",
+
+  // Ember accent — same as the Deposit / connected pill in the app header.
+  primary: "hsl(24 75% 55%)",
+  "primary-foreground": "hsl(30 20% 8%)",
+
+  // Neutral fills used by hover / Install button surfaces inside the modal.
+  transparent: "transparent",
+  lighter: "hsl(30 6% 11%)",
+  light: "hsl(30 6% 14%)",
+  "light-gray": "hsl(36 8% 24%)",
+  gray: "hsl(36 12% 60%)",
+
+  // Destructive = bear (red-brick).
+  danger: "hsl(8 60% 60%)",
+
+  border: "hsl(36 10% 22%)",
+  shadow: "hsla(0 0% 0% / 0.6)",
+
+  "border-radius": "0.875rem",
+  "font-family": '"Geist", system-ui, sans-serif',
+};
+
 function ensureInit(): void {
   if (initialized || typeof window === "undefined") return;
   StellarWalletsKit.init({
     modules: buildModules(),
     network: networkFromPassphrase(NETWORK_PASSPHRASE),
     selectedWalletId: window.localStorage.getItem(STORED_WALLET_KEY) ?? undefined,
+    theme: KIT_THEME,
   });
   initialized = true;
 }

@@ -337,6 +337,12 @@ impl VaultContract {
     /// Rejects when accruing would push `unclaimed_fees + reserved_usdc`
     /// above `total_assets`. PM cannot accumulate book-only fees beyond
     /// what is actually in the vault.
+    ///
+    /// Emits `TotalAssetsUpdate` alongside `AccrueFees`. PM's `recv_revenue`
+    /// pushes fee USDC into the vault via a raw token transfer immediately
+    /// before this call, and no other vault entrypoint witnesses that
+    /// transfer — without the snapshot, off-chain indexers would lose the
+    /// LP slice (`fee - non_lp_slice`) on every accrual.
     pub fn accrue_fees(env: Env, caller: Address, amount: i128) {
         vault_logic::require_initialized(&env);
         vault_logic::require_position_manager(&env, &caller);
@@ -354,6 +360,10 @@ impl VaultContract {
         }
         vault_storage::set_unclaimed_fees(&env, new_total);
         vault_events::AccrueFees { amount, new_total }.publish(&env);
+        vault_events::TotalAssetsUpdate {
+            new_total_assets: total_assets,
+        }
+        .publish(&env);
         shared::bump_instance_ttl(&env);
     }
 

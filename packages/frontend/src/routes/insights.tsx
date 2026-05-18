@@ -242,6 +242,18 @@ function InsightsPage() {
             tone="bull"
           />
           <Kpi
+            label="Unclaimed fees"
+            value={
+              vault.data ? <NumberFlowUsd value={vault.data.unclaimed_fees} decimals={2} /> : "—"
+            }
+            tone="ember"
+            sub={
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/60">
+                dev + staker slice awaiting claim
+              </span>
+            }
+          />
+          <Kpi
             label="LP shares"
             value={
               vault.data ? (

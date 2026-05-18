@@ -23,12 +23,41 @@ function VaultPage() {
     ? (BigInt(vault.data.free_liquidity) + BigInt(vault.data.reserved_usdc)).toString()
     : null;
 
-  // 30d total = trading + fees. Both are bigints (× 10^7). Render the sum
-  // as the headline number with the breakdown below it.
-  const profitTotal = profitability.data
-    ? (BigInt(profitability.data.lp_net_from_trades) +
-        BigInt(profitability.data.lp_net_from_fees)).toString()
-    : null;
+  // Mark-to-market basis: every figure here is "what hits LP NAV right now",
+  // including the mark-to-market trader-PnL deduction the chain already
+  // bakes into `free_liquidity` (the `max(0, net_global_trader_pnl)` term —
+  // chain only counts positive trader PnL as a liability; unrealized trader
+  // *losses* stay in trader collateral until close).
+  const tradingNet =
+    vault.data && profitability.data
+      ? (() => {
+          const pnl = BigInt(vault.data.net_global_trader_pnl);
+          const unrealizedToLp = pnl > 0n ? -pnl : 0n;
+          return (BigInt(profitability.data.lp_net_from_trades) + unrealizedToLp).toString();
+        })()
+      : null;
+
+  const profitTotal =
+    profitability.data && tradingNet !== null
+      ? (BigInt(tradingNet) + BigInt(profitability.data.lp_net_from_fees)).toString()
+      : null;
+
+  // Annualize the 30d return into a compounded APY. Naive extrapolation of a
+  // single window (no smoothing across windows, no cap at unrealistic values)
+  // so the user sees exactly what current activity would yield if it held.
+  // Returns null when the vault is empty or we have no profit row yet.
+  const apyPercent =
+    profitTotal !== null && lpTotal !== null && BigInt(lpTotal) > 0n
+      ? (() => {
+          // 6-decimal fixed-point ratio so small profits don't round to zero.
+          const ratioScaled = (BigInt(profitTotal) * 1_000_000n) / BigInt(lpTotal);
+          const ratio = Number(ratioScaled) / 1_000_000;
+          // Guard against `(1 + r) <= 0` exploding the power; ratio that
+          // negative would mean a full LP wipeout in 30d anyway — clamp.
+          if (1 + ratio <= 0) return -100;
+          return (Math.pow(1 + ratio, 365 / 30) - 1) * 100;
+        })()
+      : null;
 
   return (
     <div className="space-y-8 animate-fade-up">
@@ -101,7 +130,18 @@ function VaultPage() {
                   label="30-day profit"
                   value={
                     profitTotal !== null ? (
-                      <NumberFlowUsd value={profitTotal} signDisplay="exceptZero" decimals={2} />
+                      <span className="inline-flex flex-col items-end gap-1">
+                        <NumberFlowUsd
+                          value={profitTotal}
+                          signDisplay="exceptZero"
+                          decimals={2}
+                        />
+                        {apyPercent !== null && apyPercent > 0 && (
+                          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
+                            ≈ {formatApy(apyPercent)} APY
+                          </span>
+                        )}
+                      </span>
                     ) : (
                       "—"
                     )
@@ -118,14 +158,12 @@ function VaultPage() {
                   breakdown={[
                     {
                       label: "Trading",
-                      value: profitability.data ? (
-                        <NumberFlowUsd
-                          value={profitability.data.lp_net_from_trades}
-                          signDisplay="exceptZero"
-                        />
-                      ) : (
-                        "—"
-                      ),
+                      value:
+                        tradingNet !== null ? (
+                          <NumberFlowUsd value={tradingNet} signDisplay="exceptZero" />
+                        ) : (
+                          "—"
+                        ),
                     },
                     {
                       label: "Fees",
@@ -169,6 +207,15 @@ function VaultPage() {
       </div>
     </div>
   );
+}
+
+function formatApy(pct: number): string {
+  if (!Number.isFinite(pct)) return "—";
+  const sign = pct >= 0 ? "+" : "−";
+  const abs = Math.abs(pct);
+  if (abs >= 1000) return `${sign}${Math.round(abs).toLocaleString()}%`;
+  if (abs >= 10) return `${sign}${abs.toFixed(1)}%`;
+  return `${sign}${abs.toFixed(2)}%`;
 }
 
 function HeroStat({

@@ -1004,6 +1004,53 @@ mod accrue_fees {
         let attacker = Address::generate(&fix.env);
         fix.vault_client.accrue_fees(&attacker, &(5 * ONE_USDC));
     }
+
+    /// PositionManager pushes fee USDC into the vault via a raw token transfer
+    /// (in `recv_revenue`) right before calling `accrue_fees`. The vault has
+    /// no other hook into that transfer, so `accrue_fees` is the only place we
+    /// can snapshot the post-transfer balance for off-chain indexers. Without
+    /// a `TotalAssetsUpdate` here, the LP slice of every fee silently goes
+    /// untracked downstream.
+    #[test]
+    fn test_accrue_fees_emits_total_assets_update() {
+        use soroban_sdk::{testutils::Events as _, Symbol, TryIntoVal, Val};
+
+        let fix = setup();
+        seed_vault(&fix, 100 * ONE_USDC);
+
+        // Mint additional USDC directly into the vault to simulate the PM
+        // transfer that precedes `accrue_fees` in `recv_revenue`.
+        let pre_total = fix.vault_client.total_assets();
+        fix.token_client.mint(&fix.vault_id, &(5 * ONE_USDC));
+        let post_transfer_total = pre_total + 5 * ONE_USDC;
+
+        fix.vault_client
+            .accrue_fees(&fix.position_manager, &(1 * ONE_USDC));
+
+        let total_topic: Symbol = Symbol::new(&fix.env, "total");
+        let mut found_total: Option<i128> = None;
+        for entry in fix.env.events().all().iter() {
+            let (contract, topics, data) = entry;
+            if contract != fix.vault_id || topics.len() == 0 {
+                continue;
+            }
+            let first: Result<Symbol, _> = topics.get(0).unwrap().try_into_val(&fix.env);
+            if first.map(|s| s == total_topic).unwrap_or(false) {
+                // data is a Vec<Val> with a single i128 field
+                let vec: soroban_sdk::Vec<Val> = data.try_into_val(&fix.env).unwrap();
+                let new_total: i128 = vec.get(0).unwrap().try_into_val(&fix.env).unwrap();
+                found_total = Some(new_total);
+            }
+        }
+
+        let new_total = found_total.expect(
+            "accrue_fees must emit a TotalAssetsUpdate so indexers can track the LP fee slice",
+        );
+        assert_eq!(
+            new_total, post_transfer_total,
+            "TotalAssetsUpdate must carry the post-transfer absolute total_assets",
+        );
+    }
 }
 
 // ===========================================================================
