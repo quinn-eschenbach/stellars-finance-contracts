@@ -130,18 +130,11 @@ function VaultPage() {
                   label="30-day profit"
                   value={
                     profitTotal !== null ? (
-                      <span className="inline-flex flex-col items-end gap-1">
-                        <NumberFlowUsd
-                          value={profitTotal}
-                          signDisplay="exceptZero"
-                          decimals={2}
-                        />
-                        {apyPercent !== null && apyPercent > 0 && (
-                          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
-                            ≈ {formatApy(apyPercent)} APY
-                          </span>
-                        )}
-                      </span>
+                      <NumberFlowUsd
+                        value={profitTotal}
+                        signDisplay="exceptZero"
+                        decimals={2}
+                      />
                     ) : (
                       "—"
                     )
@@ -173,6 +166,16 @@ function VaultPage() {
                         "—"
                       ),
                     },
+                    ...(apyPercent !== null && apyPercent > 0
+                      ? [
+                          {
+                            label: "APY",
+                            value: (
+                              <span className="text-bull/85">{formatApy(apyPercent)}</span>
+                            ),
+                          },
+                        ]
+                      : []),
                   ]}
                 />
 
@@ -286,7 +289,7 @@ function StatGroup({
           {value}
         </span>
       </div>
-      <div className="space-y-1 border-t border-border/30 pt-2 pl-3">
+      <div className="space-y-1 pt-2">
         {breakdown.map((row) => (
           <div
             key={row.label}

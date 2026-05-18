@@ -17,7 +17,8 @@ import {
 } from "@creit.tech/stellar-wallets-kit";
 import { Networks, type SwkAppTheme } from "@creit.tech/stellar-wallets-kit/types";
 import { AlbedoModule } from "@creit.tech/stellar-wallets-kit/modules/albedo";
-import { FreighterModule } from "@creit.tech/stellar-wallets-kit/modules/freighter";
+import { FreighterModule, FREIGHTER_ID } from "@creit.tech/stellar-wallets-kit/modules/freighter";
+import { addToken as freighterAddToken } from "@stellar/freighter-api";
 import { HanaModule } from "@creit.tech/stellar-wallets-kit/modules/hana";
 import { LobstrModule } from "@creit.tech/stellar-wallets-kit/modules/lobstr";
 import { RabetModule } from "@creit.tech/stellar-wallets-kit/modules/rabet";
@@ -182,6 +183,29 @@ export async function signAuth(
   const signed = result.signedAuthEntry as string | Uint8Array;
   if (typeof signed === "string") return signed;
   return Buffer.from(signed).toString("base64");
+}
+
+/**
+ * Ask the connected wallet to start tracking a Soroban token contract. Only
+ * Freighter exposes a programmatic add-token API at present — for every other
+ * wallet we resolve to `"fallback"` and let the caller handle the no-op
+ * (typically by copying the contract address to the clipboard for manual
+ * paste into the wallet's add-asset UI).
+ */
+export async function addTokenToWallet(
+  contractId: string,
+): Promise<"added" | "fallback"> {
+  ensureInit();
+  const selected = StellarWalletsKit.selectedModule?.productId;
+  if (selected !== FREIGHTER_ID) return "fallback";
+  const res = await freighterAddToken({
+    contractId,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+  if (res.error) {
+    throw new Error(res.error.message ?? "Freighter rejected addToken");
+  }
+  return "added";
 }
 
 /** Clear the stored wallet selection — used by an explicit disconnect action. */

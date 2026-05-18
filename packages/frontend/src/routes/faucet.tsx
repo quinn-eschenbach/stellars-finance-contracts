@@ -1,17 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Droplet } from "lucide-react";
+import { Droplet, Plus } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAddress } from "@/wallet/WalletProvider";
+import { addTokenToWallet } from "@/wallet/freighter";
 import { mockToken } from "@/contracts/clients";
 import { useTxMutation } from "@/contracts/useTxMutation";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { parseUsdc } from "@/lib/utils";
 import { MOCK_TOKEN_CONTRACT } from "@/lib/constants";
 import { queryKeys, useWalletBalance } from "@/api/hooks";
+import { toastSuccess, toastError } from "@/lib/toast";
 
 export const Route = createFileRoute("/faucet")({
   component: FaucetPage,
@@ -22,8 +24,33 @@ const PRESETS = ["100", "1000", "10000"];
 function FaucetPage() {
   const address = useAddress();
   const [amount, setAmount] = useState("1000");
+  const [addingToken, setAddingToken] = useState(false);
 
   const balance = useWalletBalance(address);
+
+  async function handleAddToken() {
+    if (!MOCK_TOKEN_CONTRACT) return;
+    setAddingToken(true);
+    try {
+      const result = await addTokenToWallet(MOCK_TOKEN_CONTRACT);
+      if (result === "added") {
+        toastSuccess("USDC added", "Your wallet is now tracking the mock USDC contract.");
+      } else {
+        // Non-Freighter wallets have no programmatic add-token surface, so
+        // we drop the contract id on the clipboard and let the user paste
+        // it into the wallet's add-asset UI.
+        await navigator.clipboard.writeText(MOCK_TOKEN_CONTRACT);
+        toastSuccess(
+          "Contract address copied",
+          "Paste it into your wallet's add-asset flow to track USDC.",
+        );
+      }
+    } catch (err) {
+      toastError(err, "Couldn't add USDC to wallet");
+    } finally {
+      setAddingToken(false);
+    }
+  }
 
   const mint = useTxMutation({
     action: "Mint testnet USDC",
@@ -126,6 +153,16 @@ function FaucetPage() {
                 className="w-full"
               >
                 {mint.isPending ? "Minting…" : `Mint ${amount} USDC`}
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleAddToken}
+                disabled={addingToken}
+                className="w-full gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                {addingToken ? "Adding…" : "Add USDC to wallet"}
               </Button>
             </>
           )}
