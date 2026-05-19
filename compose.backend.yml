@@ -111,6 +111,17 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    # On Coolify the proxy (coolify-proxy / Traefik) lives on the `coolify`
+    # network. Attach the api to it so Traefik can reach the backend; keep
+    # `default` so the service still talks to postgres on the project
+    # network. The label pins Traefik to the right network when the
+    # container is multi-homed — otherwise the docker provider may pick
+    # the project network the proxy isn't on and silently drop the router.
+    labels:
+      - traefik.docker.network=coolify
+    networks:
+      - default
+      - coolify
 
   indexer:
     build:
@@ -158,3 +169,11 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  # External network owned by Coolify; the api joins it so Traefik can
+  # reach it. Harmless on plain `docker compose` runs as long as the
+  # network exists — create it with `docker network create coolify` if
+  # running outside Coolify.
+  coolify:
+    external: true
