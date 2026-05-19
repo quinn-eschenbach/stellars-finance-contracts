@@ -6,8 +6,8 @@
 # `--env-file` populates the ${...} substitutions below; the per-service
 # `env_file:` directive then loads the same file's contents *into* each
 # container. We override DATABASE_URL via `environment:` so services find
-# the DB at its compose hostname (`stellars-postgres`) regardless of what
-# the shell .env says about localhost.
+# Postgres at its compose hostname (`postgres`) regardless of what the
+# shell .env says about localhost.
 #
 # Runtime stack here is intentionally separate from `docker-compose.yml`
 # (which spins up stellar-quickstart for local chain). The chain is treated
@@ -23,22 +23,15 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  # Service name is intentionally `stellars-postgres` (not bare `postgres`)
-  # so the DNS short name doesn't collide with other tenants on shared
-  # Coolify networks. The api is attached to both the project network and
-  # the proxy network for Traefik, and Docker DNS picks an arbitrary
-  # `postgres` if multiple exist — using a unique name removes the
-  # ambiguity entirely.
-  stellars-postgres:
+  postgres:
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
     logging: *default-logging
     environment:
       POSTGRES_USER: stellars
-      # Password supplied by the deploy env (Coolify / .env.<network>).
-      # Avoid docker-compose's `:?` required-var modifier here: Coolify's
-      # preprocessor treats it like a `:-` fallback and substitutes the
-      # message text literally, breaking auth.
+      # Plain substitution (no `:?` modifier) because Coolify's compose
+      # preprocessor treats the required-var form like a fallback default
+      # and substitutes the message text literally, breaking auth.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: stellars
     volumes:
@@ -73,9 +66,9 @@ services:
     env_file:
       - ${ENV_FILE:-.env.local}
     environment:
-      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@stellars-postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@postgres:5432/stellars
     depends_on:
-      stellars-postgres:
+      postgres:
         condition: service_healthy
     command: ["pnpm", "--filter", "@stellars/db", "migrate"]
 
@@ -95,7 +88,7 @@ services:
     environment:
       # Override DB URL so the service uses the compose hostname even if
       # the source .env points at localhost.
-      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@stellars-postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@postgres:5432/stellars
       API_PORT: "3030"
       # CORS origins must be explicit on shared / production envs. Local
       # dev gets a permissive default via the substitution; testnet /
@@ -107,27 +100,19 @@ services:
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 200
+    # Runtime image is bun-slim with curl installed (not wget). Coolify
+    # gates Traefik routing on docker healthcheck state — a broken
+    # healthcheck means "no available server" to anyone visiting the site.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3030/api/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3030/api/healthz || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
     depends_on:
-      stellars-postgres:
+      postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    # On Coolify the proxy (coolify-proxy / Traefik) lives on the `coolify`
-    # network. Attach the api to it so Traefik can reach the backend; keep
-    # `default` so the service still talks to postgres on the project
-    # network. The label pins Traefik to the right network when the
-    # container is multi-homed — otherwise the docker provider may pick
-    # the project network the proxy isn't on and silently drop the router.
-    labels:
-      - traefik.docker.network=coolify
-    networks:
-      - default
-      - coolify
 
   indexer:
     build:
@@ -138,18 +123,18 @@ services:
     env_file:
       - ${ENV_FILE:-.env.local}
     environment:
-      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@stellars-postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@postgres:5432/stellars
       HEALTH_PORT: "3001"
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 200
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/healthz || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
     depends_on:
-      stellars-postgres:
+      postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -163,23 +148,15 @@ services:
     env_file:
       - ${ENV_FILE:-.env.local}
     environment:
-      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@stellars-postgres:5432/stellars
+      DATABASE_URL: postgresql://stellars:${POSTGRES_PASSWORD}@postgres:5432/stellars
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 100
     depends_on:
-      stellars-postgres:
+      postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
 volumes:
   pgdata:
-
-networks:
-  # External network owned by Coolify; the api joins it so Traefik can
-  # reach it. Harmless on plain `docker compose` runs as long as the
-  # network exists — create it with `docker network create coolify` if
-  # running outside Coolify.
-  coolify:
-    external: true
