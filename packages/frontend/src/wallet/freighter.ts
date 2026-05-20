@@ -128,7 +128,10 @@ export async function getFreighterStatus(): Promise<FreighterStatus> {
 
   try {
     StellarWalletsKit.setWallet(stored);
-    const { address } = await StellarWalletsKit.getAddress();
+    // `fetchAddress` queries the wallet module live; `getAddress` only
+    // returns the kit's cached snapshot from the connect-time auth modal.
+    // Use the live path so polling picks up in-extension account switches.
+    const { address } = await StellarWalletsKit.fetchAddress();
     if (!address) return { kind: "missing" };
     const { networkPassphrase } = await StellarWalletsKit.getNetwork();
     return {

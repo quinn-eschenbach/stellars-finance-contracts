@@ -11,6 +11,7 @@ const kitMock = {
   init: vi.fn(),
   setWallet: vi.fn(),
   getAddress: vi.fn(),
+  fetchAddress: vi.fn(),
   getNetwork: vi.fn(),
   authModal: vi.fn(),
   signTransaction: vi.fn(),
@@ -70,7 +71,7 @@ describe("getFreighterStatus", () => {
 
   it("is 'ok' with address + network when the stored wallet resolves", async () => {
     window.localStorage.setItem(STORED_WALLET_KEY, "freighter");
-    kitMock.getAddress.mockResolvedValue({ address: "GTRADER" });
+    kitMock.fetchAddress.mockResolvedValue({ address: "GTRADER" });
     kitMock.getNetwork.mockResolvedValue({
       network: "TESTNET",
       networkPassphrase: "Test SDF Network ; September 2015",
@@ -87,7 +88,7 @@ describe("getFreighterStatus", () => {
 
   it("falls back to 'missing' when the kit cannot resolve the stored wallet", async () => {
     window.localStorage.setItem(STORED_WALLET_KEY, "ghost-wallet");
-    kitMock.getAddress.mockRejectedValue(new Error("module not initialised"));
+    kitMock.fetchAddress.mockRejectedValue(new Error("module not initialised"));
     const { getFreighterStatus } = await load();
     await expect(getFreighterStatus()).resolves.toEqual({ kind: "missing" });
   });

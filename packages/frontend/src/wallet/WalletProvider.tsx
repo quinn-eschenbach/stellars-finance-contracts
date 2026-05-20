@@ -18,6 +18,16 @@ interface WalletContextValue {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
+const POLL_INTERVAL_MS = 3000;
+
+function sameStatus(a: FreighterStatus, b: FreighterStatus): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "ok" && b.kind === "ok") {
+    return a.address === b.address && a.passphrase === b.passphrase;
+  }
+  return true;
+}
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<FreighterStatus>({ kind: "missing" });
   const [refreshing, setRefreshing] = useState(false);
@@ -25,7 +35,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      setStatus(await getFreighterStatus());
+      const next = await getFreighterStatus();
+      // Skip the state update when nothing changed — keeps react-query from
+      // re-running address-keyed queries on every poll tick.
+      setStatus((prev) => (sameStatus(prev, next) ? prev : next));
     } finally {
       setRefreshing(false);
     }
@@ -36,13 +49,39 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     await refresh();
   }, [refresh]);
 
-  // On mount, check status. Re-poll when window regains focus (covers the
-  // "user installed/unlocked extension in another tab" case).
+  // Poll the wallet adapter while the tab is visible so an in-extension
+  // account or network switch reflects in the app within ~3s. Freighter
+  // doesn't fire DOM events on account change, and the Wallets Kit doesn't
+  // expose a subscription, so polling is the only generic path. Pause when
+  // the tab is hidden to avoid background churn.
   useEffect(() => {
     refresh();
-    const onFocus = () => refresh();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer != null) return;
+      timer = setInterval(refresh, POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (timer == null) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+        start();
+      } else {
+        stop();
+      }
+    };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", refresh);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", refresh);
+    };
   }, [refresh]);
 
   const value = useMemo<WalletContextValue>(
