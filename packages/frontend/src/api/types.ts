@@ -142,6 +142,21 @@ export interface LeaderboardRow {
   losses: number;
   /** Unix-seconds timestamp of the latest trade event. */
   last_trade_at: number | null;
+  /**
+   * Trader's currently open positions — just the fields the client needs to
+   * mark-to-market against live oracle prices. Full PositionRow is more than
+   * the leaderboard needs and would bloat the response payload.
+   */
+  open_positions: LeaderboardOpenPosition[];
+}
+
+export interface LeaderboardOpenPosition {
+  symbol: string;
+  /** Notional size, scaled × 10^7. */
+  size: string;
+  /** Entry price, scaled × 10^7. */
+  entry_price: string;
+  is_long: boolean;
 }
 
 export interface TradeRow {

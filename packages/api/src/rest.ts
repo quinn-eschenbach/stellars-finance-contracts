@@ -162,29 +162,53 @@ export function buildRestRoutes(db: QueryRunner): Hono {
   /**
    * GET /leaderboard?limit=50
    *
-   * Per-trader realized PnL, computed by summing the `pnl` column across all
-   * trade events (increases default to 0, so they're harmless to include).
-   * Wins/losses count only closing events. Sorted by realized PnL desc.
+   * Per-trader realized PnL plus each trader's currently open positions, so
+   * the client can mark-to-market unrealized PnL against the live oracle
+   * stream and render one combined number per row that ticks per price.
+   * Server seeds ordering by realized PnL desc; the client re-sorts by the
+   * combined value as ticks arrive.
    */
   r.get("/leaderboard", async (c) => {
     const limitRaw = Number(c.req.query("limit") ?? 50);
     const limit = Math.min(Math.max(1, isNaN(limitRaw) ? 50 : limitRaw), 200);
 
     const rows = await db.execute(sql`
+      WITH agg AS (
+        SELECT
+          trader,
+          SUM(pnl)::text AS realized_pnl,
+          SUM(ABS(size_delta::numeric))::text AS volume,
+          COUNT(*) FILTER (WHERE event_type <> 'increase') AS closes,
+          COUNT(*) FILTER (WHERE event_type <> 'increase' AND pnl > 0) AS wins,
+          COUNT(*) FILTER (WHERE event_type <> 'increase' AND pnl < 0) AS losses,
+          MAX(timestamp::bigint) AS last_trade_at
+        FROM trades
+        GROUP BY trader
+        ORDER BY SUM(pnl) DESC NULLS LAST
+        LIMIT ${limit}
+      )
       SELECT
-        trader,
-        SUM(pnl)::text AS realized_pnl,
-        SUM(ABS(size_delta::numeric))::text AS volume,
-        COUNT(*) FILTER (WHERE event_type <> 'increase') AS closes,
-        COUNT(*) FILTER (WHERE event_type <> 'increase' AND pnl > 0) AS wins,
-        COUNT(*) FILTER (WHERE event_type <> 'increase' AND pnl < 0) AS losses,
-        MAX(timestamp::bigint) AS last_trade_at
-      FROM trades
-      GROUP BY trader
-      ORDER BY SUM(pnl) DESC NULLS LAST
-      LIMIT ${limit}
+        agg.*,
+        COALESCE(
+          (SELECT jsonb_agg(jsonb_build_object(
+              'symbol', p.symbol,
+              'size', p.size::text,
+              'entry_price', p.entry_price::text,
+              'is_long', p.is_long
+            ))
+            FROM positions p
+            WHERE p.trader = agg.trader),
+          '[]'::jsonb
+        ) AS open_positions
+      FROM agg
     `);
 
+    type OpenPos = {
+      symbol: string;
+      size: string;
+      entry_price: string;
+      is_long: boolean;
+    };
     type Row = {
       trader: string;
       realized_pnl: string;
@@ -193,6 +217,7 @@ export function buildRestRoutes(db: QueryRunner): Hono {
       wins: number | string;
       losses: number | string;
       last_trade_at: number | string | null;
+      open_positions: OpenPos[] | null;
     };
 
     const data = (rows.rows as Row[]).map((r) => ({
@@ -203,6 +228,7 @@ export function buildRestRoutes(db: QueryRunner): Hono {
       wins: Number(r.wins ?? 0),
       losses: Number(r.losses ?? 0),
       last_trade_at: r.last_trade_at == null ? null : Number(r.last_trade_at),
+      open_positions: r.open_positions ?? [],
     }));
     return c.json(data);
   });

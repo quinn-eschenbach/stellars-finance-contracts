@@ -12,6 +12,7 @@ const TRADERS = [
     wins: 9,
     losses: 3,
     last_trade_at: 1700000000,
+    open_positions: [],
   },
   {
     trader: trader("TEST2"),
@@ -21,6 +22,7 @@ const TRADERS = [
     wins: 2,
     losses: 6,
     last_trade_at: 1700000100,
+    open_positions: [],
   },
 ];
 

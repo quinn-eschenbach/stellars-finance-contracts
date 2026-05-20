@@ -280,6 +280,9 @@ describe("GET /leaderboard", () => {
         wins: "2",
         losses: "1",
         last_trade_at: "1700000000",
+        open_positions: [
+          { symbol: "BTCUSD", size: "100", entry_price: "950000000000", is_long: true },
+        ],
       },
       {
         trader: "GDEF",
@@ -289,6 +292,7 @@ describe("GET /leaderboard", () => {
         wins: "0",
         losses: "0",
         last_trade_at: null,
+        open_positions: null,
       },
     ]);
 
@@ -303,6 +307,9 @@ describe("GET /leaderboard", () => {
         wins: 2,
         losses: 1,
         last_trade_at: 1700000000,
+        open_positions: [
+          { symbol: "BTCUSD", size: "100", entry_price: "950000000000", is_long: true },
+        ],
       },
       {
         trader: "GDEF",
@@ -312,6 +319,7 @@ describe("GET /leaderboard", () => {
         wins: 0,
         losses: 0,
         last_trade_at: null,
+        open_positions: [],
       },
     ]);
   });
@@ -327,6 +335,7 @@ describe("GET /leaderboard", () => {
         wins: null,
         losses: null,
         last_trade_at: null,
+        open_positions: null,
       },
     ]);
     const res = await makeApp(db).request("/leaderboard");
@@ -339,6 +348,7 @@ describe("GET /leaderboard", () => {
         wins: 0,
         losses: 0,
         last_trade_at: null,
+        open_positions: [],
       },
     ]);
   });
