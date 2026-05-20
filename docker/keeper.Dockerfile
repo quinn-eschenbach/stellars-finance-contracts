@@ -30,7 +30,6 @@ COPY packages/keeper/package.json             packages/keeper/
 COPY packages/oracle-base/package.json        packages/oracle-base/
 COPY packages/oracle-binance/package.json     packages/oracle-binance/
 COPY packages/oracle-kucoin/package.json      packages/oracle-kucoin/
-COPY packages/oracle-keeper/package.json      packages/oracle-keeper/
 COPY packages/simulation/package.json         packages/simulation/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
