@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { apiGet } from "./client";
-import { mockToken, vault } from "@/contracts/clients";
+import { configManager, mockToken, vault } from "@/contracts/clients";
 import type {
   CandleInterval,
   CandleRow,
@@ -34,7 +34,19 @@ export const queryKeys = {
     ["walletBalance", address ?? ""] as const,
   lockup: (address: string | null | undefined) => ["lockup", address ?? ""] as const,
   config: ["config"] as const,
+  feeConfig: ["feeConfig"] as const,
 };
+
+/**
+ * `FeeConfig` mirror — open fee, liquidation bounty, TP/SL execution fee.
+ * Read straight off ConfigManager because the API's `/config` endpoint
+ * intentionally omits this struct (see `ProtocolConfigRow` comments).
+ */
+export interface FeeConfigData {
+  open_fee_bps: number;
+  liquidation_bounty_bps: number;
+  tp_sl_execution_fee: string;
+}
 
 export interface TradesFilters {
   symbol?: string;
@@ -203,6 +215,44 @@ export function useLockup(
     },
     enabled: !!address,
     staleTime: 5_000,
+    ...opts,
+  });
+}
+
+/**
+ * On-chain `FeeConfig` — read directly from the ConfigManager contract
+ * because the API's `protocol_config` row does not mirror it. Changes
+ * only via an admin call, so a long staleTime is fine.
+ *
+ * Requires a connected wallet because the Soroban RPC rejects simulations
+ * whose source account isn't funded on-network — a synthetic placeholder
+ * G-address would pass checksum validation but get bounced with
+ * "Account not found". This is fine in practice: fee numbers are only
+ * meaningful when the user is about to submit a tx, which already requires
+ * being connected.
+ *
+ * Returns a JSON-safe shape (`tp_sl_execution_fee` as string) — the
+ * binding's `i128` would serialise as a bigint otherwise and lose
+ * react-query cache survivability across reloads.
+ */
+export function useFeeConfig(
+  address: string | null | undefined,
+  opts?: UseQueryOptions<FeeConfigData>,
+) {
+  return useQuery({
+    queryKey: queryKeys.feeConfig,
+    queryFn: async () => {
+      if (!address) throw new Error("address required");
+      const tx = await configManager(address).get_fee_config();
+      const r = tx.result;
+      return {
+        open_fee_bps: Number(r.open_fee_bps),
+        liquidation_bounty_bps: Number(r.liquidation_bounty_bps),
+        tp_sl_execution_fee: r.tp_sl_execution_fee.toString(),
+      } satisfies FeeConfigData;
+    },
+    enabled: !!address,
+    staleTime: 60_000,
     ...opts,
   });
 }

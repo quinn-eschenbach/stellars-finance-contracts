@@ -10,7 +10,14 @@ import { positionManager } from "@/contracts/clients";
 import { useTxMutation } from "@/contracts/useTxMutation";
 import { cn, formatUsdc, parsePrice, parseUsdc } from "@/lib/utils";
 import { approxLiquidationPrice } from "@/lib/math";
-import { queryKeys, useWalletBalance } from "@/api/hooks";
+import {
+  queryKeys,
+  useFeeConfig,
+  useMarket,
+  useProtocolConfig,
+  useVault,
+  useWalletBalance,
+} from "@/api/hooks";
 
 interface OrderFormProps {
   symbol: string;
@@ -50,6 +57,10 @@ export function OrderForm({
 }: OrderFormProps) {
   const address = useAddress();
   const balance = useWalletBalance(address);
+  const vaultState = useVault();
+  const market = useMarket(symbol);
+  const config = useProtocolConfig();
+  const feeConfig = useFeeConfig(address);
 
   const [tpInput, setTpInput] = useState("");
   const [slInput, setSlInput] = useState("");
@@ -91,6 +102,87 @@ export function OrderForm({
         ? validateSl(BigInt(markPrice), slScaled, isLong)
         : null;
 
+  // ── Fee + liquidity preview (current market conditions; mirrors the
+  //    contract's borrow-rate kink and the funding-rate base × imbalance
+  //    formulae so the user can sanity-check what they're paying before
+  //    the tx fires). All values are 10^7-scaled USDC bigints when present;
+  //    `null` propagates "not enough data to estimate" up to the UI.
+
+  const openFeeScaled = useMemo<bigint | null>(() => {
+    if (!feeConfig.data || sizeScaled <= 0n) return null;
+    return (sizeScaled * BigInt(feeConfig.data.open_fee_bps)) / 10_000n;
+  }, [feeConfig.data, sizeScaled]);
+
+  /** Current safe basis — matches `VaultView.safe_basis` on-chain. */
+  const safeBasis = useMemo<bigint | null>(() => {
+    if (!vaultState.data) return null;
+    const v =
+      BigInt(vaultState.data.total_assets) - BigInt(vaultState.data.unclaimed_fees);
+    return v > 0n ? v : null;
+  }, [vaultState.data]);
+
+  /** Current utilisation in bps (pre-trade). */
+  const currentUtilBps = useMemo<bigint | null>(() => {
+    if (!vaultState.data || !safeBasis) return null;
+    return (BigInt(vaultState.data.reserved_usdc) * 10_000n) / safeBasis;
+  }, [vaultState.data, safeBasis]);
+
+  /** Annualised borrow rate (bps) at current utilisation. */
+  const currentBorrowRateBps = useMemo<bigint | null>(() => {
+    if (!config.data || currentUtilBps === null) return null;
+    const base = BigInt(config.data.base_borrow_rate_bps);
+    const slope1 = BigInt(config.data.slope1_bps);
+    const slope2 = BigInt(config.data.slope2_bps);
+    const optimal = BigInt(config.data.optimal_utilization_bps);
+    if (currentUtilBps <= optimal) {
+      return base + (currentUtilBps * slope1) / 10_000n;
+    }
+    return (
+      base +
+      (optimal * slope1) / 10_000n +
+      ((currentUtilBps - optimal) * slope2) / 10_000n
+    );
+  }, [config.data, currentUtilBps]);
+
+  const dailyBorrowFeeScaled = useMemo<bigint | null>(() => {
+    if (!currentBorrowRateBps || sizeScaled <= 0n) return null;
+    return (sizeScaled * currentBorrowRateBps) / (10_000n * 365n);
+  }, [currentBorrowRateBps, sizeScaled]);
+
+  /**
+   * Funding rate from the trader's perspective. Sign convention:
+   * `+` ⇒ trader receives this rate, `−` ⇒ trader pays it. Longs pay when
+   * `long_oi > short_oi`; shorts pay in the opposite case.
+   */
+  const dailyFundingFeeScaled = useMemo<bigint | null>(() => {
+    if (!config.data || !market.data || sizeScaled <= 0n) return null;
+    const longOi = BigInt(market.data.long_open_interest);
+    const shortOi = BigInt(market.data.short_open_interest);
+    const totalOi = longOi + shortOi;
+    if (totalOi === 0n) return 0n;
+    const baseFunding = BigInt(config.data.base_funding_rate_bps);
+    const protocolRate = (baseFunding * (longOi - shortOi)) / totalOi;
+    const traderRate = isLong ? -protocolRate : protocolRate;
+    return (sizeScaled * traderRate) / (10_000n * 365n);
+  }, [config.data, market.data, sizeScaled, isLong]);
+
+  /**
+   * How much additional notional the contract will actually accept right
+   * now — `safe_basis × max_util_ratio − current_reserved`. The contract
+   * reverts with `UtilizationCapBreached` past this point, so we block
+   * the submit in the UI rather than burning a signed tx on a sure revert.
+   */
+  const liquidityHeadroom = useMemo<bigint | null>(() => {
+    if (!safeBasis || !vaultState.data || !config.data) return null;
+    const maxUtil = BigInt(config.data.max_utilization_ratio);
+    const maxReserved = (safeBasis * maxUtil) / 10_000n;
+    const reserved = BigInt(vaultState.data.reserved_usdc);
+    return maxReserved > reserved ? maxReserved - reserved : 0n;
+  }, [safeBasis, vaultState.data, config.data]);
+
+  const exceedsLiquidity =
+    liquidityHeadroom !== null && sizeScaled > 0n && sizeScaled > liquidityHeadroom;
+
   // `acceptable_price` worst-case the trade is willing to fill at.
   // Long: mark * (1 + slippage); Short: mark * (1 - slippage).
   // Pass 0 to opt out — match the contract convention.
@@ -130,7 +222,8 @@ export function OrderForm({
     collateralScaled <= 0n ||
     !!tpError ||
     !!slError ||
-    exceedsBalance;
+    exceedsBalance ||
+    exceedsLiquidity;
 
   return (
     <div className="space-y-5">
@@ -274,6 +367,66 @@ export function OrderForm({
           value={liq ? <NumberFlowUsd value={liq} decimals="adaptive" /> : "—"}
           tone="warn"
         />
+
+        {/* Fee preview — separated by a hairline so it reads as a sub-group. */}
+        <div className="my-1.5 h-px bg-border/30" />
+        <Row
+          label="Open fee"
+          value={
+            openFeeScaled !== null && openFeeScaled > 0n
+              ? <NumberFlowUsd value={openFeeScaled} decimals={2} />
+              : sizeScaled > 0n
+                ? "—"
+                : <span className="text-muted-foreground/60">—</span>
+          }
+        />
+        <Row
+          label="Borrow / day"
+          value={
+            dailyBorrowFeeScaled !== null && sizeScaled > 0n
+              ? <NumberFlowUsd value={dailyBorrowFeeScaled} decimals={2} />
+              : <span className="text-muted-foreground/60">—</span>
+          }
+        />
+        <Row
+          label="Funding / day"
+          value={
+            dailyFundingFeeScaled !== null && sizeScaled > 0n
+              ? (
+                  <span className={cn(
+                    dailyFundingFeeScaled > 0n
+                      ? "text-bull"
+                      : dailyFundingFeeScaled < 0n
+                        ? "text-bear"
+                        : "text-foreground/85"
+                  )}>
+                    <NumberFlowUsd
+                      value={dailyFundingFeeScaled}
+                      decimals={2}
+                      signDisplay="exceptZero"
+                    />
+                  </span>
+                )
+              : <span className="text-muted-foreground/60">—</span>
+          }
+        />
+
+        {/* Liquidity-headroom hint — only shows when the inputs are stressing
+            the cap. Stays quiet on normal-sized opens to keep the summary
+            from feeling busy. */}
+        {exceedsLiquidity && liquidityHeadroom !== null && (
+          <div className="!mt-2.5 flex items-start gap-2 rounded-lg border border-bear/40 bg-bear/[0.06] px-2.5 py-1.5">
+            <span className="mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-bear" />
+            <div className="space-y-0.5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-bear">
+                Exceeds available liquidity
+              </p>
+              <p className="font-mono text-[10px] tabular-nums text-muted-foreground/85">
+                vault headroom <NumberFlowUsd value={liquidityHeadroom} decimals={0} />
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <Button
@@ -289,7 +442,9 @@ export function OrderForm({
             ? "Submitting…"
             : exceedsBalance
               ? "Insufficient USDC balance"
-              : `Open ${cappedLeverage}× ${isLong ? "Long" : "Short"}`}
+              : exceedsLiquidity
+                ? "Exceeds vault liquidity"
+                : `Open ${cappedLeverage}× ${isLong ? "Long" : "Short"}`}
       </Button>
     </div>
   );

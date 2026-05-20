@@ -1,6 +1,7 @@
 import { Client as MockTokenClient } from "@stellars/bindings/mock-token";
 import { Client as VaultClient } from "@stellars/bindings/vault";
 import { Client as PositionManagerClient } from "@stellars/bindings/position-manager";
+import { Client as ConfigManagerClient } from "@stellars/bindings/config-manager";
 import { client, readOnlySigner } from "@stellars/protocol-clients";
 import { CONTRACTS, MOCK_TOKEN_CONTRACT, NETWORK_PASSPHRASE, RPC_URL } from "@/lib/constants";
 
@@ -21,4 +22,8 @@ export function vault(publicKey: string): VaultClient {
 
 export function positionManager(publicKey: string): PositionManagerClient {
   return client(PositionManagerClient, env, CONTRACTS.positionManager, readOnlySigner(publicKey));
+}
+
+export function configManager(publicKey: string): ConfigManagerClient {
+  return client(ConfigManagerClient, env, CONTRACTS.configManager, readOnlySigner(publicKey));
 }
