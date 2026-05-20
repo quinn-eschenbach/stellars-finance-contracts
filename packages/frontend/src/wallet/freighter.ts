@@ -128,10 +128,14 @@ export async function getFreighterStatus(): Promise<FreighterStatus> {
 
   try {
     StellarWalletsKit.setWallet(stored);
-    // `fetchAddress` queries the wallet module live; `getAddress` only
-    // returns the kit's cached snapshot from the connect-time auth modal.
-    // Use the live path so polling picks up in-extension account switches.
-    const { address } = await StellarWalletsKit.fetchAddress();
+    // Query the selected module directly with `skipRequestAccess: true` so
+    // polling picks up in-extension account switches without re-prompting
+    // the user for permission on every tick. The kit's static
+    // `fetchAddress()` proxies to the module without params, which makes
+    // Freighter call `requestAccess()` and reopen its popup on every poll.
+    const selected = StellarWalletsKit.selectedModule;
+    if (!selected) return { kind: "missing" };
+    const { address } = await selected.getAddress({ skipRequestAccess: true });
     if (!address) return { kind: "missing" };
     const { networkPassphrase } = await StellarWalletsKit.getNetwork();
     return {

@@ -11,15 +11,17 @@ const kitMock = {
   init: vi.fn(),
   setWallet: vi.fn(),
   getAddress: vi.fn(),
-  fetchAddress: vi.fn(),
   getNetwork: vi.fn(),
   authModal: vi.fn(),
   signTransaction: vi.fn(),
   signAuthEntry: vi.fn(),
   disconnect: vi.fn(),
-  // selectedModule is read after authModal — back it with a setter so
+  // selectedModule is read by getFreighterStatus (live polling path) and
+  // after authModal (to learn which wallet won). Back it with a setter so
   // tests can mutate between assertions without re-mocking the module.
-  selectedModule: undefined as { productId: string } | undefined,
+  selectedModule: undefined as
+    | { productId: string; getAddress?: ReturnType<typeof vi.fn> }
+    | undefined,
 };
 
 vi.mock("@creit.tech/stellar-wallets-kit", () => ({
@@ -71,7 +73,8 @@ describe("getFreighterStatus", () => {
 
   it("is 'ok' with address + network when the stored wallet resolves", async () => {
     window.localStorage.setItem(STORED_WALLET_KEY, "freighter");
-    kitMock.fetchAddress.mockResolvedValue({ address: "GTRADER" });
+    const moduleGetAddress = vi.fn().mockResolvedValue({ address: "GTRADER" });
+    kitMock.selectedModule = { productId: "freighter", getAddress: moduleGetAddress };
     kitMock.getNetwork.mockResolvedValue({
       network: "TESTNET",
       networkPassphrase: "Test SDF Network ; September 2015",
@@ -84,11 +87,24 @@ describe("getFreighterStatus", () => {
       passphrase: "Test SDF Network ; September 2015",
     });
     expect(kitMock.setWallet).toHaveBeenCalledWith("freighter");
+    // Polling must skip the permission prompt so Freighter doesn't reopen
+    // its popup every interval tick.
+    expect(moduleGetAddress).toHaveBeenCalledWith({ skipRequestAccess: true });
   });
 
   it("falls back to 'missing' when the kit cannot resolve the stored wallet", async () => {
     window.localStorage.setItem(STORED_WALLET_KEY, "ghost-wallet");
-    kitMock.fetchAddress.mockRejectedValue(new Error("module not initialised"));
+    kitMock.selectedModule = {
+      productId: "ghost-wallet",
+      getAddress: vi.fn().mockRejectedValue(new Error("module not initialised")),
+    };
+    const { getFreighterStatus } = await load();
+    await expect(getFreighterStatus()).resolves.toEqual({ kind: "missing" });
+  });
+
+  it("falls back to 'missing' when setWallet leaves no selected module", async () => {
+    window.localStorage.setItem(STORED_WALLET_KEY, "freighter");
+    kitMock.selectedModule = undefined;
     const { getFreighterStatus } = await load();
     await expect(getFreighterStatus()).resolves.toEqual({ kind: "missing" });
   });
