@@ -9,12 +9,17 @@ import {
   type Db,
 } from "@stellars/db";
 import {
+  BPS,
   MarketTick,
-  type BorrowRateConfig,
-  type MarketState,
-  type PositionState,
-  type VaultLiquidity,
+  toBigInt,
+  toBorrowRateConfig,
+  toMarketState,
+  toPositionState,
+  toVaultLiquidity,
 } from "@stellars/protocol-math";
+import type { KeeperConfig } from "./config.js";
+
+export { toPositionState };
 
 export type PositionRow = typeof positions.$inferSelect;
 export type MarketRow = typeof markets.$inferSelect;
@@ -39,49 +44,6 @@ export interface KeeperWorld {
   cursor: IndexerCursorRow | undefined;
   /** Indexer lag in seconds; Infinity if cursor row missing or never recorded. */
   indexerLagSec: number;
-}
-
-function toBigInt(value: string | null | undefined): bigint {
-  if (value == null || value === "") return 0n;
-  return BigInt(value);
-}
-
-function toMarketState(m: MarketRow): MarketState {
-  return {
-    acc_borrow_index: toBigInt(m.acc_borrow_index),
-    acc_funding_index: toBigInt(m.acc_funding_index),
-    last_index_update: toBigInt(m.last_index_update),
-    long_open_interest: toBigInt(m.long_open_interest),
-    short_open_interest: toBigInt(m.short_open_interest),
-  };
-}
-
-function toVaultLiquidity(v: VaultStateRow | undefined): VaultLiquidity {
-  return {
-    reserved_usdc: toBigInt(v?.reserved_usdc),
-    total_assets: toBigInt(v?.total_assets),
-  };
-}
-
-function toBorrowRateConfig(c: ProtocolConfigRow | undefined): BorrowRateConfig {
-  return {
-    base_borrow_rate_bps: toBigInt(c?.base_borrow_rate_bps),
-    slope1_bps: toBigInt(c?.slope1_bps),
-    slope2_bps: toBigInt(c?.slope2_bps),
-    optimal_utilization_bps: toBigInt(c?.optimal_utilization_bps),
-    base_funding_rate_bps: toBigInt(c?.base_funding_rate_bps),
-  };
-}
-
-export function toPositionState(p: PositionRow): PositionState {
-  return {
-    is_long: p.is_long,
-    size: toBigInt(p.size),
-    collateral: toBigInt(p.collateral),
-    entry_price: toBigInt(p.entry_price),
-    entry_borrow_index: toBigInt(p.entry_borrow_index),
-    entry_funding_index: toBigInt(p.entry_funding_index),
-  };
 }
 
 function indexerLagSec(cursor: IndexerCursorRow | undefined, now: bigint): number {
@@ -145,6 +107,87 @@ export async function loadKeeperWorld(db: Db): Promise<KeeperWorld> {
     cursor,
     indexerLagSec: indexerLagSec(cursor, now),
   };
+}
+
+// -- Decision math against the KeeperWorld ----------------------------------
+//
+// These functions are the testable kernel: given a snapshot of the world,
+// what action does the keeper take? They depend on nothing but the KeeperWorld
+// and KeeperConfig, so they can be exercised against a hand-built world
+// without any executor / dedup / serialize scaffolding.
+
+export interface LiquidationCandidate {
+  pos: PositionRow;
+  health: bigint;
+}
+
+/**
+ * Positions whose effective_health (post zero-sum funding cap + protocol
+ * funding cut, mirroring the on-chain gate) has dropped below the
+ * `liquidation_threshold_bps` of their collateral. Ranked worst-health-first
+ * so cascades drain the most-underwater positions before less-stressed ones.
+ *
+ * Falls back to `config.liquidationSafetyMarginBps` for the threshold when the
+ * indexer hasn't yet mirrored `protocolConfig`. The fallback for `funding_cut_bps`
+ * is zero — undercounting the trader's effective funding payments is
+ * conservative (we'd liquidate later, not earlier, than the contract).
+ */
+export function scanLiquidationCandidates(
+  world: KeeperWorld,
+  config: KeeperConfig,
+): LiquidationCandidate[] {
+  const thresholdBps = BigInt(
+    world.protocolConfig?.liquidation_threshold_bps ?? config.liquidationSafetyMarginBps,
+  );
+  const fundingCutBps = BigInt(world.protocolConfig?.funding_cut_bps ?? 0);
+
+  const candidates: LiquidationCandidate[] = [];
+  for (const pos of world.positions) {
+    const tick = world.ticks.get(pos.symbol);
+    if (!tick) continue;
+
+    const collateral = toBigInt(pos.collateral);
+    const threshold = (collateral * thresholdBps) / BPS;
+    const { effective_health } = tick.evaluate(toPositionState(pos), undefined, fundingCutBps);
+    if (effective_health >= threshold) continue;
+
+    candidates.push({ pos, health: effective_health });
+  }
+
+  candidates.sort((a, b) => (a.health < b.health ? -1 : a.health > b.health ? 1 : 0));
+  return candidates;
+}
+
+/**
+ * BitMEX/Bybit/dYdX-style ADL ranking: among profitable positions, pick the
+ * one with the highest `unrealizedPnl × leverage` score, where leverage =
+ * size / collateral. High-leverage winners deleverage before low-leverage
+ * whales who happen to be up.
+ *
+ * Returns `null` when no open position is profitable on its current tick.
+ */
+export function findAdlTarget(world: KeeperWorld): PositionRow | null {
+  let best: PositionRow | null = null;
+  let bestScore = 0n;
+
+  for (const pos of world.positions) {
+    const tick = world.ticks.get(pos.symbol);
+    if (!tick) continue;
+
+    const collateral = toBigInt(pos.collateral);
+    if (collateral === 0n) continue;
+
+    const { pnl } = tick.evaluate(toPositionState(pos));
+    if (pnl <= 0n) continue;
+
+    const score = (pnl * toBigInt(pos.size)) / collateral;
+    if (score > bestScore) {
+      bestScore = score;
+      best = pos;
+    }
+  }
+
+  return best;
 }
 
 async function latestPriceMap(db: Db): Promise<Map<string, string>> {

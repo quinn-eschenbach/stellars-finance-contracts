@@ -100,8 +100,6 @@ const oracle: ErrorTable = {
   },
 };
 
-const tables: ErrorTable[] = [positionManager, vault, oracleRouter, configManager, oracle];
-
 interface ContractIdToTable {
   [contractId: string]: ErrorTable;
 }
@@ -154,8 +152,10 @@ export function parseContractError(input: unknown): ParsedContractError | null {
   const code = Number(codeMatch[1]);
   if (!Number.isFinite(code)) return null;
 
-  // Try to find a contract address in the text and resolve it to a known
-  // table. If none, fall back to scanning every table for the code.
+  // If we can pin the source contract from the message text, use its table
+  // directly. This is the only resolution path that can confidently report a
+  // variant name + contract because discriminants overlap across contracts
+  // (e.g. PositionManager #3 = Paused, ConfigManager #3 = Unauthorized).
   const idMatch = CONTRACT_ID_RE.exec(text);
   if (idMatch) {
     const table = getContractMap()[idMatch[1]];
@@ -165,13 +165,9 @@ export function parseContractError(input: unknown): ParsedContractError | null {
     }
   }
 
-  for (const table of tables) {
-    const variant = table.by[code];
-    if (variant) {
-      return { message: variant.message, name: variant.name, contract: table.contract, code };
-    }
-  }
-
+  // No contract id in the message — admit the ambiguity. Returning the first
+  // table's variant by code would mislabel cross-table collisions, and the
+  // caller (`toErrorMessage`) only consumes `.message` for toasts anyway.
   return { message: `Contract error #${code}`, code };
 }
 
@@ -274,18 +270,13 @@ function parseDiagnosticEventForError(ev: xdr.DiagnosticEvent): ParsedContractEr
 
     // Resolve the emitting contract via the event's contractId so we don't
     // hit the wrong table when discriminants overlap (e.g. Vault #8 vs
-    // PositionManager #8). Falls back to a linear scan if we can't.
+    // PositionManager #8). When we can't pin the contract, admit the
+    // ambiguity — a linear scan would mislabel cross-table collisions.
     const contractId = contractIdFromEvent(inner);
     if (contractId) {
       const table = getContractMap()[contractId];
       const variant = table?.by[codeNum];
       if (table && variant) {
-        return { message: variant.message, name: variant.name, contract: table.contract, code: codeNum };
-      }
-    }
-    for (const table of tables) {
-      const variant = table.by[codeNum];
-      if (variant) {
         return { message: variant.message, name: variant.name, contract: table.contract, code: codeNum };
       }
     }

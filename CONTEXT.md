@@ -41,6 +41,10 @@ _Avoid_: snapshot, view, context
 The four derived values for a Position slice (`size`, `collateral`) against a MarketTick — `pnl`, `borrow_fee`, `funding_fee`, `health`. Returned by `MarketTick::evaluate`.
 _Avoid_: assessment, status
 
+**IncreaseQuote**:
+The staged-order twin of PositionEvaluation — derived values for a *hypothetical* Increase against a MarketTick. Inputs: collateral, size, direction, tick, fee config, vault liquidity, protocol limits. Outputs: `open_fee`, `daily_borrow`, `daily_funding`, `liquidation_price`, `acceptable_price` (slippage-derived worst-case fill), `liquidity_headroom`, `exceeds_liquidity`. Lives in `protocol-math` as a pure function; the trade UI binds raw fields, never re-derives them. Symmetric with PositionEvaluation: same shape of inputs (a Position-like intent against a MarketTick), same shape of outputs (a struct of derived numbers).
+_Avoid_: order preview, fee quote, trade summary
+
 ### Settlement
 
 **Reservation**:
@@ -83,6 +87,7 @@ _Avoid_: TP/SL fee, keeper escrow, execution gas
 - A **Position** is held by exactly one trader against one **Market**
 - A **MarketTick** captures one **Market** at one point in time and is consumed within a single operation
 - A **MarketTick** evaluates a **Position** to produce a **PositionEvaluation**
+- A **MarketTick** evaluates a staged Increase intent to produce an **IncreaseQuote**
 - A **Close** of a Position releases its **Reservation** and folds its outcome into **Realized PnL**
 - A Market's **Unrealized PnL** is a function of all open Positions on it
 - An **Open fee** is sliced by the **Revenue split** at Increase time; close-time borrow + funding-cut accruals are sliced by the same Revenue split at Close

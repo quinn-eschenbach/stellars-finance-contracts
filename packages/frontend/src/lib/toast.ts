@@ -58,6 +58,12 @@ function errorTitleAndBody(action: string, err: unknown): { title: string; descr
   if (parsed?.contract) {
     return { title: `${action} reverted · ${parsed.contract}`, description: parsed.message };
   }
+  if (parsed) {
+    // We detected an Error(Contract, #N) shape but couldn't pin the source
+    // contract (no contract id in the message). Still surface "reverted" so
+    // the user knows the chain rejected the call, just without the source.
+    return { title: `${action} reverted · Contract`, description: parsed.message };
+  }
   return { title: `${action} failed`, description: toErrorMessage(err) };
 }
 

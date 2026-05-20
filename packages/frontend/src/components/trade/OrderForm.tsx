@@ -9,15 +9,8 @@ import { useAddress } from "@/wallet/WalletProvider";
 import { positionManager } from "@/contracts/clients";
 import { useTxMutation } from "@/contracts/useTxMutation";
 import { cn, formatUsdc, parsePrice, parseUsdc } from "@/lib/utils";
-import { approxLiquidationPrice } from "@/lib/math";
-import {
-  queryKeys,
-  useFeeConfig,
-  useMarket,
-  useProtocolConfig,
-  useVault,
-  useWalletBalance,
-} from "@/api/hooks";
+import { useIncreaseQuote } from "@/api/quote";
+import { queryKeys, useWalletBalance } from "@/api/hooks";
 
 interface OrderFormProps {
   symbol: string;
@@ -57,10 +50,6 @@ export function OrderForm({
 }: OrderFormProps) {
   const address = useAddress();
   const balance = useWalletBalance(address);
-  const vaultState = useVault();
-  const market = useMarket(symbol);
-  const config = useProtocolConfig();
-  const feeConfig = useFeeConfig(address);
 
   const [tpInput, setTpInput] = useState("");
   const [slInput, setSlInput] = useState("");
@@ -79,10 +68,6 @@ export function OrderForm({
   const sizeScaled = collateralScaled * BigInt(leverage);
   const isLong = side === "long";
   const cappedLeverage = Math.min(leverage, Math.max(1, maxLeverage));
-  const liq =
-    markPrice && collateralScaled > 0n
-      ? approxLiquidationPrice(BigInt(markPrice), collateralScaled, sizeScaled, isLong)
-      : null;
 
   // Parse TP/SL from inputs. Empty string → 0n (= unset). Invalid input
   // surfaces as a hint and disables submit so we never blast a bad value
@@ -102,96 +87,29 @@ export function OrderForm({
         ? validateSl(BigInt(markPrice), slScaled, isLong)
         : null;
 
-  // ── Fee + liquidity preview (current market conditions; mirrors the
-  //    contract's borrow-rate kink and the funding-rate base × imbalance
-  //    formulae so the user can sanity-check what they're paying before
-  //    the tx fires). All values are 10^7-scaled USDC bigints when present;
-  //    `null` propagates "not enough data to estimate" up to the UI.
+  // Staged IncreaseQuote — costs + liquidity feasibility for the order as
+  // currently configured. Recomputed by `useIncreaseQuote` from the same
+  // cached vault / market / config / fee-config the form would render anyway.
+  const quote = useIncreaseQuote(
+    symbol,
+    collateralScaled > 0n
+      ? {
+          collateral: collateralScaled,
+          size: sizeScaled,
+          is_long: isLong,
+          slippage_bps: BigInt(slippageBps),
+        }
+      : null,
+    address,
+  );
 
-  const openFeeScaled = useMemo<bigint | null>(() => {
-    if (!feeConfig.data || sizeScaled <= 0n) return null;
-    return (sizeScaled * BigInt(feeConfig.data.open_fee_bps)) / 10_000n;
-  }, [feeConfig.data, sizeScaled]);
-
-  /** Current safe basis — matches `VaultView.safe_basis` on-chain. */
-  const safeBasis = useMemo<bigint | null>(() => {
-    if (!vaultState.data) return null;
-    const v =
-      BigInt(vaultState.data.total_assets) - BigInt(vaultState.data.unclaimed_fees);
-    return v > 0n ? v : null;
-  }, [vaultState.data]);
-
-  /** Current utilisation in bps (pre-trade). */
-  const currentUtilBps = useMemo<bigint | null>(() => {
-    if (!vaultState.data || !safeBasis) return null;
-    return (BigInt(vaultState.data.reserved_usdc) * 10_000n) / safeBasis;
-  }, [vaultState.data, safeBasis]);
-
-  /** Annualised borrow rate (bps) at current utilisation. */
-  const currentBorrowRateBps = useMemo<bigint | null>(() => {
-    if (!config.data || currentUtilBps === null) return null;
-    const base = BigInt(config.data.base_borrow_rate_bps);
-    const slope1 = BigInt(config.data.slope1_bps);
-    const slope2 = BigInt(config.data.slope2_bps);
-    const optimal = BigInt(config.data.optimal_utilization_bps);
-    if (currentUtilBps <= optimal) {
-      return base + (currentUtilBps * slope1) / 10_000n;
-    }
-    return (
-      base +
-      (optimal * slope1) / 10_000n +
-      ((currentUtilBps - optimal) * slope2) / 10_000n
-    );
-  }, [config.data, currentUtilBps]);
-
-  const dailyBorrowFeeScaled = useMemo<bigint | null>(() => {
-    if (!currentBorrowRateBps || sizeScaled <= 0n) return null;
-    return (sizeScaled * currentBorrowRateBps) / (10_000n * 365n);
-  }, [currentBorrowRateBps, sizeScaled]);
-
-  /**
-   * Funding rate from the trader's perspective. Sign convention:
-   * `+` ⇒ trader receives this rate, `−` ⇒ trader pays it. Longs pay when
-   * `long_oi > short_oi`; shorts pay in the opposite case.
-   */
-  const dailyFundingFeeScaled = useMemo<bigint | null>(() => {
-    if (!config.data || !market.data || sizeScaled <= 0n) return null;
-    const longOi = BigInt(market.data.long_open_interest);
-    const shortOi = BigInt(market.data.short_open_interest);
-    const totalOi = longOi + shortOi;
-    if (totalOi === 0n) return 0n;
-    const baseFunding = BigInt(config.data.base_funding_rate_bps);
-    const protocolRate = (baseFunding * (longOi - shortOi)) / totalOi;
-    const traderRate = isLong ? -protocolRate : protocolRate;
-    return (sizeScaled * traderRate) / (10_000n * 365n);
-  }, [config.data, market.data, sizeScaled, isLong]);
-
-  /**
-   * How much additional notional the contract will actually accept right
-   * now — `safe_basis × max_util_ratio − current_reserved`. The contract
-   * reverts with `UtilizationCapBreached` past this point, so we block
-   * the submit in the UI rather than burning a signed tx on a sure revert.
-   */
-  const liquidityHeadroom = useMemo<bigint | null>(() => {
-    if (!safeBasis || !vaultState.data || !config.data) return null;
-    const maxUtil = BigInt(config.data.max_utilization_ratio);
-    const maxReserved = (safeBasis * maxUtil) / 10_000n;
-    const reserved = BigInt(vaultState.data.reserved_usdc);
-    return maxReserved > reserved ? maxReserved - reserved : 0n;
-  }, [safeBasis, vaultState.data, config.data]);
-
-  const exceedsLiquidity =
-    liquidityHeadroom !== null && sizeScaled > 0n && sizeScaled > liquidityHeadroom;
-
-  // `acceptable_price` worst-case the trade is willing to fill at.
-  // Long: mark * (1 + slippage); Short: mark * (1 - slippage).
-  // Pass 0 to opt out — match the contract convention.
-  const acceptablePrice = useMemo(() => {
-    if (!markPrice || slippageBps <= 0) return 0n;
-    const mark = BigInt(markPrice);
-    const delta = (mark * BigInt(slippageBps)) / 10_000n;
-    return isLong ? mark + delta : mark - delta;
-  }, [markPrice, slippageBps, isLong]);
+  const openFeeScaled = quote?.open_fee ?? null;
+  const dailyBorrowFeeScaled = quote?.daily_borrow ?? null;
+  const dailyFundingFeeScaled = quote?.daily_funding ?? null;
+  const liq = quote?.liquidation_price ?? null;
+  const acceptablePrice = quote?.acceptable_price ?? 0n;
+  const exceedsLiquidity = quote?.exceeds_liquidity ?? false;
+  const liquidityHeadroom = quote?.liquidity_headroom ?? null;
 
   const open = useTxMutation({
     action: `Open ${cappedLeverage}× ${isLong ? "long" : "short"} ${symbol}`,

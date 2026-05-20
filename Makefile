@@ -133,10 +133,14 @@ server:
 	  --filter @stellars/oracle-binance \
 	  --filter @stellars/oracle-kucoin dev
 
-# Oracles run as a separate service in production. oracle-keeper is currently
-# a stub; this target reserves the slot.
+# Oracles run as a separate service in production — the per-CEX publisher
+# fleet. Each publisher (oracle-binance / oracle-kucoin) fetches its
+# upstream feed and pushes prices on-chain to its dedicated Oracle source
+# contract; the on-chain OracleRouter medians across them.
 oracles:
-	pnpm --filter @stellars/oracle-keeper dev
+	pnpm --parallel \
+	  --filter @stellars/oracle-binance \
+	  --filter @stellars/oracle-kucoin dev
 
 # ---- CEX oracle implementations (Binance, KuCoin) ----
 # One-time setup: deploys two `oracle` contract instances, generates

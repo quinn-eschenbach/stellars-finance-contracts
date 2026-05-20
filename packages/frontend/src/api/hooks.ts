@@ -32,6 +32,8 @@ export const queryKeys = {
   leaderboard: (limit: number) => ["leaderboard", limit] as const,
   walletBalance: (address: string | null | undefined) =>
     ["walletBalance", address ?? ""] as const,
+  vaultShareBalance: (address: string | null | undefined) =>
+    ["vaultShareBalance", address ?? ""] as const,
   lockup: (address: string | null | undefined) => ["lockup", address ?? ""] as const,
   config: ["config"] as const,
   feeConfig: ["feeConfig"] as const,
@@ -175,6 +177,28 @@ export function useWalletBalance(
     queryFn: async () => {
       if (!address) return 0n;
       const tx = await mockToken(address).balance({ account: address });
+      return BigInt(tx.result?.toString() ?? "0");
+    },
+    enabled: !!address,
+    refetchInterval: 10_000,
+    ...opts,
+  });
+}
+
+/**
+ * Wallet's vault LP-share balance (scaled bigint). Mirrors `useWalletBalance`
+ * but reads from the vault contract's share token instead of the USDC mock.
+ * Invalidated on deposit/withdraw alongside the other vault-side queries.
+ */
+export function useVaultShareBalance(
+  address: string | null | undefined,
+  opts?: UseQueryOptions<bigint>,
+) {
+  return useQuery({
+    queryKey: queryKeys.vaultShareBalance(address),
+    queryFn: async () => {
+      if (!address) return 0n;
+      const tx = await vault(address).balance({ account: address });
       return BigInt(tx.result?.toString() ?? "0");
     },
     enabled: !!address,

@@ -65,9 +65,7 @@ export interface VaultStateRow {
  */
 export interface ProtocolConfigRow {
   id: number;
-  // Revenue split (bps; sum to 10_000). Distinct from `FeeConfig`
-  // (open_fee / liquidation_bounty / tp_sl_execution_fee), which is not
-  // mirrored in this row.
+  // Revenue split (bps; sum to 10_000).
   lp_bps: number;
   dev_bps: number;
   staker_bps: number;
@@ -86,6 +84,10 @@ export interface ProtocolConfigRow {
   slope2_bps: string;
   optimal_utilization_bps: string;
   base_funding_rate_bps: string;
+  // Execution-fee config (FeeConfig in the contract).
+  open_fee_bps: number;
+  liquidation_bounty_bps: number;
+  tp_sl_execution_fee: string;
   // Last on-chain unpause time (unix seconds)
   last_unpause_time: string;
   updated_at_ledger: number;

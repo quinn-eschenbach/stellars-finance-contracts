@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMarket, usePositions, usePrices } from "@/api/hooks";
+import { useMarket, usePositions, usePrices, useProtocolConfig } from "@/api/hooks";
 import { useMarketTick } from "@/api/marketTick";
 import { useStreamMarket, useStreamPositions, useStreamPrices } from "@/api/sse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,10 @@ import { MarkChart, type ChartPriceLine } from "@/components/trade/MarkChart";
 import { OrderForm } from "@/components/trade/OrderForm";
 import { PositionRow } from "@/components/trade/PositionRow";
 import { useAddress } from "@/wallet/WalletProvider";
-import { approxLiquidationPrice } from "@/lib/math";
+import {
+  liquidationPriceAtOpen,
+  liquidationPriceForPosition,
+} from "@stellars/protocol-math";
 import { descale, parseUsdc } from "@/lib/utils";
 
 export const Route = createFileRoute("/trade/$symbol")({
@@ -25,6 +28,7 @@ function TradePage() {
   const prices = usePrices();
   const positions = usePositions(address);
   const tick = useMarketTick(symbol);
+  const config = useProtocolConfig();
   useStreamMarket(symbol);
   useStreamPrices();
   useStreamPositions(address);
@@ -32,6 +36,8 @@ function TradePage() {
   const markPrice = prices.data?.find((p) => p.symbol === symbol)?.price;
   const myPositions = (positions.data ?? []).filter((p) => p.symbol === symbol);
   const maxLeverage = market.data?.max_leverage ? Number(market.data.max_leverage) : 20;
+  const liqThresholdBps = BigInt(config.data?.liquidation_threshold_bps ?? 0);
+  const fundingCutBps = BigInt(config.data?.funding_cut_bps ?? 0);
 
   const [side, setSide] = useState<"long" | "short">("long");
   const [collateralInput, setCollateralInput] = useState("100");
@@ -52,9 +58,12 @@ function TradePage() {
       const lines: ChartPriceLine[] = [];
       for (const p of myPositions) {
         const entry = BigInt(p.entry_price);
-        const collateral = BigInt(p.collateral);
-        const size = BigInt(p.size);
-        const liq = approxLiquidationPrice(entry, collateral, size, p.is_long);
+        // Existing-position liq line: project against the current MarketTick so
+        // the line reflects accrued borrow + funding, not the t=0 approximation.
+        // Falls back to the t=0 helper when the tick isn't loaded yet.
+        const liq = tick
+          ? liquidationPriceForPosition(p, tick, liqThresholdBps, fundingCutBps)
+          : liquidationPriceAtOpen(entry, BigInt(p.collateral), BigInt(p.size), p.is_long, liqThresholdBps);
         const tp = BigInt(p.take_profit);
         const sl = BigInt(p.stop_loss);
         const sideLabel = p.is_long ? "Long" : "Short";
@@ -101,7 +110,13 @@ function TradePage() {
     }
     if (collateralScaled <= 0n) return [];
     const sizeScaled = collateralScaled * BigInt(leverage);
-    const liq = approxLiquidationPrice(BigInt(markPrice), collateralScaled, sizeScaled, side === "long");
+    const liq = liquidationPriceAtOpen(
+      BigInt(markPrice),
+      collateralScaled,
+      sizeScaled,
+      side === "long",
+      liqThresholdBps,
+    );
     if (!liq || liq <= 0n) return [];
     return [
       {
@@ -111,7 +126,7 @@ function TradePage() {
         title: "Liq. (staged)",
       },
     ];
-  }, [myPositions, markPrice, collateralInput, leverage, side]);
+  }, [myPositions, markPrice, collateralInput, leverage, side, tick, liqThresholdBps, fundingCutBps]);
 
   return (
     <div className="space-y-6 animate-fade-up">

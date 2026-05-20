@@ -134,9 +134,9 @@ describe("txToast.error — SubmitError titles", () => {
 describe("txToast.error — non-SubmitError paths", () => {
   it("parses an embedded contract error from a plain Error and routes to reverted", () => {
     const t = txToast({ action: "Withdraw" });
-    // Vault discriminant #4 — falls back to the first matching table when no
-    // contract id is present. The user-facing description is the friendly
-    // message from the registry.
+    // No contract id in the text, so the parser can't pin the source contract
+    // (discriminants overlap across tables). The toast still says "reverted"
+    // generically — useful signal — but won't claim a specific contract name.
     t.error(new Error("simulation failed: Error(Contract, #4)"));
     expect(sonner.error).toHaveBeenCalled();
     const [title, opts] = sonner.error.mock.calls[0];

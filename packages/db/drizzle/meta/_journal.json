@@ -78,6 +78,13 @@
       "when": 1778900300000,
       "tag": "0010_protocol_config_staker_bps",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778900400000,
+      "tag": "0011_protocol_config_fee_config",
+      "breakpoints": true
     }
   ]
 }

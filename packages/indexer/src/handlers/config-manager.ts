@@ -19,6 +19,12 @@ interface FeeSplitsUpdateData {
   staker_bps: number;
 }
 
+interface FeeConfigUpdateData {
+  open_fee_bps: number;
+  liquidation_bounty_bps: number;
+  tp_sl_execution_fee: bigint;
+}
+
 interface LimitsUpdateData {
   min_collateral: bigint;
   cooldown_duration: bigint;
@@ -46,6 +52,8 @@ export async function handleConfigManagerEvent(db: Db, event: ParsedEvent) {
   switch (event.topic0) {
     case "feecfg":
       return handleFeeSplits(db, event);
+    case "feecnf":
+      return handleFeeConfig(db, event);
     case "limits":
       return handleLimits(db, event);
     case "rates":
@@ -89,6 +97,29 @@ async function handleFeeSplits(db: Db, event: ParsedEvent) {
         lp_bps: d.lp_bps,
         dev_bps: d.dev_bps,
         staker_bps: d.staker_bps,
+        updated_at_ledger: event.ledger,
+        updated_at: new Date(),
+      },
+    });
+}
+
+async function handleFeeConfig(db: Db, event: ParsedEvent) {
+  const d = event.data as FeeConfigUpdateData;
+  await db
+    .insert(protocolConfig)
+    .values({
+      id: SINGLETON_ID,
+      open_fee_bps: d.open_fee_bps,
+      liquidation_bounty_bps: d.liquidation_bounty_bps,
+      tp_sl_execution_fee: toNumericString(d.tp_sl_execution_fee),
+      updated_at_ledger: event.ledger,
+    })
+    .onConflictDoUpdate({
+      target: protocolConfig.id,
+      set: {
+        open_fee_bps: d.open_fee_bps,
+        liquidation_bounty_bps: d.liquidation_bounty_bps,
+        tp_sl_execution_fee: toNumericString(d.tp_sl_execution_fee),
         updated_at_ledger: event.ledger,
         updated_at: new Date(),
       },

@@ -1,5 +1,4 @@
-import type { PriceSource } from "@stellars/oracle-base";
-import { ORACLE_FETCH_TIMEOUT_MS, ORACLE_USER_AGENT } from "@stellars/config";
+import { createBookTickerSource, type BookTickerParseResult } from "@stellars/oracle-base";
 
 /**
  * Map protocol tickers (BTCUSD) to Binance's spot symbols (BTCUSDT).
@@ -28,39 +27,16 @@ interface BinanceBookTickerResponse {
   askQty: string;
 }
 
-async function fetchWithTimeout(url: string): Promise<Response> {
-  return fetch(url, {
-    signal: AbortSignal.timeout(ORACLE_FETCH_TIMEOUT_MS),
-    headers: { "User-Agent": ORACLE_USER_AGENT },
-  });
+function parseResponse(json: unknown): BookTickerParseResult {
+  const body = json as BinanceBookTickerResponse;
+  const bid = Number.parseFloat(body.bidPrice);
+  const ask = Number.parseFloat(body.askPrice);
+  return { book: { bid, ask } };
 }
 
-export const binanceSource: PriceSource = {
+export const binanceSource = createBookTickerSource({
   name: "binance",
-  async fetchPrice(ticker: string): Promise<number> {
-    const cexSymbol = SYMBOL_MAP[ticker];
-    if (!cexSymbol) {
-      throw new Error(`binance: no symbol mapping for ticker ${ticker}`);
-    }
-    const url = `${ENDPOINT}?symbol=${encodeURIComponent(cexSymbol)}`;
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) {
-      // 429 / 418 / Retry-After: surface upstream so the loop can back off.
-      const retryAfter = res.headers.get("retry-after");
-      const suffix = retryAfter ? ` retry-after=${retryAfter}` : "";
-      throw new Error(`binance: HTTP ${res.status} for ${cexSymbol}${suffix}`);
-    }
-    const json = (await res.json()) as BinanceBookTickerResponse;
-    const bid = Number.parseFloat(json.bidPrice);
-    const ask = Number.parseFloat(json.askPrice);
-    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0) {
-      throw new Error(
-        `binance: bad bookTicker bid=${json.bidPrice} ask=${json.askPrice} for ${cexSymbol}`,
-      );
-    }
-    if (ask < bid) {
-      throw new Error(`binance: crossed book ask=${ask} < bid=${bid} for ${cexSymbol}`);
-    }
-    return (bid + ask) / 2;
-  },
-};
+  endpoint: ENDPOINT,
+  symbolMap: SYMBOL_MAP,
+  parseResponse,
+});

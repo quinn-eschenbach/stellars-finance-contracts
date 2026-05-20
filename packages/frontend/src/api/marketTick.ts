@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { MarketTick } from "@stellars/protocol-math";
+import {
+  MarketTick,
+  toBigInt,
+  toBorrowRateConfig,
+  toMarketState,
+  toVaultLiquidity,
+} from "@stellars/protocol-math";
 import { useMarket, useProtocolConfig, usePrices, useVault } from "./hooks";
 import type { MarketRow, PriceRow, ProtocolConfigRow, VaultStateRow } from "./types";
 
@@ -59,26 +65,11 @@ export function projectMarketTick(input: {
 }): MarketTick {
   const { market: m, vault: v, config: cfg, price, now } = input;
   return MarketTick.project({
-    market: {
-      acc_borrow_index: BigInt(m.acc_borrow_index),
-      acc_funding_index: BigInt(m.acc_funding_index),
-      last_index_update: BigInt(m.last_index_update),
-      long_open_interest: BigInt(m.long_open_interest),
-      short_open_interest: BigInt(m.short_open_interest),
-    },
-    mark_price: BigInt(price),
-    vault: {
-      reserved_usdc: BigInt(v.reserved_usdc),
-      total_assets: BigInt(v.total_assets),
-    },
-    rate_config: {
-      base_borrow_rate_bps: BigInt(cfg.base_borrow_rate_bps),
-      slope1_bps: BigInt(cfg.slope1_bps),
-      slope2_bps: BigInt(cfg.slope2_bps),
-      optimal_utilization_bps: BigInt(cfg.optimal_utilization_bps),
-      base_funding_rate_bps: BigInt(cfg.base_funding_rate_bps),
-    },
+    market: toMarketState(m),
+    mark_price: toBigInt(price),
+    vault: toVaultLiquidity(v),
+    rate_config: toBorrowRateConfig(cfg),
     now,
-    last_unpause_time: BigInt(v.last_unpause_time ?? cfg.last_unpause_time ?? "0"),
+    last_unpause_time: toBigInt(v.last_unpause_time ?? cfg.last_unpause_time),
   });
 }

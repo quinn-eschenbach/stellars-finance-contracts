@@ -9,7 +9,8 @@
     "build": "tsc",
     "dev": "DOTENV_CONFIG_PATH=../../.env.local bun src/index.ts",
     "start": "bun src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@stellars/config": "workspace:*",

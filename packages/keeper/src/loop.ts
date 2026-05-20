@@ -1,14 +1,14 @@
 import type { Db } from "@stellars/db";
-import { BPS } from "@stellars/protocol-math";
+import { BPS, toBigInt } from "@stellars/protocol-math";
 import type { Executor } from "./executor.js";
 import type { KeeperConfig } from "./config.js";
 import type { TtlDedup } from "./dedup.js";
 import type { Serialize } from "./serializer.js";
 import {
+  findAdlTarget,
   loadKeeperWorld,
-  toPositionState,
+  scanLiquidationCandidates,
   type KeeperWorld,
-  type PositionRow,
 } from "./scanner.js";
 
 import {
@@ -25,11 +25,6 @@ export function posKey(trader: string, symbol: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function toBigInt(value: string | null | undefined): bigint {
-  if (value == null || value === "") return 0n;
-  return BigInt(value);
 }
 
 /**
@@ -50,47 +45,6 @@ function checkStaleness(
     console.warn(`[${loopName}] indexer lag=${lagSec}s — degraded`);
   }
   return { skip: false, lagSec };
-}
-
-// -- Liquidation candidate scanning ------------------------------------------
-
-interface LiquidationCandidate {
-  pos: PositionRow;
-  health: bigint;
-}
-
-function scanLiquidationCandidates(
-  world: KeeperWorld,
-  config: KeeperConfig,
-): LiquidationCandidate[] {
-  // Read the threshold from on-chain config (mirrored by the indexer into
-  // protocol_config). Env var is a cold-start fallback before the indexer has
-  // ingested the first LimitsUpdate event.
-  const thresholdBps = BigInt(
-    world.protocolConfig?.liquidation_threshold_bps ?? config.liquidationSafetyMarginBps,
-  );
-
-  // The on-chain liquidation gate compares `effective_health` (post zero-sum
-  // funding cap + protocol funding cut) against the threshold; off-chain
-  // must use the same value.
-  const fundingCutBps = BigInt(world.protocolConfig?.funding_cut_bps ?? 0);
-
-  const candidates: LiquidationCandidate[] = [];
-  for (const pos of world.positions) {
-    const tick = world.ticks.get(pos.symbol);
-    if (!tick) continue;
-
-    const collateral = toBigInt(pos.collateral);
-    const threshold = (collateral * thresholdBps) / BPS;
-    const { effective_health } = tick.evaluate(toPositionState(pos), undefined, fundingCutBps);
-    if (effective_health >= threshold) continue;
-
-    candidates.push({ pos, health: effective_health });
-  }
-
-  // Worst-health-first so we minimise cumulative bad debt during cascades.
-  candidates.sort((a, b) => (a.health < b.health ? -1 : a.health > b.health ? 1 : 0));
-  return candidates;
 }
 
 // -- Hot loop: liquidations only --------------------------------------------
@@ -262,32 +216,3 @@ export async function runColdLoop(
   }
 }
 
-// -- ADL targeting ----------------------------------------------------------
-
-function findAdlTarget(world: KeeperWorld): PositionRow | null {
-  // Mirrors the BitMEX/Bybit/dYdX ADL ranking: profitable positions are
-  // ordered by `unrealizedPnl × leverage`, where leverage = size / collateral.
-  // High-leverage winners deleverage before low-leverage whales who happen
-  // to be up.
-  let best: PositionRow | null = null;
-  let bestScore = 0n;
-
-  for (const pos of world.positions) {
-    const tick = world.ticks.get(pos.symbol);
-    if (!tick) continue;
-
-    const collateral = toBigInt(pos.collateral);
-    if (collateral === 0n) continue;
-
-    const { pnl } = tick.evaluate(toPositionState(pos));
-    if (pnl <= 0n) continue;
-
-    const score = (pnl * toBigInt(pos.size)) / collateral;
-    if (score > bestScore) {
-      bestScore = score;
-      best = pos;
-    }
-  }
-
-  return best;
-}

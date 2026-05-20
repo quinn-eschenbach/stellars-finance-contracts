@@ -1,4 +1,7 @@
-import { Client as PositionManagerClient } from "@stellars/bindings/position-manager";
+import {
+  Client as PositionManagerClient,
+  PositionManagerError,
+} from "@stellars/bindings/position-manager";
 import { client } from "@stellars/protocol-clients";
 import { keypairSigner } from "@stellars/protocol-clients/node";
 import {
@@ -43,16 +46,20 @@ export interface Executor {
 
 // Position-manager error variants that are normal during keeper operation:
 // we attempt actions speculatively and the contract correctly refuses when
-// on-chain state doesn't actually warrant them.
-const EXPECTED_REJECTIONS = [
-  "HealthFactorOk",         // #9  — position no longer underwater
-  "OrderNotTriggered",      // #13 — mark price drifted back across TP/SL
-  "AdlNotTriggered",        // #10 — ADL conditions no longer met
-  "AdlTargetNotProfitable", // #17 — target's PnL flipped between scan and submit
-  "PositionNotFound",       // #6  — already liquidated or closed
-  "PositionNotOldEnough",   // #5  — min_position_lifetime not elapsed
-  "Paused",                 // #3  — vault paused; keeper should pause too
-];
+// on-chain state doesn't actually warrant them. Names are pulled from the
+// auto-generated `PositionManagerError` map in @stellars/bindings so a
+// rename in the contract trips a loud startup error rather than a silent
+// substring-match miss.
+const EXPECTED_REJECTION_CODES = [3, 5, 6, 9, 10, 13, 17] as const;
+const EXPECTED_REJECTIONS: string[] = EXPECTED_REJECTION_CODES.map((code) => {
+  const entry = PositionManagerError[code as keyof typeof PositionManagerError];
+  if (!entry?.message) {
+    throw new Error(
+      `keeper EXPECTED_REJECTIONS: PositionManagerError[${code}] missing — bindings regen needed?`,
+    );
+  }
+  return entry.message;
+});
 
 function classify(err: unknown): { expected: boolean; reason: string } {
   const reason = (err as Error)?.message ?? String(err);

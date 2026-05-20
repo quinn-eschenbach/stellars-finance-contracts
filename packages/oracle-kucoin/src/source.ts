@@ -1,9 +1,5 @@
-import type { PriceSource } from "@stellars/oracle-base";
-import {
-  ORACLE_FETCH_TIMEOUT_MS,
-  ORACLE_KUCOIN_STALENESS_MS,
-  ORACLE_USER_AGENT,
-} from "@stellars/config";
+import { createBookTickerSource, type BookTickerParseResult } from "@stellars/oracle-base";
+import { ORACLE_KUCOIN_STALENESS_MS } from "@stellars/config";
 
 /**
  * Map protocol tickers (BTCUSD) to KuCoin's spot symbols (BTC-USDT).
@@ -32,48 +28,20 @@ interface KucoinLevel1Response {
   } | null;
 }
 
-async function fetchWithTimeout(url: string): Promise<Response> {
-  return fetch(url, {
-    signal: AbortSignal.timeout(ORACLE_FETCH_TIMEOUT_MS),
-    headers: { "User-Agent": ORACLE_USER_AGENT },
-  });
+function parseResponse(json: unknown): BookTickerParseResult {
+  const body = json as KucoinLevel1Response;
+  if (body.code !== "200000" || !body.data) {
+    return { error: `API error code=${body.code}` };
+  }
+  const bid = Number.parseFloat(body.data.bestBid);
+  const ask = Number.parseFloat(body.data.bestAsk);
+  return { book: { bid, ask, serverTimestampMs: body.data.time } };
 }
 
-export const kucoinSource: PriceSource = {
+export const kucoinSource = createBookTickerSource({
   name: "kucoin",
-  async fetchPrice(ticker: string): Promise<number> {
-    const cexSymbol = SYMBOL_MAP[ticker];
-    if (!cexSymbol) {
-      throw new Error(`kucoin: no symbol mapping for ticker ${ticker}`);
-    }
-    const url = `${ENDPOINT}?symbol=${encodeURIComponent(cexSymbol)}`;
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) {
-      const retryAfter = res.headers.get("retry-after");
-      const suffix = retryAfter ? ` retry-after=${retryAfter}` : "";
-      throw new Error(`kucoin: HTTP ${res.status} for ${cexSymbol}${suffix}`);
-    }
-    const json = (await res.json()) as KucoinLevel1Response;
-    if (json.code !== "200000" || !json.data) {
-      throw new Error(`kucoin: API error code=${json.code} for ${cexSymbol}`);
-    }
-    // Reject KuCoin prints whose embedded source-timestamp is older than
-    // ORACLE_KUCOIN_STALENESS_MS — a stuck KuCoin feed otherwise looks
-    // perpetually fresh from our perspective.
-    const ageMs = Date.now() - json.data.time;
-    if (ageMs > ORACLE_KUCOIN_STALENESS_MS) {
-      throw new Error(`kucoin: stale print age=${ageMs}ms for ${cexSymbol}`);
-    }
-    const bid = Number.parseFloat(json.data.bestBid);
-    const ask = Number.parseFloat(json.data.bestAsk);
-    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0) {
-      throw new Error(
-        `kucoin: bad book bid=${json.data.bestBid} ask=${json.data.bestAsk} for ${cexSymbol}`,
-      );
-    }
-    if (ask < bid) {
-      throw new Error(`kucoin: crossed book ask=${ask} < bid=${bid} for ${cexSymbol}`);
-    }
-    return (bid + ask) / 2;
-  },
-};
+  endpoint: ENDPOINT,
+  symbolMap: SYMBOL_MAP,
+  parseResponse,
+  stalenessMs: ORACLE_KUCOIN_STALENESS_MS,
+});

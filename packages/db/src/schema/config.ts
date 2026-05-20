@@ -21,6 +21,12 @@ export const protocolConfig = pgTable("protocol_config", {
   slope2_bps: numeric().notNull().default("0"),
   optimal_utilization_bps: numeric().notNull().default("0"),
   base_funding_rate_bps: numeric().notNull().default("0"),
+  // Execution-fee config (FeeConfig in the contract). Powers the off-chain
+  // IncreaseQuote and the order-form fee preview without an extra contract
+  // simulation per page load.
+  open_fee_bps: integer().notNull().default(0),
+  liquidation_bounty_bps: integer().notNull().default(0),
+  tp_sl_execution_fee: numeric().notNull().default("0"),
   // Last on-chain unpause timestamp (unix seconds). Off-chain MarketTick
   // projection clamps fee accrual using max(last_index_update, last_unpause_time)
   // so projected indices match what an immediate on-chain refresh would produce.
