@@ -32,26 +32,21 @@ export function VaultActions() {
 
   const [depositAmt, setDepositAmt] = useState("");
   const [withdrawAmt, setWithdrawAmt] = useState("");
-  // When the user picks a %/MAX button, we record the exact share-count to
-  // burn and route the tx through `redeem(shares)` instead of
-  // `withdraw(assets)`. `redeem` uses OZ's `convert_to_assets` (rounds DOWN),
-  // so a percentage-based exit never asks the chain for 1 more atom than the
-  // user holds — the ERC-4626 dust pitfall that makes a typed "5000" fail
-  // when shares actually map to `49,999,999,999` raw USDC. A manual edit to
-  // the amount field clears the pinned shares, falling back to the
-  // assets-based withdraw path.
-  const [pinnedRedeemShares, setPinnedRedeemShares] = useState<bigint | null>(null);
 
-  // Max the user could withdraw right now: their share-of-pool USDC equivalent,
-  // clamped by the vault's free liquidity (the same min the contract enforces
-  // in `max_withdraw`). Computed client-side from already-loaded state so we
-  // don't need a per-tick contract simulation.
+  // Share-of-pool computed against the LP-fair basis (`free + reserved`) — NOT
+  // raw `total_assets`. The contract's `total_assets` carries non-LP claims
+  // (unclaimed dev/staker fees + open-trader-PnL liability), so OZ's
+  // `convert_to_assets` over-prices shares relative to what LPs actually own
+  // collectively. Using `lpTotal` here keeps the sum across all LPs equal to
+  // the LP-claimable pool. The vault page is the realized-basis view; MTM
+  // signals live on the leaderboard and positions routes.
   const userShares = shareBalance.data ?? 0n;
   const totalShares = vaultState.data ? BigInt(vaultState.data.total_shares) : 0n;
-  const totalAssets = vaultState.data ? BigInt(vaultState.data.total_assets) : 0n;
   const freeLiquidity = vaultState.data ? BigInt(vaultState.data.free_liquidity) : 0n;
+  const reservedUsdc = vaultState.data ? BigInt(vaultState.data.reserved_usdc) : 0n;
+  const lpTotal = freeLiquidity + reservedUsdc;
   const userValueUsdc =
-    totalShares > 0n ? (userShares * totalAssets) / totalShares : 0n;
+    totalShares > 0n ? (userShares * lpTotal) / totalShares : 0n;
   const maxWithdrawUsdc =
     userValueUsdc < freeLiquidity ? userValueUsdc : freeLiquidity;
   const canPickPercent = userShares > 0n && maxWithdrawUsdc > 0n;
@@ -80,38 +75,17 @@ export function VaultActions() {
       .replace(/\.?0+$/, "");
   };
 
+  // Percent buttons fill the input with the LP-fair USDC value of `pct` of the
+  // user's stake, clamped by free_liquidity. The submit path is uniformly
+  // `withdraw(assets)` — no share-denominated branch — because the input value
+  // is bounded above by the LP-fair total, which is strictly less than raw
+  // `total_assets`, so OZ's ceil-rounded shares-to-burn is always ≤ userShares
+  // (the prior dust-gap workaround was only needed against the inflated basis).
   const pickWithdrawPercent = (pct: number) => {
     if (!canPickPercent) return;
-    // Share-denominated split mirrors the redeem path the tx will take.
-    // Floors per BigInt division — fine, since 100% returns userShares
-    // exactly (no rounding) and intermediate percentages can absorb the
-    // 1-atom haircut without surprising the user.
-    const shares =
-      pct >= 100 ? userShares : (userShares * BigInt(pct)) / 100n;
-    // Display the USDC value those shares unwind to (rounding-down, same
-    // direction as the chain) so the input field shows what the user gets.
-    const previewAssets =
-      totalShares > 0n ? (shares * totalAssets) / totalShares : 0n;
-    const cappedShares =
-      previewAssets <= freeLiquidity
-        ? shares
-        : // Free-liquidity-bound exit: scale shares down to fit. Fractional
-          // share atoms get dropped here too — fine, the user can always run
-          // a second withdraw later.
-          totalAssets > 0n
-          ? (freeLiquidity * totalShares) / totalAssets
-          : 0n;
-    const displayAssets =
-      totalShares > 0n ? (cappedShares * totalAssets) / totalShares : 0n;
-    setWithdrawAmt(inputFromScaled(displayAssets));
-    setPinnedRedeemShares(cappedShares);
-  };
-
-  // Manual input clears the pinned-shares marker; the user is now asking for
-  // a specific USDC amount, which is the assets-side `withdraw` path.
-  const onWithdrawAmtChange = (next: string) => {
-    setWithdrawAmt(next);
-    setPinnedRedeemShares(null);
+    const amount =
+      pct >= 100 ? maxWithdrawUsdc : (maxWithdrawUsdc * BigInt(pct)) / 100n;
+    setWithdrawAmt(inputFromScaled(amount));
   };
 
   const deposit = useTxMutation({
@@ -138,17 +112,6 @@ export function VaultActions() {
     invalidate: vaultInvalidations,
     build: async () => {
       if (!address) throw new Error("connect wallet first");
-      // Two paths: redeem(shares) for %/MAX picks (no dust gap because OZ's
-      // `convert_to_assets` rounds down to what the shares actually unwind
-      // to), withdraw(assets) for a user-typed exact amount.
-      if (pinnedRedeemShares !== null && pinnedRedeemShares > 0n) {
-        return vault(address).redeem({
-          shares: pinnedRedeemShares,
-          receiver: address,
-          owner: address,
-          operator: address,
-        });
-      }
       const assets = parseUsdc(withdrawAmt);
       if (assets <= 0n) throw new Error("enter a positive amount");
       return vault(address).withdraw({
@@ -158,10 +121,7 @@ export function VaultActions() {
         operator: address,
       });
     },
-    onSuccess: () => {
-      setWithdrawAmt("");
-      setPinnedRedeemShares(null);
-    },
+    onSuccess: () => setWithdrawAmt(""),
   });
 
   if (!address) {
@@ -229,7 +189,7 @@ export function VaultActions() {
             type="text"
             inputMode="decimal"
             value={withdrawAmt}
-            onChange={(e) => onWithdrawAmtChange(e.target.value)}
+            onChange={(e) => setWithdrawAmt(e.target.value)}
             placeholder="0.00"
             className="h-12 text-lg"
             disabled={isLocked}

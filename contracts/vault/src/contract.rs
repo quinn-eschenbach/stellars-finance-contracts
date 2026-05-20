@@ -52,6 +52,28 @@ impl FungibleToken for VaultContract {
 // ERC-4626 vault interface — delegates to OZ Vault with custom wrappers
 // ---------------------------------------------------------------------------
 #[contractimpl]
+// LP-basis warning — applies to `total_assets`, `convert_to_shares`,
+// `convert_to_assets`, `preview_deposit`, `preview_mint`, `preview_withdraw`,
+// `preview_redeem` below.
+//
+// These methods return the OZ ERC-4626 idealized rate against RAW vault
+// balance. That balance includes two claims that are NOT LP-owned:
+//
+//   1. `unclaimed_fees` — the dev + staker slice of revenue, held in the
+//      vault until `claim_fees_to` distributes it.
+//   2. `max(0, net_global_trader_pnl)` — the vault's liability to pay
+//      winning traders on Close.
+//
+// The LP-claimable basis is `free_liquidity + reserved_usdc`, which
+// `free_liquidity()` already deducts both terms from. Any caller that needs
+// "what's a share worth to an LP right now" MUST compute against that
+// basis off-chain — the raw OZ rate returned here over-states LP value.
+//
+// `max_withdraw` / `max_redeem` ARE corrected: both clamp at
+// `free_liquidity`, so the actual withdraw payout is always LP-fair. Only
+// the theoretical-rate methods (`convert_to_*`, `preview_*`) carry the
+// over-statement, and the chain's `require_free_liquidity` guard prevents
+// any single tx from over-withdrawing in absolute terms.
 impl FungibleVault for VaultContract {
     fn query_asset(e: &Env) -> Address {
         Vault::query_asset(e)

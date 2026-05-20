@@ -26,40 +26,38 @@ function VaultPage() {
   const lockup = useLockup(address);
   useStreamVault();
 
-  // Derived LP totals — see VaultActions for the matching withdraw math.
+  // LP-claimable total mirrors the contract's `free_liquidity + reserved_usdc`
+  // — the conservative LP NAV that excludes non-LP claims (unclaimed dev/staker
+  // fees + the open-trader-PnL liability). Raw `total_assets` also carries
+  // those non-LP claims, so it MUST NOT be used as the share-pricing basis on
+  // the LP view — doing so over-states every LP's stake and lets the sum
+  // exceed the pool. Page-wide rule: vault is the **realized-basis view**.
+  const lpTotal = vault.data
+    ? (BigInt(vault.data.free_liquidity) + BigInt(vault.data.reserved_usdc)).toString()
+    : null;
+  const lpTotalBig = lpTotal !== null ? BigInt(lpTotal) : 0n;
+  const freeLiquidity = vault.data ? BigInt(vault.data.free_liquidity) : 0n;
+  const reservedUsdc = vault.data ? BigInt(vault.data.reserved_usdc) : 0n;
+  const utilBps =
+    lpTotalBig > 0n ? Number((reservedUsdc * 10_000n) / lpTotalBig) / 100 : 0;
+
+  // Derived LP totals — share-price-of-pool against the LP-fair basis so the
+  // sum across all LPs equals `lpTotal` exactly.
   const userShares = shareBalance.data ?? 0n;
   const totalShares = vault.data ? BigInt(vault.data.total_shares) : 0n;
-  const totalAssets = vault.data ? BigInt(vault.data.total_assets) : 0n;
   const userValueUsdc =
-    totalShares > 0n ? (userShares * totalAssets) / totalShares : 0n;
+    totalShares > 0n ? (userShares * lpTotalBig) / totalShares : 0n;
   // Percent-of-pool with 4-decimal precision. `* 1_000_000 / 10_000` keeps
   // a tiny LP from rounding to 0.00 — a 0.0001% share still shows.
   const poolPct =
     totalShares > 0n ? Number((userShares * 1_000_000n) / totalShares) / 10_000 : 0;
 
-  // LP-claimable total mirrors `free_liquidity + reserved_usdc`. Distinct from
-  // `total_assets`, which also carries unclaimed dev/staker fees + the chain's
-  // open-trader-PnL liability term.
-  const lpTotal = vault.data
-    ? (BigInt(vault.data.free_liquidity) + BigInt(vault.data.reserved_usdc)).toString()
+  // 30-day trading net: realized only. Open-trader-PnL drift would muddy the
+  // realized-basis view, and individual MTM signals live on the leaderboard
+  // and positions pages.
+  const tradingNet = profitability.data
+    ? profitability.data.lp_net_from_trades
     : null;
-  const freeLiquidity = vault.data ? BigInt(vault.data.free_liquidity) : 0n;
-  const reservedUsdc = vault.data ? BigInt(vault.data.reserved_usdc) : 0n;
-  const utilBps =
-    vault.data && lpTotal !== null && BigInt(lpTotal) > 0n
-      ? Number((reservedUsdc * 10_000n) / BigInt(lpTotal)) / 100
-      : 0;
-
-  // Mark-to-market 30d net: matches the existing Vault state semantics —
-  // realized trade flow + unrealized winning-trader liability + LP fee slice.
-  const tradingNet =
-    vault.data && profitability.data
-      ? (() => {
-          const pnl = BigInt(vault.data.net_global_trader_pnl);
-          const unrealizedToLp = pnl > 0n ? -pnl : 0n;
-          return (BigInt(profitability.data.lp_net_from_trades) + unrealizedToLp).toString();
-        })()
-      : null;
 
   const profitTotal =
     profitability.data && tradingNet !== null
