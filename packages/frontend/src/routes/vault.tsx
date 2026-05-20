@@ -1,33 +1,57 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useVault, useVaultProfitability } from "@/api/hooks";
+import { motion } from "motion/react";
+import {
+  useLockup,
+  useVault,
+  useVaultProfitability,
+  useVaultShareBalance,
+} from "@/api/hooks";
 import { useStreamVault } from "@/api/sse";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { NumberFlowUsd } from "@/components/ui/number-flow";
+import { useAddress } from "@/wallet/WalletProvider";
+import { Card, CardContent } from "@/components/ui/card";
+import { NumberFlowUsd, NumberFlowPlain } from "@/components/ui/number-flow";
 import { VaultActions } from "@/components/vault/VaultActions";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/vault")({
   component: VaultPage,
 });
 
 function VaultPage() {
+  const address = useAddress();
   const vault = useVault();
   const profitability = useVaultProfitability(30);
+  const shareBalance = useVaultShareBalance(address);
+  const lockup = useLockup(address);
   useStreamVault();
 
-  // LP-claimable total. `total_assets` on the contract also carries pending
-  // dev/staker `unclaimed_fees` and outstanding trader PnL liability, so it
-  // overstates what LPs own; `free_liquidity + reserved_usdc` is the LP NAV
-  // that share value tracks against.
+  // Derived LP totals — see VaultActions for the matching withdraw math.
+  const userShares = shareBalance.data ?? 0n;
+  const totalShares = vault.data ? BigInt(vault.data.total_shares) : 0n;
+  const totalAssets = vault.data ? BigInt(vault.data.total_assets) : 0n;
+  const userValueUsdc =
+    totalShares > 0n ? (userShares * totalAssets) / totalShares : 0n;
+  // Percent-of-pool with 4-decimal precision. `* 1_000_000 / 10_000` keeps
+  // a tiny LP from rounding to 0.00 — a 0.0001% share still shows.
+  const poolPct =
+    totalShares > 0n ? Number((userShares * 1_000_000n) / totalShares) / 10_000 : 0;
+
+  // LP-claimable total mirrors `free_liquidity + reserved_usdc`. Distinct from
+  // `total_assets`, which also carries unclaimed dev/staker fees + the chain's
+  // open-trader-PnL liability term.
   const lpTotal = vault.data
     ? (BigInt(vault.data.free_liquidity) + BigInt(vault.data.reserved_usdc)).toString()
     : null;
+  const freeLiquidity = vault.data ? BigInt(vault.data.free_liquidity) : 0n;
+  const reservedUsdc = vault.data ? BigInt(vault.data.reserved_usdc) : 0n;
+  const utilBps =
+    vault.data && lpTotal !== null && BigInt(lpTotal) > 0n
+      ? Number((reservedUsdc * 10_000n) / BigInt(lpTotal)) / 100
+      : 0;
 
-  // Mark-to-market basis: every figure here is "what hits LP NAV right now",
-  // including the mark-to-market trader-PnL deduction the chain already
-  // bakes into `free_liquidity` (the `max(0, net_global_trader_pnl)` term —
-  // chain only counts positive trader PnL as a liability; unrealized trader
-  // *losses* stay in trader collateral until close).
+  // Mark-to-market 30d net: matches the existing Vault state semantics —
+  // realized trade flow + unrealized winning-trader liability + LP fee slice.
   const tradingNet =
     vault.data && profitability.data
       ? (() => {
@@ -42,266 +66,512 @@ function VaultPage() {
       ? (BigInt(tradingNet) + BigInt(profitability.data.lp_net_from_fees)).toString()
       : null;
 
-  // Annualize the 30d return into a compounded APY. Naive extrapolation of a
-  // single window (no smoothing across windows, no cap at unrealistic values)
-  // so the user sees exactly what current activity would yield if it held.
-  // Returns null when the vault is empty or we have no profit row yet.
   const apyPercent =
     profitTotal !== null && lpTotal !== null && BigInt(lpTotal) > 0n
       ? (() => {
-          // 6-decimal fixed-point ratio so small profits don't round to zero.
           const ratioScaled = (BigInt(profitTotal) * 1_000_000n) / BigInt(lpTotal);
           const ratio = Number(ratioScaled) / 1_000_000;
-          // Guard against `(1 + r) <= 0` exploding the power; ratio that
-          // negative would mean a full LP wipeout in 30d anyway — clamp.
           if (1 + ratio <= 0) return -100;
           return (Math.pow(1 + ratio, 365 / 30) - 1) * 100;
         })()
       : null;
 
+  const lockupExpiry = lockup.data ?? 0;
+  const secondsLeft = useCountdownSeconds(lockupExpiry);
+
+  // Max the user could withdraw right now — mirrors the contract's clamp.
+  const maxWithdrawUsdc =
+    userValueUsdc < freeLiquidity ? userValueUsdc : freeLiquidity;
+
   return (
-    <div className="space-y-8 animate-fade-up">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/30 pb-5">
-        <div className="space-y-1">
+    <div className="space-y-10 pb-16">
+      {/* ───────── Header ───────── */}
+      <motion.header
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        className="flex flex-wrap items-end justify-between gap-4 border-b border-border/30 pb-6"
+      >
+        <div className="space-y-2">
           <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
             Liquidity
           </span>
           <h1 className="font-display text-5xl tracking-tightest text-foreground md:text-6xl">
             Vault
           </h1>
-          <p className="max-w-md text-sm text-muted-foreground">
-            ERC-4626 LP pool that underwrites every trade. Earn the spread of trader losses,
+          <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+            ERC-4626 LP pool that underwrites every trade. Earns the spread of trader losses,
             borrow fees, and funding.
           </p>
         </div>
-        {vault.data?.is_paused && (
+        {vault.data?.is_paused ? (
           <div className="pill border-bear/40 bg-bear/10 font-mono text-[10px] uppercase tracking-[0.22em] text-bear">
             <span className="h-1.5 w-1.5 rounded-full bg-bear" />
             Paused
           </div>
+        ) : (
+          <div className="pill font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inset-0 animate-ember-pulse rounded-full bg-bull/70" />
+              <span className="relative h-1.5 w-1.5 rounded-full bg-bull" />
+            </span>
+            Live
+          </div>
         )}
-      </header>
+      </motion.header>
 
-      {/* Big TVL hero strip */}
+      {/* ───────── Top: 3 summary tiles ───────── */}
       {vault.data && lpTotal !== null && (
         <div className="grid gap-3 md:grid-cols-3">
-          <HeroStat
-            label="Total assets"
-            value={<NumberFlowUsd value={lpTotal} decimals={0} />}
-            emphasis
+          <TileTotalAssets value={lpTotal} delay={0.05} />
+          <TileUtilization
+            free={vault.data.free_liquidity}
+            reserved={vault.data.reserved_usdc}
+            utilPct={utilBps}
+            delay={0.12}
           />
-          <HeroStat
-            label="Idle funds"
-            value={<NumberFlowUsd value={vault.data.free_liquidity} decimals={0} />}
-          />
-          <HeroStat
-            label="Active funds"
-            value={<NumberFlowUsd value={vault.data.reserved_usdc} decimals={0} />}
-          />
+          <TileYield apy={apyPercent} profit={profitTotal} delay={0.19} />
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Vault state</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {vault.data && lpTotal !== null && (
-              <div className="space-y-7">
-                {/* Holdings group: TVL as the headline, idle/active as sub-rows */}
-                <StatGroup
-                  label="Total assets"
-                  value={<NumberFlowUsd value={lpTotal} decimals={2} />}
-                  breakdown={[
-                    {
-                      label: "Idle funds",
-                      value: <NumberFlowUsd value={vault.data.free_liquidity} />,
-                    },
-                    {
-                      label: "Active funds",
-                      value: <NumberFlowUsd value={vault.data.reserved_usdc} />,
-                    },
-                  ]}
-                />
-
-                {/* Earnings group: combined 30d profit, broken into trading + fees */}
-                <StatGroup
-                  label="30-day profit"
-                  value={
-                    profitTotal !== null ? (
-                      <NumberFlowUsd
-                        value={profitTotal}
-                        signDisplay="exceptZero"
-                        decimals={2}
-                      />
-                    ) : (
-                      "—"
-                    )
-                  }
-                  valueTone={
-                    profitTotal !== null
-                      ? BigInt(profitTotal) > 0n
-                        ? "bull"
-                        : BigInt(profitTotal) < 0n
-                          ? "bear"
-                          : "muted"
-                      : "muted"
-                  }
-                  breakdown={[
-                    {
-                      label: "Trading",
-                      value:
-                        tradingNet !== null ? (
-                          <NumberFlowUsd value={tradingNet} signDisplay="exceptZero" />
-                        ) : (
-                          "—"
-                        ),
-                    },
-                    {
-                      label: "Fees",
-                      value: profitability.data ? (
-                        <NumberFlowUsd value={profitability.data.lp_net_from_fees} />
-                      ) : (
-                        "—"
-                      ),
-                    },
-                    ...(apyPercent !== null && apyPercent > 0
-                      ? [
-                          {
-                            label: "APY",
-                            value: (
-                              <span className="text-bull/85">{formatApy(apyPercent)}</span>
-                            ),
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
-
-                <div className="flex items-center justify-between border-t border-border/40 pt-4">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
-                    Status
-                  </span>
-                  <span
-                    className={
-                      vault.data.is_paused
-                        ? "rounded-full border border-bear/40 bg-bear/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-bear"
-                        : "rounded-full border border-bull/30 bg-bull/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-bull"
-                    }
-                  >
-                    {vault.data.is_paused ? "paused" : "active"}
-                  </span>
-                </div>
+      {/* ───────── Below: actions ⟷ user position ───────── */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr]">
+        {/* LEFT — deposit / withdraw form */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <Card className="h-full">
+            <CardContent className="space-y-5 px-6 pb-6 pt-6">
+              <div className="space-y-1">
+                <span className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
+                  Provide liquidity
+                </span>
+                <p className="text-[11px] text-muted-foreground/70">
+                  Deposit USDC · receive vault shares
+                </p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <div className="hairline" />
+              <VaultActions />
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Provide liquidity</CardTitle>
-            <p className="text-[11px] text-muted-foreground/80">Deposit USDC · receive vault shares</p>
-          </CardHeader>
-          <CardContent>
-            <VaultActions />
-          </CardContent>
-        </Card>
+        {/* RIGHT — user position as editorial line-list */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <UserPositionPanel
+            connected={!!address}
+            hasStake={userShares > 0n}
+            value={userValueUsdc}
+            poolPct={poolPct}
+            maxWithdraw={maxWithdrawUsdc}
+            secondsLeft={secondsLeft}
+          />
+        </motion.div>
       </div>
     </div>
   );
 }
 
-function formatApy(pct: number): string {
-  if (!Number.isFinite(pct)) return "—";
-  const sign = pct >= 0 ? "+" : "−";
-  const abs = Math.abs(pct);
-  if (abs >= 1000) return `${sign}${Math.round(abs).toLocaleString()}%`;
-  if (abs >= 10) return `${sign}${abs.toFixed(1)}%`;
-  return `${sign}${abs.toFixed(2)}%`;
+// ───────────────────────────────────────────────────────────────────────────
+// Top-tile components
+// ───────────────────────────────────────────────────────────────────────────
+
+function TileTotalAssets({ value, delay }: { value: string; delay: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <Card className="relative h-full overflow-hidden ring-1 ring-ember/15">
+        {/* Ember corner glow — subtle, anchors this tile as the headline */}
+        <div
+          className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full opacity-60 blur-3xl"
+          style={{ background: "radial-gradient(circle, hsl(var(--ember) / 0.45), transparent 70%)" }}
+          aria-hidden
+        />
+        <CardContent className="relative z-10 space-y-4 px-6 pb-6 pt-6">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/85">
+              Total assets
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-ember/85">
+              LP claimable
+            </span>
+          </div>
+          <div className="font-display text-[2.85rem] leading-none tracking-tightest text-foreground md:text-[3.4rem]">
+            <NumberFlowUsd value={value} decimals={0} />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <div className="h-px flex-1 bg-gradient-to-r from-ember/60 via-ember/30 to-transparent" />
+            <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-muted-foreground/60">
+              free + reserved
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
 }
 
-function HeroStat({
-  label,
-  value,
-  emphasis,
+function TileUtilization({
+  free,
+  reserved,
+  utilPct,
+  delay,
 }: {
-  label: string;
-  value: ReactNode;
-  emphasis?: boolean;
+  free: string;
+  reserved: string;
+  utilPct: number;
+  delay: number;
 }) {
+  const pctLabel = Number.isFinite(utilPct) ? utilPct.toFixed(1) : "0.0";
+  const widthPct = Math.max(2, Math.min(100, utilPct));
   return (
-    <Card className={emphasis ? "ring-1 ring-ember/20" : undefined}>
-      <CardContent className="space-y-2 px-5 pb-5 pt-5">
-        <span className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
-          {label}
-        </span>
-        <span
-          className={
-            emphasis
-              ? "block font-display text-4xl tracking-tightest text-foreground md:text-5xl"
-              : "block font-display text-3xl tracking-tightest text-foreground md:text-4xl"
-          }
-        >
-          {value}
-        </span>
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <Card className="h-full">
+        <CardContent className="space-y-4 px-6 pb-6 pt-6">
+          <span className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/85">
+            Utilization
+          </span>
+
+          <div className="flex items-baseline gap-1">
+            <span className="font-display text-[2.85rem] leading-none tracking-tightest text-foreground md:text-[3.4rem]">
+              <NumberFlowPlain value={Number(pctLabel)} decimals={1} />
+            </span>
+            <span className="pb-1 font-mono text-base text-muted-foreground/70">%</span>
+          </div>
+
+          {/* Capsule bar — moss → ember gradient. Width animates from 0 on mount. */}
+          <div className="space-y-2">
+            <div className="relative h-1.5 overflow-hidden rounded-full bg-card/70 ring-1 ring-border/30">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${widthPct}%` }}
+                transition={{ duration: 0.9, delay: delay + 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute inset-y-0 left-0 rounded-full"
+                style={{
+                  background:
+                    "linear-gradient(90deg, hsl(var(--moss) / 0.85) 0%, hsl(var(--ember) / 0.9) 100%)",
+                }}
+              />
+            </div>
+            {/* Labels mirror the bar: filled (left) = ACTIVE, empty (right) = IDLE */}
+            <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.18em]">
+              <span className="text-muted-foreground/65">
+                Active
+                <span className="ml-1.5 normal-case tracking-normal text-foreground/85">
+                  <NumberFlowUsd value={reserved} decimals={0} />
+                </span>
+              </span>
+              <span className="text-muted-foreground/65">
+                Idle
+                <span className="ml-1.5 normal-case tracking-normal text-foreground/85">
+                  <NumberFlowUsd value={free} decimals={0} />
+                </span>
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function TileYield({
+  apy,
+  profit,
+  delay,
+}: {
+  apy: number | null;
+  profit: string | null;
+  delay: number;
+}) {
+  const tone: "bull" | "bear" | "muted" =
+    apy === null
+      ? "muted"
+      : apy > 0
+        ? "bull"
+        : apy < 0
+          ? "bear"
+          : "muted";
+  const toneClass =
+    tone === "bull" ? "text-bull" : tone === "bear" ? "text-bear" : "text-foreground/85";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <Card className="h-full">
+        <CardContent className="space-y-4 px-6 pb-6 pt-6">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/85">
+              30-day yield
+            </span>
+            <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-muted-foreground/55">
+              annualized
+            </span>
+          </div>
+
+          <div className="flex items-baseline gap-1.5">
+            <span
+              className={cn(
+                "font-display text-[2.85rem] leading-none tracking-tightest md:text-[3.4rem]",
+                toneClass,
+              )}
+            >
+              {apy === null ? "—" : <ApyDigits value={apy} />}
+            </span>
+            {apy !== null && (
+              <span className={cn("pb-1 font-mono text-base", toneClass, "opacity-80")}>%</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-muted-foreground/60">
+              30-day net
+            </span>
+            <div className="h-px flex-1 bg-border/40" />
+            <span className={cn("font-mono text-xs tabular-nums", toneClass)}>
+              {profit !== null ? (
+                <NumberFlowUsd value={profit} decimals={0} signDisplay="exceptZero" />
+              ) : (
+                "—"
+              )}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+/**
+ * APY's magnitude varies wildly — show `+1,234%` for moonshots, `+12.3%`
+ * for normal yields, `+0.05%` for boring days. Keeps the precision where
+ * it's meaningful without overflowing the tile.
+ */
+function ApyDigits({ value }: { value: number }) {
+  const abs = Math.abs(value);
+  const dp = abs >= 1000 ? 0 : abs >= 10 ? 1 : 2;
+  return <NumberFlowPlain value={value} decimals={dp} signDisplay="exceptZero" />;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Right-side: user position panel (rows, not a grid)
+// ───────────────────────────────────────────────────────────────────────────
+
+function UserPositionPanel({
+  connected,
+  hasStake,
+  value,
+  poolPct,
+  maxWithdraw,
+  secondsLeft,
+}: {
+  connected: boolean;
+  hasStake: boolean;
+  value: bigint;
+  poolPct: number;
+  maxWithdraw: bigint;
+  secondsLeft: number;
+}) {
+  const isLocked = secondsLeft > 0;
+
+  if (!connected) {
+    return (
+      <Card className="h-full">
+        <CardContent className="flex h-full flex-col items-start justify-center gap-3 px-6 pb-6 pt-6">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
+            Your position
+          </span>
+          <p className="font-display text-2xl leading-snug text-foreground/85">
+            Connect a wallet to track your LP slice.
+          </p>
+          <p className="text-sm text-muted-foreground/70">
+            Once you deposit, this side shows your stake, share of the pool, lockup status, and
+            30-day yield broken out alongside the protocol totals.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!hasStake) {
+    return (
+      <Card className="h-full">
+        <CardContent className="flex h-full flex-col items-start justify-center gap-3 px-6 pb-6 pt-6">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
+            Your position
+          </span>
+          <p className="font-display text-2xl leading-snug text-foreground/85">No deposits yet.</p>
+          <p className="text-sm text-muted-foreground/70">
+            Open the deposit tab and post USDC to start collecting the LP share of trader losses,
+            borrow fees, and funding.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="h-full">
+      <CardContent className="space-y-5 px-6 pb-6 pt-6">
+        <div className="flex items-center justify-between">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/80">
+            Your position
+          </span>
+          {isLocked ? (
+            <span className="rounded-full border border-ember/40 bg-ember/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-ember">
+              locked
+            </span>
+          ) : hasStake ? (
+            <span className="rounded-full border border-bull/30 bg-bull/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] text-bull">
+              unlocked
+            </span>
+          ) : null}
+        </div>
+
+        {/* Headline value — live sLP→USDC conversion. Any accumulated yield
+            is reflected in this number via share-price appreciation; we don't
+            attempt to attribute the rolling-window protocol yield to this LP,
+            since that requires knowing their deposit time. */}
+        <div className="space-y-1.5">
+          <span className="block font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/65">
+            Your stake
+          </span>
+          <div className="font-display text-[2.2rem] leading-none tracking-tightest text-foreground md:text-[2.6rem]">
+            <NumberFlowUsd value={value.toString()} decimals={2} />
+          </div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/55">
+            sLP redeemable
+          </p>
+        </div>
+
+        <div className="hairline" />
+
+        {/* Editorial line-list. Hairline between each row, label⟷value. */}
+        <dl className="divide-y divide-border/25">
+          <PositionRow
+            label="Share of pool"
+            value={
+              <span>
+                <NumberFlowPlain
+                  value={poolPct}
+                  decimals={poolPct >= 1 ? 2 : 4}
+                />
+                <span className="ml-1 text-muted-foreground/60">%</span>
+              </span>
+            }
+          />
+
+          <PositionRow
+            label="Withdrawable now"
+            value={<NumberFlowUsd value={maxWithdraw.toString()} decimals={2} />}
+            sub={
+              maxWithdraw < value
+                ? "capped by free liquidity"
+                : value > 0n
+                  ? "full stake available"
+                  : undefined
+            }
+          />
+
+          <PositionRow
+            label="Lockup"
+            value={
+              isLocked ? (
+                <span className="text-ember/95">{formatCountdown(secondsLeft)}</span>
+              ) : (
+                <span className="text-bull/85">elapsed</span>
+              )
+            }
+          />
+        </dl>
       </CardContent>
     </Card>
   );
 }
 
-type StatTone = "default" | "bull" | "bear" | "muted";
-
-/**
- * Display-grade balance-sheet row: an emphasized headline number with smaller
- * mono sub-rows underneath. The headline label sits above the value so the
- * eye reads label → big number → breakdown without bouncing horizontally
- * across "label: value" pairs of equal weight.
- */
-function StatGroup({
+function PositionRow({
   label,
   value,
-  valueTone = "default",
-  breakdown,
+  sub,
 }: {
   label: string;
   value: ReactNode;
-  valueTone?: StatTone;
-  breakdown: Array<{ label: string; value: ReactNode }>;
+  sub?: string;
 }) {
-  const valueClass =
-    valueTone === "bull"
-      ? "text-bull"
-      : valueTone === "bear"
-        ? "text-bear"
-        : valueTone === "muted"
-          ? "text-foreground/80"
-          : "text-foreground";
   return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between gap-4">
-        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground/70">
-          {label}
-        </span>
-        <span
-          className={`font-display text-3xl tabular-nums tracking-tightest md:text-4xl ${valueClass}`}
-        >
+    <div className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
+      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/65">
+        {label}
+      </span>
+      <div className="text-right">
+        <div className="font-display text-lg tabular-nums tracking-tight text-foreground md:text-xl">
           {value}
-        </span>
-      </div>
-      <div className="space-y-1 pt-2">
-        {breakdown.map((row) => (
-          <div
-            key={row.label}
-            className="flex items-center justify-between font-mono text-[11px]"
-          >
-            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
-              {row.label}
-            </span>
-            <span className="tabular-nums text-foreground/85">{row.value}</span>
+        </div>
+        {sub && (
+          <div className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground/55">
+            {sub}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Helpers
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Tick once per second while there's an active lockup. Idles when expired
+ * so the page is quiet for users who can already withdraw.
+ */
+function useCountdownSeconds(expiry: number): number {
+  const compute = () => Math.max(0, expiry - Math.floor(Date.now() / 1000));
+  const [secondsLeft, setSecondsLeft] = useState(compute);
+  useEffect(() => {
+    setSecondsLeft(compute());
+    if (expiry === 0) return;
+    if (compute() === 0) return;
+    const id = window.setInterval(() => {
+      const next = Math.max(0, expiry - Math.floor(Date.now() / 1000));
+      setSecondsLeft(next);
+      if (next === 0) window.clearInterval(id);
+    }, 1000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiry]);
+  return secondsLeft;
+}
+
+function formatCountdown(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}m ${s}s`;
+  }
+  if (seconds < 86400) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${m}m`;
+  }
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  return `${d}d ${h}h`;
 }
