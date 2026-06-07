@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Frame } from "react95";
 import { Button } from "@/components/ui/button";
 import { useWindowManager } from "@/desktop/wm";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
@@ -29,7 +28,7 @@ export function PositionRow({ position, markPrice, readOnly = false }: PositionR
   const { close } = usePositionActions(position);
 
   return (
-    <Frame variant="well" className="!block w-full">
+    <div className="w-full">
       <div className="flex items-center justify-between p-2">
         <span className="flex items-center gap-2">
           <Button variant="link" size="sm" onClick={() => wm.open("trade", position.symbol)}>
@@ -142,7 +141,7 @@ export function PositionRow({ position, markPrice, readOnly = false }: PositionR
           onClose={() => setEditing(false)}
         />
       )}
-    </Frame>
+    </div>
   );
 }
 

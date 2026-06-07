@@ -57,7 +57,6 @@ export function OrderForm({
   const [tpValue, setTpValue] = useState(0);
   const [slValue, setSlValue] = useState(0);
   const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
-  const [showDetails, setShowDetails] = useState(false);
 
   const collateralScaled = useMemo(() => {
     try {
@@ -252,70 +251,54 @@ export function OrderForm({
         </Button>
       )}
 
-      {/* Win95 dialog-grow: everything a trader checks once lives down here. */}
-      <Button
-        size="sm"
-        active={showDetails}
-        onClick={() => setShowDetails((v) => !v)}
-        className="w-full"
-      >
-        Details {showDetails ? "«" : "»"}
-      </Button>
-      {showDetails && (
-        <div className="space-y-3">
-          <SlippageRow bps={slippageBps} setBps={setSlippageBps} />
-          <div className="space-y-1">
-            <DetailRow
-              label={isLong ? "Max fill price" : "Min fill price"}
-              value={
-                acceptablePrice > 0n ? (
-                  <NumberFlowUsd value={acceptablePrice} decimals="adaptive" />
-                ) : sizeScaled > 0n ? (
-                  "Any"
-                ) : (
-                  "—"
-                )
-              }
-            />
-            <DetailRow
-              label="Open fee"
-              value={
-                quote && sizeScaled > 0n ? <NumberFlowUsd value={quote.open_fee} decimals={2} /> : "—"
-              }
-            />
-            <DetailRow
-              label="Borrow / day"
-              value={
-                quote && sizeScaled > 0n ? (
-                  <NumberFlowUsd value={quote.daily_borrow} decimals={2} />
-                ) : (
-                  "—"
-                )
-              }
-            />
-            <DetailRow
-              label="Funding / day"
-              value={
-                quote && sizeScaled > 0n ? (
-                  <span
-                    className={cn(
-                      quote.daily_funding > 0n
-                        ? "text-bull"
-                        : quote.daily_funding < 0n
-                          ? "text-bear"
-                          : undefined,
-                    )}
-                  >
-                    <NumberFlowUsd value={quote.daily_funding} decimals={2} signDisplay="exceptZero" />
-                  </span>
-                ) : (
-                  "—"
-                )
-              }
-            />
-          </div>
-        </div>
-      )}
+      {/* Costs & fills — always visible below the submit. */}
+      <SlippageRow bps={slippageBps} setBps={setSlippageBps} />
+      <div className="space-y-1">
+        <DetailRow
+          label={isLong ? "Max fill price" : "Min fill price"}
+          value={
+            acceptablePrice > 0n ? (
+              <NumberFlowUsd value={acceptablePrice} decimals="adaptive" />
+            ) : sizeScaled > 0n ? (
+              "Any"
+            ) : (
+              "—"
+            )
+          }
+        />
+        <DetailRow
+          label="Open fee"
+          value={
+            quote && sizeScaled > 0n ? <NumberFlowUsd value={quote.open_fee} decimals={2} /> : "—"
+          }
+        />
+        <DetailRow
+          label="Borrow / day"
+          value={
+            quote && sizeScaled > 0n ? <NumberFlowUsd value={quote.daily_borrow} decimals={2} /> : "—"
+          }
+        />
+        <DetailRow
+          label="Funding / day"
+          value={
+            quote && sizeScaled > 0n ? (
+              <span
+                className={cn(
+                  quote.daily_funding > 0n
+                    ? "text-bull"
+                    : quote.daily_funding < 0n
+                      ? "text-bear"
+                      : undefined,
+                )}
+              >
+                <NumberFlowUsd value={quote.daily_funding} decimals={2} signDisplay="exceptZero" />
+              </span>
+            ) : (
+              "—"
+            )
+          }
+        />
+      </div>
     </div>
   );
 }

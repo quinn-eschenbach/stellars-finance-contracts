@@ -1,4 +1,5 @@
-import { Frame, GroupBox } from "react95";
+import { useMemo, useState } from "react";
+import { Tab, TabBody, Tabs } from "react95";
 import { usePositions, usePrices, useTrades } from "@/api/hooks";
 import { useStreamPositions, useStreamPrices } from "@/api/sse";
 import { useAddress } from "@/wallet/WalletProvider";
@@ -8,6 +9,7 @@ import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { WellNote } from "@/components/ui/well-note";
 import { LogOnPrompt } from "@/desktop/Logon";
 import { useWindowManager } from "@/desktop/wm";
+import { calcUnrealizedPnl } from "@stellars/protocol-math";
 import { cn, formatPrice, priceDecimals } from "@/lib/utils";
 import type { TradeRow } from "@/api/types";
 
@@ -34,14 +36,19 @@ function PositionsView({ address, isMe }: { address: string; isMe: boolean }) {
   // (manual close, liquidation, ADL) client-side so a single round-trip covers
   // all three buckets. `decrease` and `order` event_types can be partial — the
   // is_full_close flag distinguishes a wind-down from a true close.
-  const closedTrades = useTrades({ trader: address, limit: 100 });
+  const trades = useTrades({ trader: address, limit: 100 });
   useStreamPositions(address);
   useStreamPrices();
 
-  const priceBySymbol = new Map((prices.data ?? []).map((p) => [p.symbol, p.price]));
-  const count = positions.data?.length ?? 0;
+  const [tab, setTab] = useState<"open" | "closed">("open");
 
-  const closed = (closedTrades.data ?? []).filter(
+  const priceBySymbol = useMemo(
+    () => new Map((prices.data ?? []).map((p) => [p.symbol, p.price])),
+    [prices.data],
+  );
+  const openCount = positions.data?.length ?? 0;
+
+  const closed = (trades.data ?? []).filter(
     (t) =>
       (t.event_type === "decrease" ||
         t.event_type === "order" ||
@@ -50,41 +57,72 @@ function PositionsView({ address, isMe }: { address: string; isMe: boolean }) {
       t.is_full_close === true,
   );
 
+  // Lifetime PnL = realized (Σ pnl over every trade event — increases carry 0)
+  // + unrealized on still-open positions marked to live oracle. Same combined
+  // basis the leaderboard uses. One headline number, not a parallel row.
+  const lifetimePnl = useMemo(() => {
+    const realized = (trades.data ?? []).reduce((acc, t) => acc + BigInt(t.pnl), 0n);
+    const unrealized = (positions.data ?? []).reduce((acc, p) => {
+      const mark = priceBySymbol.get(p.symbol);
+      if (!mark) return acc;
+      return acc + calcUnrealizedPnl(BigInt(p.size), BigInt(p.entry_price), BigInt(mark), p.is_long);
+    }, 0n);
+    return realized + unrealized;
+  }, [trades.data, positions.data, priceBySymbol]);
+
+  const pnlReady = !trades.isLoading && !positions.isLoading;
+  const pnlClass =
+    lifetimePnl > 0n ? "text-bull" : lifetimePnl < 0n ? "text-bear" : undefined;
+
   return (
     <div className="flex flex-col gap-2">
-      <Frame variant="status" className="!flex items-center justify-between gap-2 !px-2 !py-1">
-        <span className="min-w-0 truncate font-mono text-xs">{address}</span>
-        <span className="shrink-0 text-xs">
-          {count} open {count === 1 ? "position" : "positions"}
+      <div className="flex items-baseline gap-2 px-1">
+        <span className={cn("font-mono text-base font-bold tabular-nums", pnlClass)}>
+          {pnlReady ? (
+            <NumberFlowUsd value={lifetimePnl.toString()} signDisplay="exceptZero" />
+          ) : (
+            "—"
+          )}
         </span>
-      </Frame>
+        <span className="text-xs">Lifetime PnL</span>
+      </div>
 
-      <GroupBox label="Open positions" className="!pt-3">
-        {positions.isLoading && <WellNote>Loading…</WellNote>}
-        {positions.data?.length === 0 && <WellNote>No open positions</WellNote>}
-        <div className="space-y-2">
-          {(positions.data ?? []).map((p) => (
-            <PositionRow
-              key={p.id}
-              position={p}
-              markPrice={priceBySymbol.get(p.symbol)}
-              readOnly={!isMe}
-            />
-          ))}
-        </div>
-      </GroupBox>
-
-      <GroupBox label="Closed positions" className="!pt-3">
-        {closedTrades.isLoading && <WellNote>Loading…</WellNote>}
-        {!closedTrades.isLoading && closed.length === 0 && (
-          <WellNote>No closed positions yet</WellNote>
+      <div>
+        <Tabs value={tab} onChange={(v) => setTab(v as "open" | "closed")}>
+          <Tab value="open">Open ({openCount})</Tab>
+          <Tab value="closed">Closed ({closed.length})</Tab>
+        </Tabs>
+        <TabBody>
+        {tab === "open" ? (
+          <>
+            {positions.isLoading && <WellNote>Loading…</WellNote>}
+            {!positions.isLoading && openCount === 0 && <WellNote>No open positions</WellNote>}
+            <div className="divide-y-2 divide-[#848584]">
+              {(positions.data ?? []).map((p) => (
+                <PositionRow
+                  key={p.id}
+                  position={p}
+                  markPrice={priceBySymbol.get(p.symbol)}
+                  readOnly={!isMe}
+                />
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            {trades.isLoading && <WellNote>Loading…</WellNote>}
+            {!trades.isLoading && closed.length === 0 && (
+              <WellNote>No closed positions yet</WellNote>
+            )}
+            <div className="divide-y-2 divide-[#848584]">
+              {closed.map((t) => (
+                <ClosedPositionRow key={t.id} trade={t} />
+              ))}
+            </div>
+          </>
         )}
-        <div className="space-y-2">
-          {closed.map((t) => (
-            <ClosedPositionRow key={t.id} trade={t} />
-          ))}
-        </div>
-      </GroupBox>
+        </TabBody>
+      </div>
     </div>
   );
 }
@@ -97,7 +135,7 @@ function ClosedPositionRow({ trade }: { trade: TradeRow }) {
   const isLong = trade.is_long ?? false;
   const closedAt = new Date(Number(trade.timestamp) * 1000);
   return (
-    <Frame variant="well" className="!block w-full !p-2">
+    <div className="w-full p-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-2">
           <Button variant="link" size="sm" onClick={() => wm.open("trade", trade.symbol)}>
@@ -135,7 +173,7 @@ function ClosedPositionRow({ trade }: { trade: TradeRow }) {
           }
         />
       </div>
-    </Frame>
+    </div>
   );
 }
 

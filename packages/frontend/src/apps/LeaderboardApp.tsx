@@ -9,7 +9,6 @@ import {
 } from "react95";
 import { useLeaderboard, usePrices } from "@/api/hooks";
 import { useStreamPrices } from "@/api/sse";
-import { Button } from "@/components/ui/button";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { WellNote } from "@/components/ui/well-note";
 import { useAddress } from "@/wallet/WalletProvider";
@@ -91,7 +90,11 @@ export function LeaderboardApp() {
           const profitable = entry.total >= 0n;
           const winRate = row.closes > 0 ? (row.wins / row.closes) * 100 : null;
           return (
-            <TableRow key={row.trader}>
+            <TableRow
+              key={row.trader}
+              onClick={() => wm.open("profile", isMe ? undefined : row.trader)}
+              className="cursor-pointer"
+            >
               <TableDataCell className="font-mono tabular-nums">
                 {idx + 1}
                 {idx === 0 && (
@@ -101,15 +104,8 @@ export function LeaderboardApp() {
                 )}
               </TableDataCell>
               <TableDataCell>
-                <span className="flex items-center gap-1.5">
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => wm.open("profile", isMe ? undefined : row.trader)}
-                    className="font-mono"
-                  >
-                    {shortAddress(row.trader, 6, 4)}
-                  </Button>
+                <span className="flex items-center gap-1.5 font-mono">
+                  {shortAddress(row.trader, 6, 4)}
                   {isMe && <span className="pill text-xs font-bold">you</span>}
                 </span>
               </TableDataCell>
