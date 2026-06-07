@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { Lock, ShieldCheck } from "lucide-react";
+import { Frame } from "react95";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
+import { LogOnPrompt } from "@/desktop/Logon";
 import { Label } from "@/components/ui/label";
 import { NumberFlowUsd, NumberFlowPlain } from "@/components/ui/number-flow";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAddress } from "@/wallet/WalletProvider";
 import { vault } from "@/contracts/clients";
 import { useTxMutation } from "@/contracts/useTxMutation";
-import { formatUsdc, parseUsdc, cn } from "@/lib/utils";
+import { formatUsdc, numberToAmount, parseUsdc, cn } from "@/lib/utils";
 import {
   queryKeys,
   useLockup,
@@ -30,8 +31,9 @@ export function VaultActions() {
   const vaultState = useVault();
   const shareBalance = useVaultShareBalance(address);
 
-  const [depositAmt, setDepositAmt] = useState("");
-  const [withdrawAmt, setWithdrawAmt] = useState("");
+  // Amounts as plain numbers — 0 means empty. NumberInput is number-valued.
+  const [depositAmt, setDepositAmt] = useState(0);
+  const [withdrawAmt, setWithdrawAmt] = useState(0);
 
   // Share-of-pool computed against the LP-fair basis (`free + reserved`) — NOT
   // raw `total_assets`. The contract's `total_assets` carries non-LP claims
@@ -65,14 +67,11 @@ export function VaultActions() {
     queryKeys.vaultShareBalance(address),
   ];
 
-  // Translate a scaled USDC bigint back into the human string the input uses.
-  // formatUsdc returns "1,234.56" — strip commas (parseUsdc rejects them) and
-  // any trailing zeros so the field reads "1234.5" rather than "1234.50".
-  const inputFromScaled = (scaled: bigint): string => {
-    if (scaled <= 0n) return "0";
-    return formatUsdc(scaled, { decimals: 6 })
-      .replace(/,/g, "")
-      .replace(/\.?0+$/, "");
+  // Translate a scaled USDC bigint back into the number the input uses.
+  // formatUsdc returns "1,234.56" — strip commas before Number().
+  const inputFromScaled = (scaled: bigint): number => {
+    if (scaled <= 0n) return 0;
+    return Number(formatUsdc(scaled, { decimals: 6 }).replace(/,/g, ""));
   };
 
   // Percent buttons fill the input with the LP-fair USDC value of `pct` of the
@@ -94,7 +93,7 @@ export function VaultActions() {
     invalidate: vaultInvalidations,
     build: async () => {
       if (!address) throw new Error("connect wallet first");
-      const assets = parseUsdc(depositAmt);
+      const assets = parseUsdc(numberToAmount(depositAmt));
       if (assets <= 0n) throw new Error("enter a positive amount");
       return vault(address).deposit({
         assets,
@@ -103,7 +102,7 @@ export function VaultActions() {
         operator: address,
       });
     },
-    onSuccess: () => setDepositAmt(""),
+    onSuccess: () => setDepositAmt(0),
   });
 
   const withdraw = useTxMutation({
@@ -112,7 +111,7 @@ export function VaultActions() {
     invalidate: vaultInvalidations,
     build: async () => {
       if (!address) throw new Error("connect wallet first");
-      const assets = parseUsdc(withdrawAmt);
+      const assets = parseUsdc(numberToAmount(withdrawAmt));
       if (assets <= 0n) throw new Error("enter a positive amount");
       return vault(address).withdraw({
         assets,
@@ -121,27 +120,21 @@ export function VaultActions() {
         operator: address,
       });
     },
-    onSuccess: () => setWithdrawAmt(""),
+    onSuccess: () => setWithdrawAmt(0),
   });
 
   if (!address) {
-    return (
-      <p className="rounded-xl border border-dashed border-border/50 bg-background/30 px-4 py-6 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground">
-        Connect a wallet to deposit
-      </p>
-    );
+    return <LogOnPrompt message="Log on with a Stellar wallet to deposit." />;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-xl border border-border/40 bg-background/30 px-4 py-3">
-        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          Wallet USDC
-        </span>
-        <span className="font-mono text-sm tabular-nums text-foreground">
+      <Frame variant="status" className="!flex w-full items-center justify-between !px-2 !py-1">
+        <span className="text-xs">Wallet USDC</span>
+        <span className="font-mono text-sm tabular-nums">
           {usdcBalance.data != null ? <NumberFlowUsd value={usdcBalance.data} /> : "—"}
         </span>
-      </div>
+      </Frame>
 
       <Tabs defaultValue="deposit">
         <TabsList className="grid w-full grid-cols-2">
@@ -151,14 +144,7 @@ export function VaultActions() {
 
         <TabsContent value="deposit" className="space-y-3">
           <Label>Amount (USDC)</Label>
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={depositAmt}
-            onChange={(e) => setDepositAmt(e.target.value)}
-            placeholder="0.00"
-            className="h-12 text-lg"
-          />
+          <NumberInput value={depositAmt} onChange={setDepositAmt} min={0} step={100} width="100%" />
           <Button
             variant="primary"
             size="lg"
@@ -185,13 +171,12 @@ export function VaultActions() {
               </span>
             )}
           </div>
-          <Input
-            type="text"
-            inputMode="decimal"
+          <NumberInput
             value={withdrawAmt}
-            onChange={(e) => setWithdrawAmt(e.target.value)}
-            placeholder="0.00"
-            className="h-12 text-lg"
+            onChange={setWithdrawAmt}
+            min={0}
+            step={100}
+            width="100%"
             disabled={isLocked}
           />
           {canPickPercent && (
@@ -256,34 +241,22 @@ function CooldownNotice({
   if (!hasDeposit) return null;
   if (isLocked) {
     return (
-      <div className="flex items-start gap-3 rounded-xl border border-ember/30 bg-ember/[0.06] px-4 py-3">
-        <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ember" aria-hidden />
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ember">
-              LP cooldown
-            </span>
-            <Countdown
-              seconds={secondsLeft}
-              className="font-mono text-[11px] text-foreground"
-            />
-          </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Unlocks{" "}
-            <span className="font-mono text-foreground/85">{formatExpiry(expiry)}</span>.
-            Cooldown protects the protocol from flash-loan-style LP exits.
-          </p>
+      <Frame variant="well" className="!block w-full space-y-1 !px-2 !py-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold">LP cooldown</span>
+          <Countdown seconds={secondsLeft} className="font-mono text-xs" />
         </div>
-      </div>
+        <p className="text-xs leading-snug">
+          Unlocks <span className="font-mono">{formatExpiry(expiry)}</span>. Cooldown protects
+          the protocol from flash-loan-style LP exits.
+        </p>
+      </Frame>
     );
   }
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-bull/30 bg-bull/[0.06] px-4 py-2.5">
-      <ShieldCheck className="h-3.5 w-3.5 text-bull" aria-hidden />
-      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-bull">
-        cooldown elapsed · free to withdraw
-      </span>
-    </div>
+    <Frame variant="well" className="!block w-full !px-2 !py-1.5">
+      <span className="text-xs font-bold text-bull">Cooldown elapsed — free to withdraw</span>
+    </Frame>
   );
 }
 

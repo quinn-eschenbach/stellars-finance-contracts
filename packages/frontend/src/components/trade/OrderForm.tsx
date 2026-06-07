@@ -1,14 +1,14 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { NumberFlowUsd } from "@/components/ui/number-flow";
 import { Slider } from "@/components/ui/slider";
 import { useAddress } from "@/wallet/WalletProvider";
+import { LogOnPrompt } from "@/desktop/Logon";
 import { positionManager } from "@/contracts/clients";
 import { useTxMutation } from "@/contracts/useTxMutation";
-import { cn, formatUsdc, parsePrice, parseUsdc } from "@/lib/utils";
+import { cn, descale, numberToAmount, parsePrice, parseUsdc } from "@/lib/utils";
 import { useIncreaseQuote } from "@/api/quote";
 import { queryKeys, useWalletBalance } from "@/api/hooks";
 
@@ -18,44 +18,46 @@ interface OrderFormProps {
   markPrice?: string;
   /** Per-market max leverage, parsed integer (e.g. 50). */
   maxLeverage?: number;
+  /** Owned by the parent — the Long/Short tabs above the form set it. */
   side: "long" | "short";
-  setSide: (s: "long" | "short") => void;
   collateralInput: string;
   setCollateralInput: (v: string) => void;
   leverage: number;
   setLeverage: (n: number) => void;
+  /** True when a position is already open on this market — submit increases it. */
+  hasPosition?: boolean;
 }
 
-const QUICK_AMOUNTS = ["100", "500", "1000", "5000"];
+const QUICK_AMOUNTS = [100, 500, 1000, 5000];
 
 const SLIPPAGE_PRESETS_BPS = [10, 50, 100] as const; // 0.1%, 0.5%, 1%
 const DEFAULT_SLIPPAGE_BPS = 50;
 const MAX_SLIPPAGE_BPS = 5000; // 50% — beyond this, just pass 0 to opt out
 
 /**
- * Market-order open form. Order state is owned by the parent so the chart
- * can render entry / liquidation price lines for the staged order. TP/SL
- * are local — only relevant during order construction.
+ * Market-order open/increase form. Order state is owned by the parent so the
+ * chart and the preview panel can react to the staged order. TP/SL are local
+ * — only relevant during order construction.
  */
 export function OrderForm({
   symbol,
   markPrice,
   maxLeverage = 20,
   side,
-  setSide,
   collateralInput,
   setCollateralInput,
   leverage,
   setLeverage,
+  hasPosition = false,
 }: OrderFormProps) {
   const address = useAddress();
   const balance = useWalletBalance(address);
 
-  const [tpInput, setTpInput] = useState("");
-  const [slInput, setSlInput] = useState("");
-  const [showTpSl, setShowTpSl] = useState(false);
-  const [slippageBps, setSlippageBps] = useState<number>(DEFAULT_SLIPPAGE_BPS);
-  const [slippageCustom, setSlippageCustom] = useState("");
+  // TP/SL as plain numbers — 0 means unset, matching the contract convention.
+  const [tpValue, setTpValue] = useState(0);
+  const [slValue, setSlValue] = useState(0);
+  const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
+  const [showDetails, setShowDetails] = useState(false);
 
   const collateralScaled = useMemo(() => {
     try {
@@ -69,23 +71,14 @@ export function OrderForm({
   const isLong = side === "long";
   const cappedLeverage = Math.min(leverage, Math.max(1, maxLeverage));
 
-  // Parse TP/SL from inputs. Empty string → 0n (= unset). Invalid input
-  // surfaces as a hint and disables submit so we never blast a bad value
-  // at the contract.
-  const tpScaled = useMemo(() => safeParse(tpInput), [tpInput]);
-  const slScaled = useMemo(() => safeParse(slInput), [slInput]);
+  // Scale TP/SL for the contract. 0 = unset; validation only runs on set
+  // values so we never blast a bad trigger at the contract.
+  const tpScaled = useMemo(() => (tpValue > 0 ? parsePrice(numberToAmount(tpValue)) : 0n), [tpValue]);
+  const slScaled = useMemo(() => (slValue > 0 ? parsePrice(numberToAmount(slValue)) : 0n), [slValue]);
   const tpError =
-    tpScaled === "invalid"
-      ? "invalid TP"
-      : markPrice && tpScaled && tpScaled > 0n
-        ? validateTp(BigInt(markPrice), tpScaled, isLong)
-        : null;
+    markPrice && tpScaled > 0n ? validateTp(BigInt(markPrice), tpScaled, isLong) : null;
   const slError =
-    slScaled === "invalid"
-      ? "invalid SL"
-      : markPrice && slScaled && slScaled > 0n
-        ? validateSl(BigInt(markPrice), slScaled, isLong)
-        : null;
+    markPrice && slScaled > 0n ? validateSl(BigInt(markPrice), slScaled, isLong) : null;
 
   // Staged IncreaseQuote — costs + liquidity feasibility for the order as
   // currently configured. Recomputed by `useIncreaseQuote` from the same
@@ -103,17 +96,18 @@ export function OrderForm({
     address,
   );
 
-  const openFeeScaled = quote?.open_fee ?? null;
-  const dailyBorrowFeeScaled = quote?.daily_borrow ?? null;
-  const dailyFundingFeeScaled = quote?.daily_funding ?? null;
-  const liq = quote?.liquidation_price ?? null;
   const acceptablePrice = quote?.acceptable_price ?? 0n;
   const exceedsLiquidity = quote?.exceeds_liquidity ?? false;
   const liquidityHeadroom = quote?.liquidity_headroom ?? null;
+  const liq = quote?.liquidation_price ?? null;
 
   const open = useTxMutation({
-    action: `Open ${cappedLeverage}× ${isLong ? "long" : "short"} ${symbol}`,
-    successDetail: `Position opened on ${symbol} with ${collateralInput} USDC.`,
+    action: hasPosition
+      ? `Increase ${isLong ? "long" : "short"} ${symbol}`
+      : `Open ${cappedLeverage}× ${isLong ? "long" : "short"} ${symbol}`,
+    successDetail: hasPosition
+      ? `Position increased on ${symbol} with ${collateralInput} USDC.`
+      : `Position opened on ${symbol} with ${collateralInput} USDC.`,
     invalidate: [queryKeys.positions(address ?? ""), queryKeys.walletBalance(address)],
     build: async () => {
       if (!address) throw new Error("connect wallet first");
@@ -125,8 +119,8 @@ export function OrderForm({
         size: sizeScaled,
         collateral: collateralScaled,
         is_long: isLong,
-        take_profit: typeof tpScaled === "bigint" ? tpScaled : 0n,
-        stop_loss: typeof slScaled === "bigint" ? slScaled : 0n,
+        take_profit: tpScaled,
+        stop_loss: slScaled,
         acceptable_price: acceptablePrice,
       });
     },
@@ -135,7 +129,6 @@ export function OrderForm({
   const walletBalance = balance.data ?? 0n;
   const exceedsBalance = collateralScaled > 0n && walletBalance > 0n && collateralScaled > walletBalance;
   const submitDisabled =
-    !address ||
     open.isPending ||
     collateralScaled <= 0n ||
     !!tpError ||
@@ -144,292 +137,195 @@ export function OrderForm({
     exceedsLiquidity;
 
   return (
-    <div className="space-y-5">
-      {/* Side toggle — sliding bull/bear segmented control */}
-      <SideToggle isLong={isLong} setSide={setSide} />
-
-      {/* Collateral with quick-amount chips */}
-      <div className="space-y-2">
+    <div className="space-y-4">
+      {/* Collateral with quick-amount buttons */}
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label>Collateral</Label>
-          {address ? (
+          <Label>Collateral (USDC)</Label>
+          {address && (
             <button
               type="button"
               onClick={() => walletBalance > 0n && setCollateralInput(formatBalanceInput(walletBalance))}
-              className={cn(
-                "font-mono text-[11px] tracking-tight transition-colors",
-                exceedsBalance
-                  ? "text-bear"
-                  : "text-muted-foreground/80 hover:text-foreground",
-              )}
+              className={cn("font-mono text-xs underline", exceedsBalance && "text-bear")}
               title={walletBalance > 0n ? "Use full balance" : undefined}
             >
-              <span className="uppercase tracking-[0.18em] text-muted-foreground/60">Bal</span>{" "}
-              <NumberFlowUsd value={walletBalance} />
+              Bal <NumberFlowUsd value={walletBalance} />
             </button>
-          ) : (
-            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground/70">
-              USDC
-            </span>
           )}
         </div>
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={collateralInput}
-          onChange={(e) => setCollateralInput(e.target.value)}
-          placeholder="0.00"
-          className={cn("h-12 text-lg", exceedsBalance && "border-bear/60")}
+        <NumberInput
+          value={Number(collateralInput) || 0}
+          onChange={(v) => setCollateralInput(numberToAmount(v))}
+          min={0}
+          step={50}
+          width="100%"
         />
-        <div className="flex gap-1.5">
+        <div className="flex gap-1">
           {QUICK_AMOUNTS.map((amt) => (
-            <button
+            <Button
               key={amt}
-              type="button"
-              onClick={() => setCollateralInput(amt)}
-              className={cn(
-                "flex-1 rounded-lg border border-border/50 bg-card/30 px-2 py-1 font-mono text-[11px] tracking-tight text-muted-foreground transition-all hover:border-ember/50 hover:bg-card/60 hover:text-foreground",
-                collateralInput === amt && "border-ember/60 bg-ember/10 text-foreground",
-              )}
+              size="sm"
+              active={Number(collateralInput) === amt}
+              onClick={() => setCollateralInput(String(amt))}
+              className="flex-1 font-mono"
             >
               {amt}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
-      {/* Leverage with marker pips */}
-      <div className="space-y-3">
+      {/* Leverage */}
+      <div className="space-y-1">
         <div className="flex items-end justify-between">
           <Label>Leverage</Label>
-          <div className="flex items-baseline gap-1">
-            <span className="font-display text-3xl leading-none text-foreground">{cappedLeverage}</span>
-            <span className="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">×</span>
-          </div>
+          <span className="font-mono text-sm font-bold tabular-nums">{cappedLeverage}×</span>
         </div>
         <Slider
           min={1}
           max={maxLeverage}
           step={1}
           value={cappedLeverage}
-          onChange={(e) => setLeverage(Number(e.target.value))}
+          onChange={(value) => setLeverage(value)}
         />
-        <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
+        <div className="flex justify-between font-mono text-xs">
           <span>1×</span>
           <span>{Math.round(maxLeverage / 2)}×</span>
           <span>{maxLeverage}×</span>
         </div>
       </div>
 
-      {/* TP / SL accordion */}
-      <div className="space-y-2">
-        <button
-          type="button"
-          onClick={() => setShowTpSl((v) => !v)}
-          className="flex w-full items-center justify-between rounded-lg border border-border/40 bg-card/30 px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-all hover:border-border/70 hover:text-foreground"
+      {/* TP / SL — always visible, 0 = unset */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-xs">TP ({isLong ? "above" : "below"} mark)</Label>
+          <NumberInput value={tpValue} onChange={setTpValue} min={0} width="100%" />
+          {tpError && <p className="font-mono text-xs text-destructive">{tpError}</p>}
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">SL ({isLong ? "below" : "above"} mark)</Label>
+          <NumberInput value={slValue} onChange={setSlValue} min={0} width="100%" />
+          {slError && <p className="font-mono text-xs text-destructive">{slError}</p>}
+        </div>
+      </div>
+
+      {/* The one summary line a trader needs before submitting. */}
+      {sizeScaled > 0n && (
+        <div className="flex items-center justify-between font-mono text-xs tabular-nums">
+          <span>
+            Size <NumberFlowUsd value={sizeScaled} decimals={0} />
+          </span>
+          <span className={cn(liq && liq > 0n && "text-bear")}>
+            Liq {liq && liq > 0n ? <NumberFlowUsd value={liq} decimals="adaptive" /> : "—"}
+          </span>
+        </div>
+      )}
+
+      {exceedsLiquidity && liquidityHeadroom !== null && (
+        <p className="text-xs font-bold text-bear">
+          Exceeds vault liquidity — headroom{" "}
+          <span className="font-mono tabular-nums">
+            <NumberFlowUsd value={liquidityHeadroom} decimals={0} />
+          </span>
+        </p>
+      )}
+
+      {!address ? (
+        <LogOnPrompt buttonLabel="Log On to Trade" />
+      ) : (
+        <Button
+          variant={isLong ? "bull" : "bear"}
+          size="lg"
+          className="w-full"
+          disabled={submitDisabled}
+          onClick={() => open.mutate()}
         >
-          <span>Take profit / Stop loss</span>
-          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showTpSl && "rotate-180")} />
-        </button>
-        {showTpSl && (
-          <div className="grid grid-cols-2 gap-2 animate-fade-up">
-            <div className="space-y-1">
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={tpInput}
-                onChange={(e) => setTpInput(e.target.value)}
-                placeholder={isLong ? "TP above mark" : "TP below mark"}
-              />
-              {tpError && <p className="font-mono text-[10px] text-destructive">{tpError}</p>}
-            </div>
-            <div className="space-y-1">
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={slInput}
-                onChange={(e) => setSlInput(e.target.value)}
-                placeholder={isLong ? "SL below mark" : "SL above mark"}
-              />
-              {slError && <p className="font-mono text-[10px] text-destructive">{slError}</p>}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Slippage tolerance — chip presets + custom input */}
-      <SlippageRow
-        bps={slippageBps}
-        setBps={setSlippageBps}
-        customInput={slippageCustom}
-        setCustomInput={setSlippageCustom}
-      />
-
-      {/* Order summary */}
-      <div className="space-y-1.5 rounded-xl border border-border/40 bg-background/30 p-3.5">
-        <Row label="Size" value={<NumberFlowUsd value={sizeScaled} />} />
-        <Row
-          label="Mark price"
-          value={markPrice ? <NumberFlowUsd value={markPrice} decimals="adaptive" /> : "—"}
-        />
-        <Row
-          label={isLong ? "Max fill price" : "Min fill price"}
-          value={
-            acceptablePrice > 0n
-              ? <NumberFlowUsd value={acceptablePrice} decimals="adaptive" />
-              : "Any"
-          }
-        />
-        <Row
-          label="Est. liq. price"
-          value={liq ? <NumberFlowUsd value={liq} decimals="adaptive" /> : "—"}
-          tone="warn"
-        />
-
-        {/* Fee preview — separated by a hairline so it reads as a sub-group. */}
-        <div className="my-1.5 h-px bg-border/30" />
-        <Row
-          label="Open fee"
-          value={
-            openFeeScaled !== null && openFeeScaled > 0n
-              ? <NumberFlowUsd value={openFeeScaled} decimals={2} />
-              : sizeScaled > 0n
-                ? "—"
-                : <span className="text-muted-foreground/60">—</span>
-          }
-        />
-        <Row
-          label="Borrow / day"
-          value={
-            dailyBorrowFeeScaled !== null && sizeScaled > 0n
-              ? <NumberFlowUsd value={dailyBorrowFeeScaled} decimals={2} />
-              : <span className="text-muted-foreground/60">—</span>
-          }
-        />
-        <Row
-          label="Funding / day"
-          value={
-            dailyFundingFeeScaled !== null && sizeScaled > 0n
-              ? (
-                  <span className={cn(
-                    dailyFundingFeeScaled > 0n
-                      ? "text-bull"
-                      : dailyFundingFeeScaled < 0n
-                        ? "text-bear"
-                        : "text-foreground/85"
-                  )}>
-                    <NumberFlowUsd
-                      value={dailyFundingFeeScaled}
-                      decimals={2}
-                      signDisplay="exceptZero"
-                    />
-                  </span>
-                )
-              : <span className="text-muted-foreground/60">—</span>
-          }
-        />
-
-        {/* Liquidity-headroom hint — only shows when the inputs are stressing
-            the cap. Stays quiet on normal-sized opens to keep the summary
-            from feeling busy. */}
-        {exceedsLiquidity && liquidityHeadroom !== null && (
-          <div className="!mt-2.5 flex items-start gap-2 rounded-lg border border-bear/40 bg-bear/[0.06] px-2.5 py-1.5">
-            <span className="mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-bear" />
-            <div className="space-y-0.5">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-bear">
-                Exceeds available liquidity
-              </p>
-              <p className="font-mono text-[10px] tabular-nums text-muted-foreground/85">
-                vault headroom <NumberFlowUsd value={liquidityHeadroom} decimals={0} />
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <Button
-        variant={isLong ? "bull" : "bear"}
-        size="lg"
-        className="w-full"
-        disabled={submitDisabled}
-        onClick={() => open.mutate()}
-      >
-        {!address
-          ? "Connect wallet"
-          : open.isPending
+          {open.isPending
             ? "Submitting…"
             : exceedsBalance
               ? "Insufficient USDC balance"
               : exceedsLiquidity
                 ? "Exceeds vault liquidity"
-                : `Open ${cappedLeverage}× ${isLong ? "Long" : "Short"}`}
-      </Button>
-    </div>
-  );
-}
-
-function SideToggle({
-  isLong,
-  setSide,
-}: {
-  isLong: boolean;
-  setSide: (s: "long" | "short") => void;
-}) {
-  return (
-    <div className="relative grid grid-cols-2 gap-1 rounded-full border border-border/50 bg-card/40 p-1 backdrop-blur-md">
-      <span
-        aria-hidden
-        className="pointer-events-none absolute top-1 bottom-1 z-0 rounded-full transition-[transform,background-color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0.2,1)]"
-        style={{
-          left: "0.25rem",
-          width: "calc(50% - 0.375rem)",
-          transform: isLong ? "translateX(0)" : "translateX(calc(100% + 0.25rem))",
-          backgroundColor: isLong
-            ? "hsl(var(--bull) / 0.20)"
-            : "hsl(var(--bear) / 0.20)",
-          boxShadow: isLong
-            ? "inset 0 0 0 1px hsl(var(--bull) / 0.4), 0 0 24px -8px hsl(var(--bull) / 0.5)"
-            : "inset 0 0 0 1px hsl(var(--bear) / 0.4), 0 0 24px -8px hsl(var(--bear) / 0.5)",
-        }}
-      />
-      <SideButton kind="long" active={isLong} onClick={() => setSide("long")} />
-      <SideButton kind="short" active={!isLong} onClick={() => setSide("short")} />
-    </div>
-  );
-}
-
-function SideButton({
-  active,
-  kind,
-  onClick,
-}: {
-  active: boolean;
-  kind: "long" | "short";
-  onClick: () => void;
-}) {
-  const isLong = kind === "long";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "relative z-10 flex h-9 items-center justify-center gap-1.5 rounded-full text-xs font-medium tracking-tight transition-colors duration-200",
-        active
-          ? isLong
-            ? "text-bull"
-            : "text-bear"
-          : "text-muted-foreground hover:text-foreground",
+                : hasPosition
+                  ? `Increase ${isLong ? "Long" : "Short"}`
+                  : `Open ${cappedLeverage}× ${isLong ? "Long" : "Short"}`}
+        </Button>
       )}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full transition-opacity",
-          isLong ? "bg-bull" : "bg-bear",
-          !active && "opacity-50",
-        )}
-      />
-      {isLong ? "Long" : "Short"}
-    </button>
+
+      {/* Win95 dialog-grow: everything a trader checks once lives down here. */}
+      <Button
+        size="sm"
+        active={showDetails}
+        onClick={() => setShowDetails((v) => !v)}
+        className="w-full"
+      >
+        Details {showDetails ? "«" : "»"}
+      </Button>
+      {showDetails && (
+        <div className="space-y-3">
+          <SlippageRow bps={slippageBps} setBps={setSlippageBps} />
+          <div className="space-y-1">
+            <DetailRow
+              label={isLong ? "Max fill price" : "Min fill price"}
+              value={
+                acceptablePrice > 0n ? (
+                  <NumberFlowUsd value={acceptablePrice} decimals="adaptive" />
+                ) : sizeScaled > 0n ? (
+                  "Any"
+                ) : (
+                  "—"
+                )
+              }
+            />
+            <DetailRow
+              label="Open fee"
+              value={
+                quote && sizeScaled > 0n ? <NumberFlowUsd value={quote.open_fee} decimals={2} /> : "—"
+              }
+            />
+            <DetailRow
+              label="Borrow / day"
+              value={
+                quote && sizeScaled > 0n ? (
+                  <NumberFlowUsd value={quote.daily_borrow} decimals={2} />
+                ) : (
+                  "—"
+                )
+              }
+            />
+            <DetailRow
+              label="Funding / day"
+              value={
+                quote && sizeScaled > 0n ? (
+                  <span
+                    className={cn(
+                      quote.daily_funding > 0n
+                        ? "text-bull"
+                        : quote.daily_funding < 0n
+                          ? "text-bear"
+                          : undefined,
+                    )}
+                  >
+                    <NumberFlowUsd value={quote.daily_funding} decimals={2} signDisplay="exceptZero" />
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span>{label}</span>
+      <span className="font-mono tabular-nums">{value}</span>
+    </div>
   );
 }
 
@@ -440,18 +336,7 @@ function SideButton({
  */
 function formatBalanceInput(scaled: bigint): string {
   if (scaled <= 0n) return "0";
-  return formatUsdc(scaled, { decimals: 2 }).replace(/,/g, "").replace(/\.00$/, "");
-}
-
-/** Parse a TP/SL input. Empty → 0n (unset); bad input → "invalid" sentinel. */
-function safeParse(input: string): bigint | "invalid" {
-  const trimmed = input.trim();
-  if (!trimmed) return 0n;
-  try {
-    return parsePrice(trimmed);
-  } catch {
-    return "invalid";
-  }
+  return numberToAmount(Math.floor(descale(scaled) * 100) / 100);
 }
 
 /** Mirror of `validate_tp_sl` in the contract — checked against mark as a stand-in for entry. */
@@ -466,76 +351,35 @@ function validateSl(markPrice: bigint, sl: bigint, isLong: boolean): string | nu
   return null;
 }
 
-function Row({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: ReactNode;
-  tone?: "warn";
-}) {
+function SlippageRow({ bps, setBps }: { bps: number; setBps: (n: number) => void }) {
   return (
-    <div className="flex items-center justify-between font-mono text-xs">
-      <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80">{label}</span>
-      <span className={cn("tabular-nums", tone === "warn" && "text-bear/90")}>{value}</span>
-    </div>
-  );
-}
-
-function SlippageRow({
-  bps,
-  setBps,
-  customInput,
-  setCustomInput,
-}: {
-  bps: number;
-  setBps: (n: number) => void;
-  customInput: string;
-  setCustomInput: (s: string) => void;
-}) {
-  const isPreset = (SLIPPAGE_PRESETS_BPS as readonly number[]).includes(bps);
-  return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <Label>Slippage tolerance</Label>
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/80">
-          {formatBps(bps)}
-        </span>
+        <span className="font-mono text-xs tabular-nums">{formatBps(bps)}</span>
       </div>
-      <div className="flex gap-1.5">
+      <div className="flex gap-1">
         {SLIPPAGE_PRESETS_BPS.map((preset) => (
-          <button
+          <Button
             key={preset}
-            type="button"
-            onClick={() => {
-              setBps(preset);
-              setCustomInput("");
-            }}
-            className={cn(
-              "flex-1 rounded-lg border border-border/50 bg-card/30 px-2 py-1 font-mono text-[11px] tracking-tight text-muted-foreground transition-all hover:border-ember/50 hover:bg-card/60 hover:text-foreground",
-              bps === preset && !customInput && "border-ember/60 bg-ember/10 text-foreground",
-            )}
+            size="sm"
+            active={bps === preset}
+            onClick={() => setBps(preset)}
+            className="flex-1 font-mono"
           >
             {formatBps(preset)}
-          </button>
+          </Button>
         ))}
-        <Input
-          type="text"
-          inputMode="decimal"
-          value={customInput}
-          onChange={(e) => {
-            const v = e.target.value;
-            setCustomInput(v);
-            const parsed = parseSlippagePct(v);
-            if (parsed !== null) setBps(parsed);
-            else if (v.trim() === "") setBps(DEFAULT_SLIPPAGE_BPS);
+        <NumberInput
+          value={bps / 100}
+          onChange={(v) => {
+            const next = Math.round(v * 100);
+            if (Number.isFinite(next) && next >= 0 && next <= MAX_SLIPPAGE_BPS) setBps(next);
           }}
-          placeholder="custom %"
-          className={cn(
-            "h-7 flex-[1.2] px-2 font-mono text-[11px]",
-            !isPreset && customInput && "border-ember/60 bg-ember/5",
-          )}
+          min={0}
+          max={MAX_SLIPPAGE_BPS / 100}
+          step={0.1}
+          width={96}
         />
       </div>
     </div>
@@ -548,13 +392,3 @@ function formatBps(bps: number): string {
   return pct >= 1 ? `${pct.toFixed(pct % 1 === 0 ? 0 : 2)}%` : `${pct.toFixed(2)}%`;
 }
 
-/** Parse a user-typed percent ("0.5" or "0.5%") to bps. Returns null if invalid or out of range. */
-function parseSlippagePct(input: string): number | null {
-  const trimmed = input.trim().replace(/%$/, "");
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
-  const pct = Number(trimmed);
-  if (!Number.isFinite(pct) || pct < 0) return null;
-  const bps = Math.round(pct * 100);
-  if (bps > MAX_SLIPPAGE_BPS) return null;
-  return bps;
-}

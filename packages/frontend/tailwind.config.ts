@@ -6,6 +6,19 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     container: { center: true, padding: "1.25rem", screens: { "2xl": "1320px" } },
+    // Win95 has no rounded corners. Flattening the whole radius scale keeps
+    // existing rounded-* call sites valid while rendering them square.
+    borderRadius: {
+      none: "0",
+      sm: "0",
+      DEFAULT: "0",
+      md: "0",
+      lg: "0",
+      xl: "0",
+      "2xl": "0",
+      "3xl": "0",
+      full: "0",
+    },
     extend: {
       colors: {
         border: "hsl(var(--border))",
@@ -43,61 +56,32 @@ export default {
         moss: "hsl(var(--moss))",
         dusk: "hsl(var(--dusk))",
       },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 4px)",
-        sm: "calc(var(--radius) - 6px)",
-      },
       fontFamily: {
-        sans: ['"Geist"', "system-ui", "sans-serif"],
-        mono: ['"Geist Mono"', "ui-monospace", "SFMono-Regular", "monospace"],
-        display: ['"Instrument Serif"', "ui-serif", "Georgia", "serif"],
+        sans: ['"MS Sans Serif"', "Tahoma", '"Segoe UI"', "sans-serif"],
+        mono: ['"Courier New"', "Courier", "monospace"],
+        display: ['"MS Sans Serif"', "Tahoma", "sans-serif"],
       },
       letterSpacing: {
-        tightest: "-0.04em",
+        tightest: "0",
       },
       boxShadow: {
-        card: "0 1px 0 0 rgba(255,255,255,0.04) inset, 0 0 0 1px rgba(255,255,255,0.04), 0 24px 60px -30px rgba(0,0,0,0.7)",
-        "card-hover":
-          "0 1px 0 0 rgba(255,255,255,0.06) inset, 0 0 0 1px rgba(220,170,110,0.18), 0 30px 70px -30px rgba(0,0,0,0.85)",
-        glow: "0 0 0 1px rgba(212,165,116,0.35), 0 0 30px -8px rgba(212,165,116,0.45)",
-      },
-      backgroundImage: {
-        "aurora-amber":
-          "radial-gradient(60% 80% at 18% 40%, hsl(28 70% 45% / 0.55), transparent 60%)",
-        "aurora-moss":
-          "radial-gradient(50% 70% at 48% 55%, hsl(140 35% 35% / 0.45), transparent 60%)",
-        "aurora-dusk":
-          "radial-gradient(60% 80% at 82% 50%, hsl(248 60% 30% / 0.55), transparent 60%)",
+        // hover lift for window-cards: hard offset shadow, no blur
+        "card-hover": "4px 4px 0 0 rgb(0 0 0 / 0.35)",
       },
       keyframes: {
-        "drift-a": {
-          "0%, 100%": { transform: "translate3d(0,0,0) scale(1)" },
-          "50%": { transform: "translate3d(3%,-2%,0) scale(1.05)" },
-        },
-        "drift-b": {
-          "0%, 100%": { transform: "translate3d(0,0,0) scale(1)" },
-          "50%": { transform: "translate3d(-2%,3%,0) scale(1.08)" },
-        },
-        "drift-c": {
-          "0%, 100%": { transform: "translate3d(0,0,0) scale(1)" },
-          "50%": { transform: "translate3d(-3%,-2%,0) scale(1.04)" },
-        },
         "fade-up": {
-          from: { opacity: "0", transform: "translateY(8px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
+          from: { opacity: "0" },
+          to: { opacity: "1" },
         },
         "ember-pulse": {
-          "0%, 100%": { opacity: "0.7" },
-          "50%": { opacity: "1" },
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.4" },
         },
       },
       animation: {
-        "drift-a": "drift-a 24s ease-in-out infinite",
-        "drift-b": "drift-b 32s ease-in-out infinite",
-        "drift-c": "drift-c 28s ease-in-out infinite",
-        "fade-up": "fade-up 600ms cubic-bezier(0.16, 1, 0.3, 1) both",
-        "ember-pulse": "ember-pulse 2.4s ease-in-out infinite",
+        // instant-ish: Win95 didn't ease, it appeared
+        "fade-up": "fade-up 120ms steps(2, end) both",
+        "ember-pulse": "ember-pulse 1.2s steps(2, end) infinite",
       },
     },
   },

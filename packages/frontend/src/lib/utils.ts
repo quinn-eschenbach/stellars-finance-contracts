@@ -87,6 +87,16 @@ export function formatPrice(scaled: bigint | string, decimals = 2): string {
 /** Convert a user-typed price string to the scaled bigint. Prices and USDC share 10^7 scaling. */
 export const parsePrice = (input: string): bigint => parseUsdc(input);
 
+/**
+ * Format a JS number as the plain decimal string `parseUsdc` accepts — ≤7dp,
+ * no scientific notation, trailing zeros trimmed. Bridges react95's
+ * NumberInput (number-valued) to the bigint parsing path.
+ */
+export function numberToAmount(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  return n.toFixed(7).replace(/\.?0+$/, "") || "0";
+}
+
 /** Convert a user-typed USDC string ("1000.5") to the scaled bigint (10000005000000n). */
 export function parseUsdc(input: string): bigint {
   const trimmed = input.trim();

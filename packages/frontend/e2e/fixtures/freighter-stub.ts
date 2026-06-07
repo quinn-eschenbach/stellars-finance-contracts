@@ -109,3 +109,7 @@ export async function signAuth(
   if (state.signError) throw new Error(state.signError);
   return Buffer.from(entryXdr, "utf8").toString("base64");
 }
+
+export async function disconnect(): Promise<void> {
+  state.status = { kind: "locked" };
+}

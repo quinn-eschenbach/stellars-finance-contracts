@@ -9,168 +9,38 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VaultRouteImport } from './routes/vault'
-import { Route as MarketsRouteImport } from './routes/markets'
-import { Route as LeaderboardRouteImport } from './routes/leaderboard'
-import { Route as InsightsRouteImport } from './routes/insights'
-import { Route as FaucetRouteImport } from './routes/faucet'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as TradeSymbolRouteImport } from './routes/trade.$symbol'
-import { Route as PositionsAddressRouteImport } from './routes/positions.$address'
 
-const VaultRoute = VaultRouteImport.update({
-  id: '/vault',
-  path: '/vault',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MarketsRoute = MarketsRouteImport.update({
-  id: '/markets',
-  path: '/markets',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LeaderboardRoute = LeaderboardRouteImport.update({
-  id: '/leaderboard',
-  path: '/leaderboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InsightsRoute = InsightsRouteImport.update({
-  id: '/insights',
-  path: '/insights',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FaucetRoute = FaucetRouteImport.update({
-  id: '/faucet',
-  path: '/faucet',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TradeSymbolRoute = TradeSymbolRouteImport.update({
-  id: '/trade/$symbol',
-  path: '/trade/$symbol',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PositionsAddressRoute = PositionsAddressRouteImport.update({
-  id: '/positions/$address',
-  path: '/positions/$address',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/faucet': typeof FaucetRoute
-  '/insights': typeof InsightsRoute
-  '/leaderboard': typeof LeaderboardRoute
-  '/markets': typeof MarketsRoute
-  '/vault': typeof VaultRoute
-  '/positions/$address': typeof PositionsAddressRoute
-  '/trade/$symbol': typeof TradeSymbolRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/faucet': typeof FaucetRoute
-  '/insights': typeof InsightsRoute
-  '/leaderboard': typeof LeaderboardRoute
-  '/markets': typeof MarketsRoute
-  '/vault': typeof VaultRoute
-  '/positions/$address': typeof PositionsAddressRoute
-  '/trade/$symbol': typeof TradeSymbolRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/faucet': typeof FaucetRoute
-  '/insights': typeof InsightsRoute
-  '/leaderboard': typeof LeaderboardRoute
-  '/markets': typeof MarketsRoute
-  '/vault': typeof VaultRoute
-  '/positions/$address': typeof PositionsAddressRoute
-  '/trade/$symbol': typeof TradeSymbolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/faucet'
-    | '/insights'
-    | '/leaderboard'
-    | '/markets'
-    | '/vault'
-    | '/positions/$address'
-    | '/trade/$symbol'
+  fullPaths: '/'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/faucet'
-    | '/insights'
-    | '/leaderboard'
-    | '/markets'
-    | '/vault'
-    | '/positions/$address'
-    | '/trade/$symbol'
-  id:
-    | '__root__'
-    | '/'
-    | '/faucet'
-    | '/insights'
-    | '/leaderboard'
-    | '/markets'
-    | '/vault'
-    | '/positions/$address'
-    | '/trade/$symbol'
+  to: '/'
+  id: '__root__' | '/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  FaucetRoute: typeof FaucetRoute
-  InsightsRoute: typeof InsightsRoute
-  LeaderboardRoute: typeof LeaderboardRoute
-  MarketsRoute: typeof MarketsRoute
-  VaultRoute: typeof VaultRoute
-  PositionsAddressRoute: typeof PositionsAddressRoute
-  TradeSymbolRoute: typeof TradeSymbolRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/vault': {
-      id: '/vault'
-      path: '/vault'
-      fullPath: '/vault'
-      preLoaderRoute: typeof VaultRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/markets': {
-      id: '/markets'
-      path: '/markets'
-      fullPath: '/markets'
-      preLoaderRoute: typeof MarketsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/leaderboard': {
-      id: '/leaderboard'
-      path: '/leaderboard'
-      fullPath: '/leaderboard'
-      preLoaderRoute: typeof LeaderboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/insights': {
-      id: '/insights'
-      path: '/insights'
-      fullPath: '/insights'
-      preLoaderRoute: typeof InsightsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/faucet': {
-      id: '/faucet'
-      path: '/faucet'
-      fullPath: '/faucet'
-      preLoaderRoute: typeof FaucetRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -178,32 +48,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/trade/$symbol': {
-      id: '/trade/$symbol'
-      path: '/trade/$symbol'
-      fullPath: '/trade/$symbol'
-      preLoaderRoute: typeof TradeSymbolRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/positions/$address': {
-      id: '/positions/$address'
-      path: '/positions/$address'
-      fullPath: '/positions/$address'
-      preLoaderRoute: typeof PositionsAddressRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  FaucetRoute: FaucetRoute,
-  InsightsRoute: InsightsRoute,
-  LeaderboardRoute: LeaderboardRoute,
-  MarketsRoute: MarketsRoute,
-  VaultRoute: VaultRoute,
-  PositionsAddressRoute: PositionsAddressRoute,
-  TradeSymbolRoute: TradeSymbolRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

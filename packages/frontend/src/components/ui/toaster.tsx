@@ -1,13 +1,10 @@
 import { Toaster as SonnerToaster } from "sonner";
 
 /**
- * App-wide toast renderer. Mounted once at the root. Sonner ships its own
- * dark theme; we layer the warm border/surface tokens through CSS variables
- * (see `sonner-overrides` in index.css) instead of class overrides so the
+ * App-wide toast renderer. Mounted once at the root. The Win95 dialog-box
+ * chrome comes from the `[data-sonner-toast]` overrides in index.css so the
  * library's animation/timing logic stays untouched.
  */
 export function Toaster() {
-  return (
-    <SonnerToaster theme="dark" position="bottom-right" offset={20} richColors closeButton />
-  );
+  return <SonnerToaster theme="light" position="bottom-right" offset={20} closeButton />;
 }

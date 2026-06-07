@@ -1,2 +1,4 @@
 packages:
   - "packages/*"
+patchedDependencies:
+  react95: patches/react95.patch

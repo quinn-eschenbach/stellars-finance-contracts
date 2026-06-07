@@ -12,9 +12,9 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { Frame, Tab, TabBody, Tabs } from "react95";
 import { useCandles } from "@/api/hooks";
 import type { CandleInterval, CandleRow, PriceRow } from "@/api/types";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn, descale, priceDecimals } from "@/lib/utils";
 
 const INTERVALS: ReadonlyArray<{ label: string; value: CandleInterval }> = [
@@ -68,27 +68,28 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "rgba(232, 218, 195, 0.55)",
-        fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace',
-        fontSize: 10,
+        // White sunken-field canvas, like a chart pasted into a Win95 dialog.
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#222222",
+        fontFamily: '"Courier New", Courier, monospace',
+        fontSize: 11,
       },
       grid: {
-        vertLines: { color: "rgba(255,225,180,0.04)" },
-        horzLines: { color: "rgba(255,225,180,0.04)" },
+        vertLines: { color: "rgba(0,0,0,0.08)" },
+        horzLines: { color: "rgba(0,0,0,0.08)" },
       },
-      rightPriceScale: { borderColor: "rgba(255,225,180,0.08)" },
+      rightPriceScale: { borderColor: "#848584" },
       timeScale: {
-        borderColor: "rgba(255,225,180,0.08)",
+        borderColor: "#848584",
         timeVisible: true,
         secondsVisible: false,
       },
       crosshair: { mode: CrosshairMode.Normal },
       autoSize: true,
     });
-    // Muted painterly palette — sage/moss for bull, brick/terracotta for bear.
-    const BULL = "#9ab59b";
-    const BEAR = "#cc7a6f";
+    // 16-color VGA: green up, red down.
+    const BULL = "#008000";
+    const BEAR = "#c00000";
     const series = chart.addSeries(CandlestickSeries, {
       upColor: BULL,
       downColor: BEAR,
@@ -200,29 +201,25 @@ export function MarkChart({ symbol, className, priceLines }: MarkChartProps) {
   }, [candles.data, candles.isLoading, candles.error]);
 
   return (
-    <div className={cn("flex h-full flex-col gap-3", className)}>
-      <div className="flex items-center justify-between">
-        <Tabs
-          value={String(interval)}
-          onValueChange={(v) => setInterval(Number(v) as CandleInterval)}
-        >
-          <TabsList className="h-8 p-0.5">
-            {INTERVALS.map((i) => (
-              <TabsTrigger key={i.value} value={String(i.value)} className="px-3 py-1 text-[11px] font-mono">
-                {i.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
-      <div className="relative flex-1 min-h-[320px] overflow-hidden rounded-xl border border-border/40 bg-background/40">
-        <div ref={containerRef} className="absolute inset-0" />
-        {status && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            {status}
-          </div>
-        )}
-      </div>
+    <div className={cn("flex h-full flex-col", className)}>
+      {/* Interval tabs sit on the raised chart panel, same look as the order form. */}
+      <Tabs value={interval} onChange={(v) => setInterval(v as CandleInterval)}>
+        {INTERVALS.map((i) => (
+          <Tab key={i.value} value={i.value} className="font-mono">
+            {i.label}
+          </Tab>
+        ))}
+      </Tabs>
+      <TabBody className="!flex min-h-0 flex-1 !p-2">
+        <Frame variant="field" className="!relative min-h-0 w-full flex-1 !overflow-hidden">
+          <div ref={containerRef} className="absolute inset-1" />
+          {status && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              {status}
+            </div>
+          )}
+        </Frame>
+      </TabBody>
     </div>
   );
 }

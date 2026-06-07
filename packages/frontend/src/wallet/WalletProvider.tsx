@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  disconnect as walletDisconnect,
   getFreighterStatus,
   requestFreighterPermission,
   signTx,
@@ -9,8 +10,11 @@ import {
 
 interface WalletContextValue {
   status: FreighterStatus;
+  /** False until the first wallet-status probe resolves — gate logon UI on this. */
+  ready: boolean;
   refreshing: boolean;
   connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
   refresh: () => Promise<void>;
   signTransaction: (xdr: string, networkPassphrase: string) => Promise<string>;
   signAuthEntry: (entry: string, networkPassphrase: string) => Promise<string>;
@@ -30,6 +34,7 @@ function sameStatus(a: FreighterStatus, b: FreighterStatus): boolean {
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<FreighterStatus>({ kind: "missing" });
+  const [ready, setReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -41,11 +46,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setStatus((prev) => (sameStatus(prev, next) ? prev : next));
     } finally {
       setRefreshing(false);
+      setReady(true);
     }
   }, []);
 
   const connect = useCallback(async () => {
     await requestFreighterPermission();
+    await refresh();
+  }, [refresh]);
+
+  const disconnect = useCallback(async () => {
+    await walletDisconnect();
     await refresh();
   }, [refresh]);
 
@@ -87,8 +98,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const value = useMemo<WalletContextValue>(
     () => ({
       status,
+      ready,
       refreshing,
       connect,
+      disconnect,
       refresh,
       signTransaction: (xdr, np) => {
         if (status.kind !== "ok") throw new Error("wallet not connected");
@@ -99,7 +112,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return signAuth(entry, np, status.address);
       },
     }),
-    [status, refreshing, connect, refresh],
+    [status, ready, refreshing, connect, disconnect, refresh],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
