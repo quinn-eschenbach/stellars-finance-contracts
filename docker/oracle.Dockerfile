@@ -27,6 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && corepack prepare pnpm@10.32.1 --activate
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+# pnpm-workspace.yaml declares patchedDependencies; the patch must be present
+# so the frozen-lockfile install can hash it before resolving the graph.
+COPY patches/ patches/
 COPY packages/api/package.json                packages/api/
 COPY packages/db/package.json                 packages/db/
 COPY packages/config/package.json             packages/config/
